@@ -126,6 +126,9 @@ async function codeFromRemote(page: Page, code: string, phone?: TestPhone): Prom
   await page.keyboard.press("Enter");
 }
 
+// The connect screen's steps that show, each as it's written.
+const steps = (page: Page, list: string) => page.locator(`${list} > li:not(.hidden)`).evaluateAll((items) => items.map((li) => li.firstChild?.textContent ?? ""));
+
 // Root's hand-over and the CLI's sign-in, as they'd write their status.
 function signInSays(status: Record<string, unknown>): void {
   mkdirSync(join(run, "sign-in"), { recursive: true });
@@ -208,7 +211,11 @@ test("ADR-070 the plan's sign-in starts right at the AI step: terms on the phone
     // gives.
     signInSays({ state: "waiting", url: "https://claude.ai/oauth/authorize?code=true&state=s7Q", pastes: true });
     await page.waitForSelector(".ai-qr:not(.hidden) .qr[src]");
-    assert.equal(await page.locator('[data-line="sign-in"]').textContent(), "Scan to sign in, then paste the code it gives you");
+    // The connect screen (ADR-103): the code to scan and the steps beside it,
+    // the line saying which plan, and "Use my plan" gone while it's in use.
+    assert.equal(await page.locator('[data-line="sign-in"]').textContent(), "On your phone, with your Claude Pro or Max plan");
+    assert.deepEqual(await steps(page, ".ai-steps"), ["Scan the code", "Sign in on the page it opens", "Paste the code it gives you"]);
+    assert.equal(await page.locator('.ai-options [data-path="plan"]').isVisible(), false);
     await codeFromRemote(page, "good-code#s7Q", phone);
     for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in-code.json")); i++) await page.waitForTimeout(100);
     assert.deepEqual(JSON.parse(readFileSync(join(state, "build-drop", "sign-in-code.json"), "utf8")), { code: "good-code#s7Q" });
@@ -531,7 +538,8 @@ test("ADR-070 a plan left for later in setup signs in from Settings → AI, and 
       for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in.json")); i++) await page.waitForTimeout(100);
       assert.deepEqual(JSON.parse(readFileSync(join(state, "build-drop", "sign-in.json"), "utf8")), { build: null, provider: "claude" });
       signInSays({ state: "waiting", url: "https://claude.ai/oauth/authorize?code=true&state=s7Q", pastes: true });
-      await page.waitForSelector(".build-qr:not(.hidden) img[src]");
+      await page.waitForSelector(".sign-in-qr:not(.hidden) img[src]");
+      assert.deepEqual(await steps(page, ".sign-in-steps"), ["Scan the code", "Sign in on the page it opens", "Paste the code it gives you"]);
       await codeFromRemote(page, "good-code#s7Q", phone);
       for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in-code.json")); i++) await page.waitForTimeout(100);
       assert.deepEqual(JSON.parse(readFileSync(join(state, "build-drop", "sign-in-code.json"), "utf8")), { code: "good-code#s7Q" });

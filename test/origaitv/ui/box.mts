@@ -93,6 +93,9 @@ export interface BoxOptions {
   art?: { endpoints: Record<"met" | "aic" | "commons", string>; imageHosts: string[] };
   // A stand-in router, for what's said to the TV (ADR-023).
   router?: ConstructorParameters<typeof Daemon>[0]["router"];
+  // A stand-in for the plan's usage check (ADR-103). Without one, there's
+  // no plan router to ask, and the TV can't say how much is used.
+  planUsage?: ConstructorParameters<typeof Daemon>[0]["planUsage"];
   // How long the listening bar waits for new words (ADR-054).
   listenIdleMs?: number;
   // A stand-in for TMDB, through the router's service (stage 8).
@@ -357,6 +360,7 @@ export async function startBox(
     // test stands the sites in.
     aiSites: options.aiSites ?? { claude: "http://127.0.0.1:1/", chatgpt: "http://127.0.0.1:1/", gemini: "http://127.0.0.1:1/", grok: "http://127.0.0.1:1/", muse: "http://127.0.0.1:1/" },
     router: options.router,
+    planUsage: options.planUsage ?? (async () => null),
     listenIdleMs: options.listenIdleMs,
     box: options.box ?? { machine: machine("nuc8i5beh") },
     // The channel, as origaitv channel keeps it: none, so stable, until a test

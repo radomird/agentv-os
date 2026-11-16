@@ -11,6 +11,7 @@ import { AI_NAMES } from "../builder/reasons.ts";
 import { isCliProvider } from "./providers/cli.ts";
 import { CANT_ANSWER, GETTING_READY, TOOK_TOO_LONG } from "./providers/no-answer.ts";
 import { NONE, type Routed, type RouterApp } from "./router.ts";
+import type { UsageProvider, UsageWindow } from "./plan-usage.ts";
 
 export const ROUTER_SOCKETS = { api: "/run/origaitv-router/router.sock", cli: "/run/origaitv-router-cli/route.sock" };
 
@@ -20,7 +21,7 @@ export function unrouted(sentence: string, provider: Provider, via: "api" | "cli
 }
 
 // One sentence to a route service, over its socket.
-export function viaSocket(path: string, body: { provider: Provider; sentence: string; apps: RouterApp[] }, timeoutMs = 45_000): Promise<Routed> {
+export function viaSocket(path: string, body: { provider: Provider; sentence: string; apps: RouterApp[]; model?: string }, timeoutMs = 45_000): Promise<Routed> {
   const via = path.includes("router-cli") ? "cli" : "api";
   return new Promise((resolve) => {
     const failed = (error: string) => resolve(unrouted(body.sentence, body.provider, via, error));
@@ -47,6 +48,32 @@ export function viaSocket(path: string, body: { provider: Provider; sentence: st
   });
 }
 
+// How much of a plan is used (ADR-103), from the plan's service: the
+// windows, or null when it can't say.
+export function usageViaSocket(path: string, provider: UsageProvider, timeoutMs = 50_000): Promise<UsageWindow[] | null> {
+  return new Promise((resolve) => {
+    const asked = request({ socketPath: path, path: "/usage", method: "POST", headers: { "Content-Type": "application/json" }, timeout: timeoutMs }, (response) => {
+      let text = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk: string) => (text += chunk));
+      response.on("end", () => {
+        try {
+          const answer = JSON.parse(text);
+          resolve(answer.ok && Array.isArray(answer.windows) ? (answer.windows as UsageWindow[]) : null);
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+    asked.on("timeout", () => {
+      asked.destroy();
+      resolve(null);
+    });
+    asked.on("error", () => resolve(null));
+    asked.end(JSON.stringify({ provider }));
+  });
+}
+
 export interface BoxRouterOptions {
   ai: () => Promise<AiState>;
   key: () => { set: boolean; provider: string | null };
@@ -56,7 +83,8 @@ export interface BoxRouterOptions {
   fetchCli?: () => void;
 }
 
-// The router the box's own setup chose.
+// The router the box's own setup chose, on the household's model for asking
+// (ADR-103), which each service checks against the provider's list.
 export function boxRouter(o: BoxRouterOptions): (sentence: string, apps: RouterApp[]) => Promise<Routed> {
   const sockets = o.sockets ?? ROUTER_SOCKETS;
   return async (sentence, apps) => {
@@ -70,10 +98,10 @@ export function boxRouter(o: BoxRouterOptions): (sentence: string, apps: RouterA
     if (ai.path === "key") {
       const key = o.key();
       if (!key.set || key.provider !== ai.provider) return unrouted(sentence, provider, via, `Add your ${name} key in Settings first`, "key");
-      return viaSocket(sockets.api, { provider, sentence, apps });
+      return viaSocket(sockets.api, { provider, sentence, apps, ...(ai.models ? { model: ai.models.ask } : {}) });
     }
     if (!isCliProvider(ai.provider)) return unrouted(sentence, provider, via, `${offer.plan.name} can't do this yet`, "plan");
-    const routed = await viaSocket(sockets.cli, { provider, sentence, apps });
+    const routed = await viaSocket(sockets.cli, { provider, sentence, apps, ...(ai.models ? { model: ai.models.ask } : {}) });
     if (routed.error === GETTING_READY) o.fetchCli?.();
     return routed;
   };

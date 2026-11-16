@@ -1508,6 +1508,9 @@ body.counted .player-note {
   flex-direction: column;
   gap: 22px;
   width: 620px;
+}
+
+.ai-connect:not(.signing) {
   margin-top: 104px;
 }
 
@@ -1535,20 +1538,82 @@ body.counted .player-note {
   white-space: nowrap;
 }
 
-.ai-qr {
-  position: absolute;
-  right: 160px;
-  top: 200px;
+/* The connect screen (ADR-103, Q314): the ways in on the left, and once
+   the sign-in's link is there, its code to scan and the steps together in
+   the middle, the code framed as on the welcome screen and the steps beside
+   it, the other ways in under them. */
+.ai-connect {
+  display: flex;
+  align-items: flex-start;
+  gap: 96px;
+}
+
+.ai-connect.signing {
+  justify-content: center;
+  align-items: center;
+  margin-top: 28px;
+}
+
+.ai-side {
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-connect.signing .ai-options {
+  flex-direction: row;
+  flex-wrap: wrap;
+  width: auto;
+  margin-top: 56px;
+}
+
+.ai-connect.signing .ai-options .button {
+  min-width: 240px;
+}
+
+.ai-qr .qr-frame {
+  padding: 30px;
 }
 
 .ai-qr .qr-box {
-  width: 508px;
-  height: 508px;
+  width: 440px;
+  height: 440px;
 }
 
 .ai-qr .qr {
-  width: 456px;
-  height: 456px;
+  width: 388px;
+  height: 388px;
+}
+
+.ai-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 34px;
+  width: 760px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: ai-step;
+  font-size: 36px;
+  color: var(--bright-foreground);
+}
+
+.ai-steps > li {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  row-gap: 20px;
+  align-items: baseline;
+  counter-increment: ai-step;
+}
+
+.ai-steps > li::before {
+  content: counter(ai-step);
+  grid-row: 1 / span 2;
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.ai-steps > li > .ai-paste {
+  grid-column: 2;
 }
 
 /* The goal (design page D3): four cards in a row, its icon at the top and

@@ -71,7 +71,12 @@ export interface Ctx {
   // home, its parent, whichever page the bar was on (principle 2).
   top(route: string): void;
   back(): void;
-  edit(): void;
+  // Home, with the focus on one app, as after adding it to home: you see
+  // where it went (ADR-103).
+  home(focusOn: string): void;
+  // Edit mode, on an app or the focused tile. With move, that app starts in
+  // hand, as Move in its details opens it.
+  edit(id?: string, move?: boolean): void;
   render(route: string, action?: string): void;
   // Notes where the page is now, such as a section of Settings, so Back to
   // it comes back there.
@@ -153,12 +158,20 @@ const ctx: Ctx = {
     show(history[history.length - 1], "back");
     sounds.play("back");
   },
+  home(focusOn) {
+    history = ["home"];
+    show("home", "back", focusOn);
+    // Glass features the app in focus, as when the arrows land on it.
+    const on = focus.get();
+    if (on?.dataset.id === focusOn) view?.focused?.(on);
+  },
   // Edit mode, on the focused tile; only adults edit home (ADR-015). On a
   // child's profile, an adult can, past the PIN.
-  edit() {
-    const tile = focus.get()?.dataset.id ?? "";
+  edit(id, move = false) {
+    const tile = id ?? focus.get()?.dataset.id ?? "";
+    const route = `${move ? "move" : "edit"}/${tile}`;
     if (childWithPin()) {
-      void grantFor("editing home").then((grant) => grant !== null && ctx.go(`edit/${tile}`));
+      void grantFor("editing home").then((grant) => grant !== null && ctx.go(route));
       return;
     }
     if (ctx.state.viewer.role !== "adult") {
@@ -166,7 +179,7 @@ const ctx: Ctx = {
       sounds.play("failure");
       return;
     }
-    ctx.go(`edit/${tile}`);
+    ctx.go(route);
   },
   remember(route) {
     history[history.length - 1] = route;
@@ -403,6 +416,8 @@ function viewFor(route: string): View {
   if (name === "details") return details(ctx, arg);
   if (name === "app-setup") return appSetup(ctx, arg);
   if (name === "edit") return edit(ctx, arg);
+  // Move in an app's details: edit mode with that app in hand (ADR-103).
+  if (name === "move" && arg) return edit(ctx, arg, true);
   if (name === "whats-new") return whatsNew(ctx);
   if (name === "update-off") return checkView(ctx);
   if (name === "settings") return settings(ctx, arg);

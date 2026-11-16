@@ -34,7 +34,8 @@ import { Backgrounds, imageType, MAX_BYTES as MAX_PHOTO } from "./backgrounds.ts
 import { ImmichAlbum } from "./immich-album.ts";
 import type { IndexEntry } from "./apps/index.ts";
 import { badState, kindOf, Ledger } from "./ledger.ts";
-import { Builds, type Provider as BuildProvider } from "./builds.ts";
+import { type BuildAi, Builds } from "./builds.ts";
+import { defaultModel } from "../builder/models.ts";
 import { Asks } from "./asks.ts";
 import { exportRefusal, packageFiles, zipFolder } from "./export.ts";
 import { cleanGitHub, type GitHubAnswer, type GitHubAsk, parseRepo, repoRefusal, type SignIn } from "./github.ts";
@@ -55,6 +56,9 @@ import { Features, type FeatureMap } from "./features.ts";
 import { Box, type BoxOptions } from "./box.ts";
 import { boxRoute, phoneBoxRoute, type BoxRoutes } from "./routes/box.ts";
 import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
+import { aiModelRoutes } from "./routes/ai-models.ts";
+import { planUsageRoutes } from "./routes/plan-usage.ts";
+import { PlanUsages, type UsageProvider, type UsageWindow } from "./plan-usage.ts";
 import { backgroundVideoRoutes } from "./routes/backgrounds.ts";
 import { askRoutes, askView, type AskRoutes } from "./routes/ask.ts";
 import { NO_AI } from "./executors/index.ts";
@@ -77,7 +81,7 @@ import { DesktopPassword } from "./desktop-password.ts";
 import { Updates } from "./updates.ts";
 import { NONE, type Route, type Routed, type RouterApp } from "./router.ts";
 import { newItem } from "./executors/whatsNew.ts";
-import { boxRouter } from "./router-client.ts";
+import { boxRouter, ROUTER_SOCKETS, usageViaSocket } from "./router-client.ts";
 import { cleanSayAnswer, Say, type SayAnswer, type SayAsk } from "./say.ts";
 import { Listening } from "./listening.ts";
 import { cleanField, type Field } from "./remote-text.ts";
@@ -170,6 +174,9 @@ export interface DaemonOptions {
   // The router (ADR-013, ADR-023): one sentence and the apps who's watching
   // can open, into a route, through the provider's API or a plan's CLI.
   router?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
+  // How much of a plan is used (ADR-103), from the plan router's service,
+  // unless a test stands it in.
+  planUsage?: (provider: UsageProvider) => Promise<UsageWindow[] | null>;
   // Where each AI provider's icon is fetched from: their own sites, unless a
   // test stands them in.
   aiSites?: Partial<typeof PROVIDER_SITES>;
@@ -344,6 +351,8 @@ export class Daemon {
   // (ADR-070).
   readonly aiIcons: AiIcons;
   readonly planSignIn: PlanSignIn;
+  // How much of the plan is used, kept a little while (ADR-103).
+  readonly planUsages: PlanUsages;
   readonly ai: Ai;
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
@@ -571,6 +580,7 @@ export class Daemon {
     this.ai = new Ai({ state: options.state, channel: () => this.channel() });
     this.aiIcons = new AiIcons({ state: options.state, userAgent: userAgent(options.root), sites: options.aiSites, log: this.log });
     this.planSignIn = new PlanSignIn({ state: options.state, drop: join(options.state, "build-drop"), run: options.buildRun ?? "/run/origaitv-build" });
+    this.planUsages = new PlanUsages({ ask: options.planUsage ?? ((provider) => usageViaSocket(ROUTER_SOCKETS.cli, provider)) });
     this.buildAwake = options.inhibitor?.("building an app") ?? { set: () => {} };
     this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/origaitv/backgrounds" });
@@ -720,7 +730,7 @@ export class Daemon {
     const { set, provider } = this.key.status();
     const plans = Object.values(await this.ai.offers()).filter((offer) => offer.plan.offered).map((offer) => ({ provider: offer.provider, name: offer.plan.name }));
     const ai = await this.ai.read();
-    return { set, provider, plans, ai: { provider: ai.provider, path: ai.path, accepted: ai.accepted !== null } };
+    return { set, provider, plans, ai: { provider: ai.provider, path: ai.path, accepted: ai.accepted !== null, ...(ai.models ? { models: ai.models } : {}) } };
   }
 
   // The channel this box updates from, as `origaitv channel` says it: the one
@@ -834,15 +844,15 @@ export class Daemon {
   }
 
   // The AI a build runs on: picked, its terms accepted, and a key there for
-  // a key's path.
-  private async builderAi(): Promise<{ ai?: { provider: BuildProvider; path: "plan" | "key" }; error?: string }> {
+  // a key's path, with the household's model for building (ADR-103).
+  private async builderAi(): Promise<{ ai?: BuildAi; error?: string }> {
     const ai = await this.ai.read();
     if (!ai.provider || !ai.path || !ai.accepted) return { error: "Set up AI in Settings first" };
     if (ai.path === "key") {
       const key = this.key.status();
       if (!key.set || key.provider !== ai.provider) return { error: "Add an API key in Settings first" };
     }
-    return { ai: { provider: ai.provider, path: ai.path } };
+    return { ai: { provider: ai.provider, path: ai.path, model: ai.models?.build ?? defaultModel(ai.provider, ai.path, "build") } };
   }
 
   // The TV's asks of the builder, and the phone's when phone is given. True
@@ -961,7 +971,9 @@ export class Daemon {
       return true;
     }
     if (method === "POST" && build && (action === "confirm" || action === "retry")) {
-      answer(action === "confirm" ? await this.builds.confirm(build) : await this.builds.retry(build), `${viewer.name} ${action === "confirm" ? "confirmed" : "retried"} a build`);
+      // "Make X?" can pick another model for this build (ADR-103).
+      const model = action === "confirm" ? ((await this.body(request)) as { model?: unknown } | undefined)?.model : undefined;
+      answer(action === "confirm" ? await this.builds.confirm(build, model) : await this.builds.retry(build), `${viewer.name} ${action === "confirm" ? "confirmed" : "retried"} a build`);
       return true;
     }
     this.json(response, 404, { ok: false, error: "not found" });
@@ -1605,16 +1617,18 @@ export class Daemon {
       return;
     }
 
-    // Arrange home (S4.7): the viewer's grid and the apps that can go on it.
+    // Arrange home (S4.7): the viewer's grid and the apps that can go on it,
+    // and the TV's look, since Glass and Cinema draw home as rows (ADR-103).
     if (method === "GET" && path === "/api/phone/home") {
       const viewer = await this.profiles.active();
-      const [apps, layout] = await Promise.all([this.home.apps(viewer), this.home.layout(viewer.id, viewer.role)]);
+      const [apps, layout, looks] = await Promise.all([this.home.apps(viewer), this.home.layout(viewer.id, viewer.role), this.features.on("looks")]);
       this.json(response, 200, {
         ok: true,
         viewer,
         appsTile: APPS_TILE,
-        apps: apps.map((app) => ({ id: app.id, name: app.name, sizes: app.sizes })),
+        apps: apps.map((app) => ({ id: app.id, name: app.name, category: app.category, sizes: app.sizes })),
         layout,
+        look: looks ? await currentLook({ root: this.options.root, state: this.options.state }) : null,
       });
       return;
     }
@@ -2051,8 +2065,8 @@ export class Daemon {
       adult: async () => (await this.profiles.active()).role === "adult",
       said: () => this.say.current,
       find: (build) => this.builds.find(build),
-      confirm: async (build) => {
-        const done = await this.builds.confirm(build);
+      confirm: async (build, model) => {
+        const done = await this.builds.confirm(build, model);
         void this.watchBuilds();
         return done;
       },
@@ -3112,6 +3126,12 @@ export class Daemon {
       this.json(response, 200, { ok: true, ...(await this.ai.read()), offers: await this.ai.offers(), channel: await this.channel(), read: TERMS_READ, key: { set, provider } });
       return;
     }
+
+    // How much of the plan is used, in % (ADR-103).
+    if (await planUsageRoutes({ ai: () => this.ai.read(), usages: this.planUsages, adult: async () => (await this.profiles.active()).role === "adult", json: (s, status, data) => this.json(s, status, data) }, request, response, url)) return;
+
+    // The household's models for asking and building (ADR-103).
+    if (await aiModelRoutes({ ai: this.ai, adult: async (q, s, what) => this.guarded(q, s, what) && (await this.adult(q, s, what)), body: (q) => this.body(q), json: (s, status, data) => this.json(s, status, data), changed: (state) => this.broadcast("ai", state), log: this.log }, request, response, path)) return;
 
     // The provider and path picked on the TV, or none, to pick again. Past
     // the PIN, once there is one, and a child's profile can't.

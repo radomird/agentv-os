@@ -81,12 +81,19 @@ function said(offer: AiInfo["offers"][Provider], now: PlanSignIn | null): string
 
 // The ways in for one provider: its plan, signed in right here, a key from
 // the phone, or later. Once its plan is picked and the terms are accepted,
-// the sign-in starts by itself, and its link shows as a QR code.
+// the sign-in starts by itself, and its link shows as a QR code. Then the
+// code to scan and the steps sit together in the middle (ADR-103, Q314):
+// scan it, sign in, and paste the code back or enter the one shown, with
+// the other ways in under them.
 export function ways(ctx: Ctx, provider: Provider): View {
   const offer = ctx.ai!.offers[provider];
   const line = h("p", { class: "setup-line", "data-line": "sign-in" });
   const qr = h("img", { class: "qr", alt: "The sign-in's code to scan" }) as HTMLImageElement;
-  const qrBox = h("div", { class: "ai-qr hidden" }, h("span", { class: "qr-box" }, qr));
+  const corner = (at: string) => h("span", { class: `qr-corner ${at}` });
+  const qrBox = h("div", { class: "ai-qr hidden" }, h("span", { class: "qr-frame" }, corner("tl"), corner("tr"), corner("bl"), corner("br"), h("span", { class: "qr-box" }, qr)));
+  const lastSaid = h("span", {});
+  const lastStep = h("li", { "data-step": "code" }, lastSaid);
+  const steps = h("ol", { class: "ai-steps hidden" }, h("li", { "data-step": "scan" }, "Scan the code"), h("li", { "data-step": "sign-in" }, "Sign in on the page it opens"), lastStep);
   const field = h("input", { class: "text-field ai-code", type: "text", "data-focus": true, "data-action": "sign-in-code", "aria-label": "The code the sign-in gave you", placeholder: "Paste the code", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
   const send = h("button", { class: "button primary", "data-focus": true, "data-action": "send-code", onclick: () => void sendCode() }, "Send");
   const paste = h("div", { class: "ai-paste hidden" }, field, send);
@@ -98,22 +105,34 @@ export function ways(ctx: Ctx, provider: Provider): View {
   const draw = () => {
     // The code to enter keeps its capitals.
     const code = now?.now?.state === "waiting" && offer.plan.offered && !now.signedIn ? now.now.code : undefined;
-    if (code) line.replaceChildren("Scan to sign in, then enter ", asWritten(code));
-    else line.textContent = said(offer, now);
     const url = now?.now?.state === "waiting" ? now.now.url : undefined;
+    const pastes = Boolean(url && now?.now?.pastes && !code);
+    // With the steps beside the code to scan, the line under the headline
+    // says which plan, and the steps say what to do.
+    line.textContent = url ? `On your phone, with your ${offer.plan.name} plan` : said(offer, now);
     qrBox.classList.toggle("hidden", !url);
+    steps.classList.toggle("hidden", !url);
+    connect.classList.toggle("signing", Boolean(url));
     if (url && url !== shown) {
       shown = url;
       qr.src = `/api/ai/sign-in/qr?at=${Date.now()}`;
     }
-    const pastes = Boolean(now?.now?.state === "waiting" && now.now.pastes && !now.now.code);
+    // The last step: the code it gives, pasted here, or the one to enter there.
+    if (code) lastSaid.replaceChildren("Enter ", asWritten(code), " when it asks");
+    else lastSaid.textContent = "Paste the code it gives you";
+    lastStep.classList.toggle("hidden", !code && !pastes);
     const appears = pastes && paste.classList.contains("hidden");
     paste.classList.toggle("hidden", !pastes);
+    // While it signs in, the plan is in use: its button goes, and the focus
+    // with it, to the next way in.
+    const on = ctx.focus.get();
+    plan?.classList.toggle("hidden", Boolean(url));
+    if (url && on && on === plan) ctx.focus.set(keyButton);
     // The field takes the focus as it shows, so the phone's keyboard opens
     // by itself and its paste goes straight in: no mouse needed (ADR-103).
     // Not from under the PIN's pad, which has the keys while it's up.
-    const on = ctx.focus.get();
-    if (appears && field.isConnected && (!on || paste.parentElement?.contains(on))) ctx.focus.set(field);
+    const now2 = ctx.focus.get();
+    if (appears && field.isConnected && (!now2 || connect.contains(now2))) ctx.focus.set(field);
   };
 
   const look = async () => {
@@ -207,8 +226,10 @@ export function ways(ctx: Ctx, provider: Provider): View {
   const plan = offer.plan.offered ? h("button", { class: "button primary", "data-focus": true, "data-path": "plan", onclick: () => void choose("plan") }, "Use my plan") : null;
   const keyButton = h("button", { class: `button${plan ? "" : " primary"}`, "data-focus": true, "data-path": "key", onclick: () => void choose("key") }, "Use an API key");
   const later = h("button", { class: "button", "data-focus": true, "data-action": "later", onclick: () => void ctx.finish("ai") }, "Later");
-  const options = h("div", { class: "ai-options" }, ...(plan ? [plan] : []), keyButton, later, paste);
-  const el = page(ctx, `origaitv ai ${offer.name}`, `Sign in to ${offer.name}`, line, options, qrBox);
+  const options = h("div", { class: "ai-options" }, ...(plan ? [plan] : []), keyButton, later);
+  lastStep.append(paste);
+  const connect = h("div", { class: "ai-connect" }, qrBox, h("div", { class: "ai-side" }, steps, options));
+  const el = page(ctx, `origaitv ai ${offer.name}`, `Sign in to ${offer.name}`, line, connect);
   draw();
 
   // Back here with the plan picked and its terms accepted: the sign-in

@@ -159,18 +159,33 @@ bothWays("askbuilds", "T11.2 the TV's Ask makes an app to the confirm and a tile
     await typeAsk(page, "make me a game like tetris");
     await page.waitForSelector(".build-page", { timeout: 10_000 });
     const start = rootTakes(state);
-    assert.deepEqual([start.phase, start.sentence, start.id], ["understand", "blocks", "local.blocks"]);
+    assert.deepEqual([start.phase, start.sentence, start.id, start.model], ["understand", "blocks", "local.blocks", "claude-sonnet-5-5"], "it's read on the household's model for building");
     status(builds, start.build, "1.0.0", { state: "confirm", understood: UNDERSTOOD });
     await page.waitForFunction(() => document.querySelector(".build-page")?.getAttribute("data-state") === "confirm", undefined, { timeout: 10_000 });
     assert.match(await page.locator(".build-page").innerText(), /make blocks\?[\s\S]*it stays on this tv · about \$/);
     assert.doesNotMatch(await page.locator(".build-page").innerText(), /recipe/);
-    // The phone has the same confirm, in its Ask.
+    // The model row (Q311): the household's, and left and right go through
+    // the list a key can use. The focus starts on Make it.
+    assert.equal(await page.locator(".focused").getAttribute("data-action"), "confirm");
+    assert.match(await page.locator('[data-action="model"]').innerText(), /^model\s+sonnet 5\.5$/);
+    await page.keyboard.press("ArrowUp");
+    assert.equal(await page.locator(".focused").getAttribute("data-action"), "model");
+    await page.keyboard.press("ArrowRight");
+    assert.match(await page.locator('[data-action="model"]').innerText(), /haiku 5\.5$/);
+    await page.keyboard.press("ArrowRight");
+    assert.match(await page.locator('[data-action="model"]').innerText(), /opus 5\.5$/, "round to the strongest, and no Fable with a key, as it isn't priced");
+    await page.keyboard.press("ArrowLeft");
+    assert.match(await page.locator('[data-action="model"]').innerText(), /haiku 5\.5$/);
+    // The phone has the same confirm, in its Ask, with the list.
     const ask = await (await token.fetch(`/api/phone/ask`)).json();
-    assert.deepEqual([ask.ask.kind, ask.ask.state, ask.ask.recipe], ["build", "confirm", "game"]);
-    await page.locator('[data-action="confirm"]').click();
+    assert.deepEqual([ask.ask.kind, ask.ask.state, ask.ask.recipe, ask.ask.model], ["build", "confirm", "game", "claude-sonnet-5-5"]);
+    assert.deepEqual(ask.ask.models.map((m: { name: string }) => m.name), ["Opus 5.5", "Sonnet 5.5", "Haiku 5.5"]);
+    await page.keyboard.press("ArrowDown");
+    assert.equal(await page.locator(".focused").getAttribute("data-action"), "confirm");
+    await page.keyboard.press("Enter");
     await page.waitForFunction(() => document.querySelector(".build-page")?.getAttribute("data-state") !== "confirm");
     const built = rootTakes(state);
-    assert.deepEqual([built.phase, built.recipe], ["build", "game"]);
+    assert.deepEqual([built.phase, built.recipe, built.model], ["build", "game", "claude-haiku-5-5"]);
 
     // Building: its tile on home says the step it's on, by its number and
     // its name.
@@ -200,7 +215,7 @@ bothWays("askbuilds", "T11.2 the TV's Ask makes an app to the confirm and a tile
     await page.locator('[data-action="confirm"]').click();
     await page.waitForSelector(".build-page:not(.ask-change)", { timeout: 10_000 });
     const changed = rootTakes(state);
-    assert.deepEqual([changed.version, changed.from, changed.change], ["1.1.0", "1.0.0", "make the pieces fall faster"]);
+    assert.deepEqual([changed.version, changed.from, changed.change, changed.model], ["1.1.0", "1.0.0", "make the pieces fall faster", "claude-haiku-5-5"], "a change keeps the model it was made on");
 
     // A child: the bar's Ask is theirs too, and a make is "ask a grown-up".
     assert.equal((await fetch(`${url}/api/pin`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin: "2468" }) })).status, 200);
@@ -246,10 +261,15 @@ test("T11.2 on the phone's remote, Ask is the same box, and a make your agent re
     // The sheet stays up after the send, and shows what the agent read.
     status(builds, start.build, "1.0.0", { state: "confirm", understood: UNDERSTOOD });
     await hand.waitForSelector('#r2-sheet [data-ask="confirm"]', { timeout: 10_000 });
-    assert.match(await hand.locator('#r2-sheet [data-ask="confirm"]').innerText(), /^Your own app\n+Make Blocks\?\n+It stays on this TV\n+Make it\n+Not this$/);
+    assert.match(await hand.locator('#r2-sheet [data-ask="confirm"]').innerText(), /^Your own app\n+Make Blocks\?\n+It stays on this TV\n+Model\n+Opus 5\.5\n+Sonnet 5\.5\n+Haiku 5\.5\n+Make it\n+Not this$/);
+    // The model row (Q311): the household's ticked, and a tap picks another
+    // for this app.
+    assert.equal(await hand.locator('#r2-sheet .ask-models [aria-checked="true"]').innerText(), "Sonnet 5.5");
+    await hand.locator('#r2-sheet [data-model="claude-opus-5-5"]').tap();
+    assert.equal(await hand.locator('#r2-sheet .ask-models [aria-checked="true"]').innerText(), "Opus 5.5");
     await hand.locator('#r2-sheet [data-action="ask-confirm"]').tap();
     for (let i = 0; i < 100 && !existsSync(join(state, "build-drop", "start.json")); i++) await new Promise((done) => setTimeout(done, 50));
-    assert.deepEqual([rootTakes(state).phase], ["build"]);
+    assert.deepEqual(Object.values((({ phase, model }) => ({ phase, model }))(rootTakes(state))), ["build", "claude-opus-5-5"]);
     await hand.close();
   } finally {
     await daemon.close();

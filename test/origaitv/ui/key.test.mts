@@ -232,7 +232,8 @@ test("T17.1 Q143 Settings → AI picks the household's plan: its terms on a phon
     await page.keyboard.press("Escape");
     await phone.waitForFunction(() => !document.getElementById("tv-ask"), null, { timeout: 10_000 });
     const ai = await (await fetch(`${url}/api/key`)).json();
-    assert.deepEqual(ai.ai, { provider: "claude", path: "plan", accepted: true });
+    const { models: _models, ...using } = ai.ai;
+    assert.deepEqual(using, { provider: "claude", path: "plan", accepted: true });
   }
   await phone.close();
   await page.close();

@@ -4,6 +4,11 @@
 // on the box is always one the grid can draw. Terminal at more on screen has
 // a 5 × 4 grid with a layout of its own (ADR-062, D6), so each of these takes
 // the grid, 4 × 3 unless it says.
+//
+// With the looks on, home has no tile limit (ADR-103): a profile's layout is
+// kept on HOME, Terminal's four columns with as many rows as it needs.
+// Terminal's grid shows the tiles in its first three rows, and Glass and
+// Cinema draw every tile in reading order, in rows that grow.
 
 export const COLUMNS = 4;
 export const ROWS = 3;
@@ -15,6 +20,9 @@ export interface Grid {
 
 export const GRID: Grid = { columns: COLUMNS, rows: ROWS };
 export const GRID_MORE: Grid = { columns: 5, rows: 4 };
+// Only so a layout's numbers stay sane: 256 cells is more apps than a TV has.
+export const MOST_ROWS = 64;
+export const HOME: Grid = { columns: COLUMNS, rows: MOST_ROWS };
 
 export type Size = "s" | "m" | "l";
 export const SIZES: Size[] = ["s", "m", "l"];
@@ -42,9 +50,20 @@ function overlaps(a: Placed, b: Placed): boolean {
   return a.x < b.x + sb.w && b.x < a.x + sa.w && a.y < b.y + sb.h && b.y < a.y + sa.h;
 }
 
-function inside(tile: Placed, grid: Grid = GRID): boolean {
+export function inside(tile: Placed, grid: Grid = GRID): boolean {
   const { w, h } = SPAN[tile.size];
   return Number.isInteger(tile.x) && Number.isInteger(tile.y) && tile.x >= 0 && tile.y >= 0 && tile.x + w <= grid.columns && tile.y + h <= grid.rows;
+}
+
+// The tiles a grid shows: those wholly inside it, as Terminal's 4 × 3 shows
+// the first three rows of a layout kept on HOME.
+export function shown(layout: Placed[], grid: Grid = GRID): Placed[] {
+  return layout.filter((tile) => inside(tile, grid));
+}
+
+// The layout's tiles in reading order, the order the row looks draw.
+export function reading(layout: Placed[]): Placed[] {
+  return [...layout].sort((a, b) => a.y - b.y || a.x - b.x);
 }
 
 // The tile at a cell, if any.
@@ -110,6 +129,46 @@ export function pin(layout: Placed[], id: string, size: Size = "s", grid: Grid =
   if (layout.some((tile) => tile.id === id)) return layout;
   const place = firstFree(layout, size, id, grid);
   return place ? [...layout, { id, size, ...place }] : null;
+}
+
+// The layout with these tiles in this reading order, for the row looks,
+// which draw home in order: an app moved in Glass or Cinema. Tiles not named
+// stay where they are. Where each named tile can take the place of the one
+// that comes at its new spot, size for size, it does, so Terminal's grid
+// keeps its shape. Otherwise the named tiles are laid out again around the
+// others, in order, each at the first place after the one before where it
+// fits. Null when a name isn't on the layout, or one has no room.
+export function reorder(layout: Placed[], order: string[], grid: Grid = HOME): Placed[] | null {
+  const moving = order.map((id) => layout.find((tile) => tile.id === id));
+  if (moving.some((tile) => !tile) || new Set(order).size !== order.length) return null;
+  const tiles = moving as Placed[];
+  const slots = reading(tiles);
+  const kept = layout.filter((tile) => !order.includes(tile.id));
+  if (tiles.every((tile, i) => tile.size === slots[i].size)) {
+    const placed = tiles.map((tile, i) => ({ ...tile, x: slots[i].x, y: slots[i].y }));
+    return [...kept, ...placed];
+  }
+  const result = [...kept];
+  let from = { x: slots[0]?.x ?? 0, y: slots[0]?.y ?? 0 };
+  for (const tile of tiles) {
+    const place = freeFrom(result, tile.size, from, grid);
+    if (!place) return null;
+    result.push({ ...tile, ...place });
+    from = place;
+  }
+  return result;
+}
+
+// The first place at or after from, in reading order, where a tile of this
+// size fits.
+function freeFrom(layout: Placed[], size: Size, from: { x: number; y: number }, grid: Grid): { x: number; y: number } | null {
+  for (let y = from.y; y < grid.rows; y++) {
+    for (let x = y === from.y ? from.x : 0; x < grid.columns; x++) {
+      const tile = { id: "", x, y, size };
+      if (inside(tile, grid) && !layout.some((other) => overlaps(tile, other))) return { x, y };
+    }
+  }
+  return null;
 }
 
 export function unpin(layout: Placed[], id: string): Placed[] {

@@ -10,7 +10,7 @@ import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/p
 import { join } from "node:path";
 import { validatePackage, type Manifest, type Tier } from "../apps/contract/manifest.ts";
 import { pagePermissions } from "../apps/contract/page.ts";
-import { GRID, GRID_MORE, pin, problem, type Grid, type Placed, type Size } from "../launcher/layout.ts";
+import { GRID, GRID_MORE, HOME, inside, pin, problem, type Grid, type Placed, type Size } from "../launcher/layout.ts";
 import { boxHost, ownAddresses } from "../apps/contract/address.ts";
 import { AppError, AppHost, allowedOrigins, type AppHostOptions, type Viewer } from "./apps/loader.ts";
 import { readInstalled } from "./apps/install.ts";
@@ -149,22 +149,27 @@ const PIN_SIZE: Record<string, Size> = { [NEW_APP]: "l" };
 
 // A tile pinned in the first place it fits: a built-in that's pinned large
 // at the largest of its sizes that fits, from that one down, and anything
-// else small.
+// else small. On a home with no tile limit, "fits" is Terminal's 4 × 3, so
+// a large or medium tile is one Terminal shows; with no room there, it goes
+// on small, past it, as any app does.
 function pinBuiltin(layout: Placed[], id: string, sizes: Size[] = ["s"], grid: Grid = GRID): Placed[] | null {
   const want = PIN_SIZE[id];
   if (!want) return pin(layout, id, "s", grid);
+  const shown = grid.columns === HOME.columns && grid.rows === HOME.rows ? GRID : grid;
   for (const size of (["l", "m", "s"] as Size[]).slice((["l", "m", "s"] as Size[]).indexOf(want))) {
     if (!sizes.includes(size)) continue;
-    const placed = pin(layout, id, size, grid);
+    const placed = pin(layout, id, size, shown);
     if (placed) return placed;
   }
-  return null;
+  return shown === grid ? null : pin(layout, id, "s", grid);
 }
 
-// Where each grid's layouts are kept: the 4 × 3 one where they always were,
-// and Terminal's 5 × 4 one beside it.
+const isMore = (grid: Grid) => grid.columns === GRID_MORE.columns && grid.rows === GRID_MORE.rows;
+
+// Where each grid's layouts are kept: the profile's own where they always
+// were, 4 × 3 or with no tile limit, and Terminal's 5 × 4 one beside it.
 function layoutFile(grid: Grid): string {
-  return grid.columns === GRID.columns && grid.rows === GRID.rows ? "layouts.json" : `layouts-${grid.columns}x${grid.rows}.json`;
+  return isMore(grid) ? `layouts-${grid.columns}x${grid.rows}.json` : "layouts.json";
 }
 
 // The grid a request asks for by name: "5x4" for Terminal at more on screen,
@@ -897,18 +902,24 @@ export class Home {
   // where they put it.
   //
   // Terminal at more on screen has a 5 × 4 grid with a layout of its own
-  // (D6, Q200). Until the viewer arranges that one, it's the 4 × 3 one they
-  // arranged, in the same places, or every app in order if they never did.
-  // Built-ins are pinned for a viewer once, on the 4 × 3 grid.
-  async layout(viewer: string, role: Viewer["role"] = "adult", grid: Grid = GRID): Promise<Placed[]> {
-    const more = grid.columns === GRID_MORE.columns && grid.rows === GRID_MORE.rows;
-    const saved =
-      (await readJson<Record<string, Placed[]>>(join(this.state, layoutFile(grid)), {}))[viewer] ??
-      (more ? (await readJson<Record<string, Placed[]>>(join(this.state, layoutFile(GRID)), {}))[viewer] : undefined);
+  // (D6, Q200). Until the viewer arranges that one, it's the tiles of their
+  // own layout that fit it, in the same places, or every app in order if
+  // they never arranged home. Built-ins are pinned for a viewer once, on
+  // their own layout.
+  //
+  // With the looks on, a viewer's own layout has no tile limit (ADR-103):
+  // Terminal's four columns and rows that grow, so every app has room.
+  async layout(viewer: string, role: Viewer["role"] = "adult", asked: Grid = GRID): Promise<Placed[]> {
+    const more = isMore(asked);
+    const looks = (await this.looksOn?.().catch(() => false)) ?? false;
+    const grid = this.gridFor(asked, looks);
+    const own = (await readJson<Record<string, Placed[]>>(join(this.state, layoutFile(grid)), {}))[viewer];
+    // Terminal's 5 × 4 starts from the profile's own layout, the tiles that
+    // fit it in the same places.
+    const saved = own ?? (more ? (await readJson<Record<string, Placed[]>>(join(this.state, layoutFile(GRID)), {}))[viewer]?.filter((tile) => inside(tile, GRID_MORE)) : undefined);
     const sizes = await this.sizesById({ id: viewer, role });
     const all = (await this.builtinApps()).map(({ manifest }) => manifest.id);
     const goal = (await this.goal?.().catch(() => null)) ?? null;
-    const looks = (await this.looksOn?.().catch(() => false)) ?? false;
     const first = [...(looks ? PINNED.filter((id) => id !== CLOCK) : PINNED), ...(GOAL_PINS[goal ?? ""] ?? [])];
     const builtins = all.filter((id) => first.includes(id));
     const unpinned = all.filter((id) => !first.includes(id));
@@ -945,7 +956,17 @@ export class Home {
     await writeJson(join(this.state, "builtins-pinned.json"), pinned);
   }
 
-  async saveLayout(viewer: string, layout: unknown, role: Viewer["role"] = "adult", grid: Grid = GRID): Promise<string | null> {
+  // The grid a layout is kept on: Terminal's 5 × 4 when that's asked for,
+  // and otherwise the profile's own, which has no tile limit with the looks
+  // on (ADR-103) and is phase 1's 4 × 3 with them off.
+  private gridFor(asked: Grid, looks: boolean): Grid {
+    if (isMore(asked)) return GRID_MORE;
+    return looks ? HOME : GRID;
+  }
+
+  async saveLayout(viewer: string, layout: unknown, role: Viewer["role"] = "adult", asked: Grid = GRID): Promise<string | null> {
+    const looks = (await this.looksOn?.().catch(() => false)) ?? false;
+    const grid = this.gridFor(asked, looks);
     const sizes = await this.sizesById({ id: viewer, role });
     const why = problem(layout, (id) => sizes.get(id), grid);
     if (why) return why;
