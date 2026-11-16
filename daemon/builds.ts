@@ -69,6 +69,7 @@ export interface BuildView {
   // recipe's, or its plan's.
   cost?: { low: number; high: number };
   minutes?: number;
+  started?: string;
   approval?: BuildStatus["approval"];
   // A plan's sign-in, while the build waits for it, and whether it's one
   // again because the plan's sign-in ran out.
@@ -342,6 +343,8 @@ export class Builds {
         plan: mine?.plan,
         cost: mine?.plan?.cost ?? recipe?.cost,
         minutes: recipe?.minutes,
+        // When it started, for the time left on the building screen.
+        ...(mine?.started ? { started: mine.started } : {}),
         approval: mine?.approval,
         ...(signIn && signIn.state !== "failed" ? { signIn } : {}),
         ...(mine?.state === "plan-sign-in" && mine.ranOut === true && !refused ? { ranOut: true } : {}),
