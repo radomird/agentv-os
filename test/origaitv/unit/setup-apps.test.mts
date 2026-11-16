@@ -66,18 +66,38 @@ const post = (path: string, body: unknown, grant?: string) =>
 
 // Root's side, as origaitv-setup-apps does it: takes the drop away, then says
 // how each app goes.
+// A stand-in for root's side: it takes each drop once it's done with the one
+// before, as origaitv-setup-apps does, and keeps the lines it wrote before.
 function root(drop: string, statusPath: string, outcome: (id: string) => "installed" | "failed" = () => "installed"): () => void {
+  let going = false;
+  let stopped = false;
   const timer = setInterval(() => {
-    if (!existsSync(drop)) return;
+    if (going || stopped || !existsSync(drop)) return;
     const apps: string[] = JSON.parse(readFileSync(drop, "utf8")).apps;
     rmSync(drop);
+    going = true;
     mkdirSync(join(statusPath, ".."), { recursive: true });
-    const write = (state: string) =>
-      writeFileSync(statusPath, JSON.stringify({ apps: Object.fromEntries(apps.map((id) => [id, { state: state === "done" ? outcome(id) : state, ...(state === "done" && outcome(id) === "failed" ? { error: `couldn't fetch ${id}` } : {}) }])) }));
+    const write = (state: string) => {
+      if (stopped) return;
+      let had: Record<string, unknown> = {};
+      try {
+        had = JSON.parse(readFileSync(statusPath, "utf8")).apps ?? {};
+      } catch {
+        // the first line
+      }
+      const lines = Object.fromEntries(apps.map((id) => [id, { state: state === "done" ? outcome(id) : state, ...(state === "done" && outcome(id) === "failed" ? { error: `couldn't fetch ${id}` } : {}) }]));
+      writeFileSync(statusPath, JSON.stringify({ apps: { ...had, ...lines } }));
+    };
     write("installing");
-    setTimeout(() => write("done"), 300);
+    setTimeout(() => {
+      write("done");
+      going = false;
+    }, 300);
   }, 20);
-  return () => clearInterval(timer);
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
 }
 
 test("each goal puts its own official apps first, the rest go under more, and the built-in Music is there, ticked", async () => {
@@ -218,19 +238,24 @@ test("ADR-042 Apps → add an app lists the official apps not on the TV, and add
   assert.equal((await post("/api/apps/add", { id: "someone.else" }, grant)).status, 400, "only an official app");
   assert.equal((await post("/api/apps/add", { id: "origaitv.music" }, grant)).status, 400, "not one already on the TV");
   assert.equal((await post("/api/apps/add", { id: "../steam" }, grant)).status, 400);
-  const stop = root(join(state, "apps-drop", "install.json"), status, () => "failed");
+  const stop = root(join(state, "apps-drop", "install.json"), status, (id) => (id === "origaitv.steam" ? "failed" : "installed"));
   try {
     assert.equal((await post("/api/apps/add", { id: "origaitv.steam" }, grant)).status, 200);
+    // ADR-103: a second one while the first installs waits its turn.
     const second = await post("/api/apps/add", { id: "origaitv.jellyfin" }, grant);
-    assert.equal(second.status, 400);
-    assert.equal((await second.json()).error, "Steam is still installing. Try again after.", "root installs one at a time");
+    assert.equal(second.status, 200, "added to the queue, not refused");
+    assert.equal((await second.json()).apps.find((app: { id: string }) => app.id === "origaitv.jellyfin")?.state, "queued");
     const until = Date.now() + 5000;
     let steam = (await listed()).find((app) => app.id === "origaitv.steam");
-    while (Date.now() < until && steam?.state !== "failed") {
+    // Root's own line for the one queued, since this stand-in puts nothing
+    // on the TV for home to list.
+    const jellyfin = () => JSON.parse(readFileSync(status, "utf8")).apps["origaitv.jellyfin"]?.state;
+    while (Date.now() < until && (steam?.state !== "failed" || jellyfin() !== "installed")) {
       await new Promise((resolve) => setTimeout(resolve, 100));
       steam = (await listed()).find((app) => app.id === "origaitv.steam");
     }
     assert.deepEqual(steam, { id: "origaitv.steam", name: "Steam", description: "Your Steam on the TV", state: "failed", error: "couldn't fetch origaitv.steam" }, "its tile says it failed, and why");
+    assert.equal(jellyfin(), "installed", "and the one queued behind it installed after it");
   } finally {
     stop();
   }
@@ -239,4 +264,125 @@ test("ADR-042 Apps → add an app lists the official apps not on the TV, and add
   await post("/api/viewer", { id: child.id }, grant);
   assert.equal((await fetch(`${url}/api/apps/add`)).status, 403, "a child's profile doesn't see it");
   assert.equal((await post("/api/apps/add", { id: "origaitv.jellyfin" }, grant)).status, 403, "even with the PIN");
+});
+
+// --- Every game platform (ADR-103) -------------------------------------------
+
+const game = (id: string, name: string, tier: IndexEntry["tier"] = "official"): IndexEntry => ({ ...entry(id, name, tier), category: "games" });
+const GAMES_INDEX = [
+  entry("origaitv.jellyfin", "Jellyfin"),
+  game("origaitv.steam", "Steam"),
+  game("origaitv.retroarch", "RetroArch"),
+  game("origaitv.moonlight", "Moonlight"),
+  game("origaitv.xboxcloud", "Xbox Cloud Gaming"),
+  game("origaitv.geforcenow", "GeForce NOW"),
+  game("origaitv.lutris", "Lutris"),
+  game("someone.arcade", "Arcade", "community"),
+];
+
+test("T23.1 setup's games group: every game platform but the goal's own, Steam first, and Steam ticked for gaming on a box that runs games", async () => {
+  const apps = new SetupApps({ state: join(scratch, "games-list"), source: async () => "index", catalog: async () => GAMES_INDEX, status: join(scratch, "none.json") });
+  const streaming = await apps.list("streaming", [MUSIC], false, "light");
+  assert.deepEqual(streaming.games.map((app) => app.id), ["origaitv.steam", "origaitv.geforcenow", "origaitv.lutris", "origaitv.moonlight", "origaitv.retroarch", "origaitv.xboxcloud"], "Steam, then by name, official only");
+  assert.ok(!streaming.more.some((app) => streaming.games.some((one) => one.id === app.id)), "a game isn't under more too");
+  assert.deepEqual(streaming.suggested, [], "nothing ticked for streaming");
+  const gaming = await apps.list("gaming", [MUSIC], false, "light");
+  assert.deepEqual(gaming.for.map((app) => app.id), ["origaitv.steam"], "Steam is gaming's own");
+  assert.ok(!gaming.games.some((app) => app.id === "origaitv.steam"), "and isn't in the games group twice");
+  assert.deepEqual(gaming.suggested, ["origaitv.steam"], "ticked from light up");
+  assert.deepEqual((await apps.list("gaming", [MUSIC], false, "good")).suggested, ["origaitv.steam"]);
+  assert.deepEqual((await apps.list("gaming", [MUSIC], false, null)).suggested, [], "not ticked when the box check hasn't said");
+  // A box that isn't for games is offered the streamed ones only, and no Steam.
+  const none = await apps.list("gaming", [MUSIC], false, "none");
+  assert.deepEqual(none.for, [], "no Steam for gaming");
+  assert.deepEqual(none.suggested, []);
+  assert.deepEqual(none.games.map((app) => app.id), ["origaitv.geforcenow", "origaitv.moonlight", "origaitv.xboxcloud"], "the streamed ones, on any box");
+  assert.ok(!none.more.some((app) => app.id === "origaitv.steam" || app.id === "origaitv.lutris"), "and the rest aren't under more either");
+});
+
+test("T23.1 Settings' Games page lists every game, on the TV or not, with how each is going", async () => {
+  const dir = join(scratch, "games-page");
+  const statusPath = join(dir, "run", "state.json");
+  mkdirSync(join(dir, "run"), { recursive: true });
+  writeFileSync(statusPath, JSON.stringify({ apps: { "origaitv.retroarch": { state: "installing" }, "origaitv.lutris": { state: "failed", error: "Couldn't install lutris" }, "origaitv.moonlight": { state: "installed" } } }));
+  const apps = new SetupApps({ state: dir, source: async () => "index", catalog: async () => GAMES_INDEX, status: statusPath });
+  const here: Present[] = [MUSIC, { id: "origaitv.steam", name: "Steam", tier: "official" }, { id: "origaitv.moonlight", name: "Moonlight", tier: "official" }];
+  const { apps: games } = await apps.games(here);
+  assert.deepEqual(
+    games.map((one) => `${one.id} ${one.installed} ${one.state}${one.error ? ` ${one.error}` : ""}`),
+    [
+      "origaitv.steam true null",
+      "origaitv.geforcenow false null",
+      "origaitv.lutris false failed Couldn't install lutris",
+      "origaitv.moonlight true null",
+      "origaitv.retroarch false installing",
+      "origaitv.xboxcloud false null",
+    ],
+  );
+});
+
+// A root that's busy: what it said, and a drop it hasn't taken.
+function busyRoot(dir: string): { statusPath: string; drop: string; apps: SetupApps } {
+  const statusPath = join(dir, "run", "state.json");
+  mkdirSync(join(dir, "run"), { recursive: true });
+  writeFileSync(statusPath, JSON.stringify({ apps: { "origaitv.steam": { state: "installing", at: new Date().toISOString() } } }));
+  const apps = new SetupApps({ state: dir, source: async () => "index", catalog: async () => GAMES_INDEX, status: statusPath, waitMs: 300, hasDriver: () => false });
+  return { statusPath, drop: join(dir, "apps-drop", "install.json"), apps };
+}
+
+test("T23.1 several games added while one installs go into one hand-over, each queued", async () => {
+  const { drop, apps } = busyRoot(join(scratch, "queue"));
+  assert.equal(await apps.add("origaitv.retroarch", [MUSIC]), null, "not refused");
+  assert.equal(await apps.add("origaitv.xboxcloud", [MUSIC]), null);
+  assert.equal(await apps.add("origaitv.retroarch", [MUSIC]), null, "the same one twice");
+  assert.deepEqual(JSON.parse(readFileSync(drop, "utf8")), { apps: ["origaitv.retroarch", "origaitv.xboxcloud"], remove: [] }, "one hand-over for root to take next");
+  const status = apps.status();
+  assert.equal(status["origaitv.retroarch"].state, "queued");
+  assert.equal(status["origaitv.xboxcloud"].state, "queued");
+  apps.stop();
+});
+
+test("T23.1 removing a game hands it to root, official apps on the TV only, and its line says removing", async () => {
+  const { drop, apps } = busyRoot(join(scratch, "remove"));
+  const here: Present[] = [MUSIC, { id: "origaitv.retroarch", name: "RetroArch", tier: "official" }, { id: "local.blocks", name: "Blocks", tier: "local" }];
+  assert.equal(await apps.remove("origaitv.lutris", here), "That app isn't on your TV");
+  assert.equal(await apps.remove("local.blocks", here), "Only apps from OrigaiTV are removed here");
+  assert.equal(await apps.remove("origaitv.music", here), "Only apps from OrigaiTV are removed here", "not a built-in one");
+  assert.equal(await apps.remove("../x", here), "send the app to remove as its id");
+  assert.equal(await apps.remove("origaitv.retroarch", here), null);
+  assert.deepEqual(JSON.parse(readFileSync(drop, "utf8")), { apps: [], remove: ["origaitv.retroarch"] });
+  assert.equal(apps.status()["origaitv.retroarch"].state, "removing");
+  // Another game added meanwhile joins the same hand-over.
+  assert.equal(await apps.add("origaitv.xboxcloud", here), null);
+  assert.deepEqual(JSON.parse(readFileSync(drop, "utf8")), { apps: ["origaitv.xboxcloud"], remove: ["origaitv.retroarch"] });
+  apps.stop();
+});
+
+test("T23.1 the Xbox controller driver goes to root in turn, and says how it went and when a restart finishes it", async () => {
+  const { statusPath, drop, apps } = busyRoot(join(scratch, "driver"));
+  assert.deepEqual(apps.driver(), { installed: false, state: null });
+  assert.equal(await apps.addDriver(), null);
+  assert.deepEqual(JSON.parse(readFileSync(drop, "utf8")), { apps: [], remove: [], driver: "xpadneo" });
+  assert.equal(apps.driver().state, "queued");
+  assert.equal(await apps.addDriver(), null, "a second press while it's queued does nothing more");
+  writeFileSync(statusPath, JSON.stringify({ apps: {}, drivers: { xpadneo: { state: "installed", restart: true } } }));
+  assert.deepEqual(apps.driver(), { installed: true, state: "installed", restart: true });
+  writeFileSync(statusPath, JSON.stringify({ apps: {}, drivers: { xpadneo: { state: "failed", error: "Couldn't install the driver. Try again later." } } }));
+  assert.deepEqual(apps.driver(), { installed: false, state: "failed", error: "Couldn't install the driver. Try again later." });
+  const there = new SetupApps({ state: join(scratch, "driver-there"), source: async () => "index", catalog: async () => GAMES_INDEX, status: join(scratch, "none.json"), hasDriver: () => true });
+  assert.deepEqual(there.driver(), { installed: true, state: null });
+  assert.equal(await there.addDriver(), "The driver is on your TV already");
+  apps.stop();
+});
+
+test("T23.1 the Games routes: the list for anyone, and removing or adding the driver is an adult's", async () => {
+  // A child's profile is watching, from the test before.
+  const games = await fetch(`${url}/api/games`);
+  assert.equal(games.status, 200);
+  assert.deepEqual((await games.json()).apps, [], "this index has no games");
+  assert.equal((await post("/api/games/remove", { id: "origaitv.steam" })).status, 403);
+  assert.equal((await post("/api/games/driver", {})).status, 403);
+  const driver = await fetch(`${url}/api/games/driver`);
+  assert.equal(driver.status, 200);
+  assert.equal(typeof (await driver.json()).driver.installed, "boolean");
 });

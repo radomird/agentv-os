@@ -3,8 +3,9 @@
 // Cinema in its row of apps, and Terminal's grid shows its first 12 cells and
 // says how many more Apps has. An app added from its details opens home with
 // the focus on it, wherever it went. Move in its details picks it up, the
-// arrows carry it, in four directions in Glass, and OK puts it down and shows
-// it on home. The phone's Edit home draws Glass and Cinema as rows.
+// arrows carry it, in four directions in Glass, across the pinned row's edge
+// too, and OK puts it down and shows it on home. The phone's Edit home draws
+// Glass and Cinema as rows, with Glass's top row first.
 
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -61,7 +62,13 @@ async function setLayout(ids: string[]): Promise<void> {
 }
 const useLook = (look: string) => fetch(`${url}/api/look`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look }) });
 
-beforeEach(() => setLayout(ON_HOME));
+// Glass's pinned row: the first six apps, as on a home that never pinned.
+const PINNED = ON_HOME.slice(0, 6);
+const pinned = async (): Promise<string[]> => (await (await fetch(`${url}/api/home`)).json()).pinned;
+beforeEach(async () => {
+  await setLayout(ON_HOME);
+  assert.equal((await fetch(`${url}/api/pinned`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pinned: PINNED }) })).status, 200);
+});
 
 async function tv(size: keyof typeof SIZES = "standard"): Promise<Page> {
   const width = SIZES[size];
@@ -101,7 +108,9 @@ async function inDetails(page: Page, id: string, action: string): Promise<void> 
   await page.click(`.details [data-action="${action}"]`);
 }
 
-const ROWS = { glass: ".glass-row [data-id]", cinema: ".cinema-row [data-id]" } as const;
+// Where each look draws the apps on home: in Glass, the pinned row, the
+// list's rows of apps and Games, not the apps that aren't on home.
+const ROWS = { glass: ':is(.glass-pinned, .glass-list > .glass-row, [data-section="games"] .glass-row) [data-id]', cinema: ".cinema-row [data-id]" } as const;
 
 for (const look of ["glass", "cinema"] as const) {
   test(`T20.1 ${look}: home draws all 14 apps, past 12, and one added from its details opens home with the focus on it, at each size`, async () => {
@@ -112,7 +121,7 @@ for (const look of ["glass", "cinema"] as const) {
       try {
         const ids = await drawn(page, ROWS[look]);
         assert.deepEqual([...ids].sort(), [...ON_HOME].sort(), `${size}: every app on home is drawn`);
-        if (look === "glass") assert.deepEqual(await page.locator(".glass-row").evaluateAll((rows) => rows.map((row) => row.querySelectorAll("[data-id]").length)), [6, 6, 1, 1], `${size}: rows of six, then the game's`);
+        if (look === "glass") assert.deepEqual(await page.locator('.glass-pinned, .glass-list > .glass-row, [data-section="games"] .glass-row').evaluateAll((rows) => rows.map((row) => row.querySelectorAll("[data-id]").length)), [6, 6, 1, 1], `${size}: the pinned row, rows of six, then the game's`);
         await inDetails(page, "local.kestrel", "home");
         await page.waitForSelector(`#page ${ROWS[look].replace(" [data-id]", "")} [data-id="local.kestrel"].focused`);
         assert.equal(await focused(page), "local.kestrel", `${size}: the focus is on it`);
@@ -164,46 +173,51 @@ test("T20.1 terminal: editing the grid keeps the apps past it", async () => {
   }
 });
 
-test("T20.1 glass: Move in an app's details carries it in four directions, and OK shows it on home", async () => {
+test("T20.1 glass: Move in an app's details carries it in four directions, across the pinned row's edge too, and OK shows it on home", async () => {
   await useLook("glass");
   const page = await tv();
   const at = async () => (await order()).filter((id) => id !== GAME);
+  const apps = ON_HOME.filter((id) => id !== GAME);
   try {
-    // Atlas is the sixth: the first row's last.
+    // Atlas is the pinned row's fifth. Under it in the list is Grove.
     const atlas = "local.atlas";
-    assert.equal(ON_HOME.indexOf(atlas), 4);
+    assert.equal(PINNED.indexOf(atlas), 4);
     await inDetails(page, atlas, "move");
-    await page.waitForSelector(`.row-edit .held[data-id="${atlas}"]`);
-    // Down: to the place under it in the next row.
-    await page.keyboard.press("ArrowDown");
-    await page.waitForSelector(`.row-edit .held[data-id="${atlas}"]`);
-    // Right, up and left again: back near where it started.
-    await page.keyboard.press("ArrowRight");
-    await page.keyboard.press("ArrowUp");
+    await page.waitForSelector(`.row-edit .glass-pinned .held[data-id="${atlas}"]`);
+    // Left and right along the pinned row, down into the list, where it and
+    // Grove swap, and up again: where it started.
     await page.keyboard.press("ArrowLeft");
+    await page.waitForSelector(`.row-edit .glass-pinned [data-id="${atlas}"]:nth-child(4)`);
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowDown");
+    await page.waitForSelector(`.row-edit .glass-list .held[data-id="${atlas}"]`);
+    assert.ok(await page.locator('.row-edit .glass-pinned [data-id="local.grove"]').count(), "Grove came up");
+    await page.keyboard.press("ArrowUp");
+    await page.waitForSelector(`.row-edit .glass-pinned .held[data-id="${atlas}"]`);
     await page.keyboard.press("Enter");
     await page.waitForSelector(`.glass-home:not(.editing) [data-id="${atlas}"].focused`);
     assert.equal(await focused(page), atlas, "home has the focus on it");
-    const apps = await at();
-    // Down took it from the 5th place to the 11th, right to the 12th, up to
-    // the 6th and left to the 5th: where it started.
-    assert.equal(apps.indexOf(atlas), 4);
-    assert.deepEqual(apps, ON_HOME.filter((id) => id !== GAME));
-    // Down then OK: it's kept where it went.
+    assert.deepEqual(await at(), apps, "home's order is as it was");
+    assert.deepEqual(await pinned(), PINNED, "and so is the pinned row");
+    // Down then OK: Atlas and Grove are kept swapped, and home opens with
+    // the list up, on Atlas.
     await inDetails(page, atlas, "move");
     await page.waitForSelector(`.row-edit .held[data-id="${atlas}"]`);
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
-    await page.waitForSelector(`.glass-home:not(.editing) [data-id="${atlas}"].focused`);
-    assert.equal((await at()).indexOf(atlas), 10);
-    // Below the last row of apps is the game's row: an app doesn't go there.
+    await page.waitForSelector(`.glass-home.list:not(.editing) .glass-list [data-id="${atlas}"].focused`);
+    const swapped = apps.map((id) => (id === atlas ? "local.grove" : id === "local.grove" ? atlas : id));
+    assert.deepEqual(await at(), swapped);
+    assert.deepEqual(await pinned(), PINNED.map((id) => (id === atlas ? "local.grove" : id)));
+    // In the list: down to the row under, then down again, where the game's
+    // row is, which an app doesn't go to.
     await inDetails(page, atlas, "move");
     await page.waitForSelector(`.row-edit .held[data-id="${atlas}"]`);
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await page.waitForSelector(`.glass-home:not(.editing) [data-id="${atlas}"].focused`);
-    assert.equal((await at()).indexOf(atlas), 12, "the last row of apps, not the game's");
+    assert.equal((await at()).indexOf(atlas), 12, "the list's last row of apps, not the game's");
     assert.equal((await order()).at(-1), GAME);
   } finally {
     await page.close();
@@ -233,11 +247,15 @@ test("T20.1 cinema: Move in an app's details carries it along the row of apps, a
   }
 });
 
-test("T20.1 the phone's Edit home draws Glass's home as rows of six, then the games, and a tap moves an app there", async () => {
+test("T20.1 the phone's Edit home draws Glass's top row, then rows of six, then the games, and a tap moves an app there", async () => {
   await useLook("glass");
   await fetch(`${url}/api/phones/pair`, { method: "POST" });
   const hand = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   hand.on("pageerror", (error) => errors.push(error.message));
+  const until = async (check: () => Promise<boolean>) => {
+    const end = Date.now() + 3000;
+    while (!(await check()) && Date.now() < end) await new Promise((r) => setTimeout(r, 50));
+  };
   try {
     await hand.goto(`${phoneUrl}/#pair=${daemon.phones.secret()}`);
     await hand.waitForSelector(".dpad");
@@ -245,18 +263,39 @@ test("T20.1 the phone's Edit home draws Glass's home as rows of six, then the ga
     await hand.waitForSelector(".mini-rows");
     assert.equal(await hand.locator(".mini-grid").count(), 0, "not Terminal's grid");
     const rows = await hand.locator(".mini-rows").evaluateAll((all) => all.map((row) => [...row.querySelectorAll<HTMLElement>("[data-id]")].map((el) => el.dataset.id)));
-    assert.deepEqual(rows, [ON_HOME.filter((id) => id !== GAME), [GAME]]);
-    assert.equal(await hand.locator(".mini-rows").first().evaluate((row) => getComputedStyle(row).gridTemplateColumns.split(" ").length), 6);
-    // Birch to where Tube is: the others move along one.
+    const list = ON_HOME.filter((id) => id !== GAME && !PINNED.includes(id));
+    assert.deepEqual(rows, [PINNED, list, [GAME]]);
+    assert.ok(await hand.locator(".mini-rows.mini-pinned").count(), "the top row is first, in its panel");
+    assert.equal(await hand.locator(".mini-rows").nth(1).evaluate((row) => getComputedStyle(row).gridTemplateColumns.split(" ").length), 6);
+    // Birch to where Tube is, in the top row: only its order changes.
     await hand.locator('.mini-tile[data-id="local.birch"]').tap();
     assert.match(await hand.locator(".sizes").innerText(), /Birch/);
     await hand.locator('.mini-tile[data-id="origaitv.tube"]').tap();
     await hand.waitForFunction(() => !document.querySelector(".mini-tile.picked"));
-    const expected = ON_HOME.filter((id) => id !== "local.birch");
-    expected.splice(1, 0, "local.birch");
-    const until = Date.now() + 3000;
-    while (JSON.stringify(await order()) !== JSON.stringify(expected) && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
-    assert.deepEqual(await order(), expected);
+    const top = ["origaitv.sample", "local.birch", ...PINNED.slice(1, 5)];
+    await until(async () => JSON.stringify(await pinned()) === JSON.stringify(top));
+    assert.deepEqual(await pinned(), top);
+    assert.deepEqual(await order(), ON_HOME, "home's order is as it was");
+    // Cove, in the list, onto Tube: the two swap across the edge.
+    await hand.locator('.mini-tile[data-id="local.cove"]').tap();
+    await hand.locator('.mini-tile[data-id="origaitv.tube"]').tap();
+    const swapped = top.map((id) => (id === "origaitv.tube" ? "local.cove" : id));
+    await until(async () => JSON.stringify(await pinned()) === JSON.stringify(swapped));
+    assert.deepEqual(await pinned(), swapped);
+    assert.deepEqual(await order(), ON_HOME.map((id) => (id === "origaitv.tube" ? "local.cove" : id === "local.cove" ? "origaitv.tube" : id)));
+    await hand.waitForSelector('.mini-pinned .mini-tile[data-id="local.cove"]');
+    // The top row is full: another can't go on it from here.
+    await hand.locator('.mini-tile[data-id="local.inlet"]').tap();
+    assert.ok(await hand.locator('[data-action="top-row"]').isDisabled(), "Top row is full");
+    // Off it, and the room left takes another.
+    await hand.locator('.mini-tile[data-id="local.inlet"]').tap();
+    await hand.locator('.mini-tile[data-id="local.cove"]').tap();
+    await hand.locator('[data-action="top-row"]').tap();
+    await until(async () => !(await pinned()).includes("local.cove"));
+    await hand.locator('.mini-tile[data-id="local.inlet"]').tap();
+    await hand.locator('[data-cell="top-5"]').tap();
+    await until(async () => (await pinned()).includes("local.inlet"));
+    assert.deepEqual(await pinned(), [...swapped.filter((id) => id !== "local.cove"), "local.inlet"]);
     // An app not on home goes on with Add, past 12.
     await hand.locator('[data-pin="local.lumen"]').tap();
     await hand.waitForSelector('.mini-rows .mini-tile[data-id="local.lumen"]');

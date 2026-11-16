@@ -12,6 +12,7 @@ import { yourBox } from "./box.ts";
 import { country, pick as pickCountry } from "./country.ts";
 import { goal, goal2 } from "./goal.ts";
 import { location, pickLocation, zoneQuestion } from "./location.ts";
+import { fitStep } from "./fit.ts";
 import { look } from "./look.ts";
 import type { Ctx, View } from "./main.ts";
 import { people, people2, person } from "./people.ts";
@@ -48,6 +49,8 @@ export const SCREENS: Record<string, Screen> = {
   "apps/add": (ctx) => addYourOwn(ctx),
   "apps/network": serverPage,
   look: look,
+  // Fit to screen, right after the size (ADR-103).
+  "look/fit": fitStep,
   theme: two(themeBackground, theme),
   "theme/colours": theme,
   "theme/own": (ctx) => addYourOwn(ctx, "theme"),

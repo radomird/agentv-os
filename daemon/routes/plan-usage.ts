@@ -1,7 +1,9 @@
 // How much of the household's plan is used (ADR-103, Q313):
 // - GET /api/ai/usage: { ok, plan, usage }. plan is whether a plan is in
 //   use, its terms accepted; usage its windows (daemon/plan-usage.ts), or
-//   null where the check can't answer, and then the TV says it's using the
+//   no windows and signIn where the plan's sign-in ran out or was never
+//   done, and then the TV offers signing in. usage is null where the check
+//   can't answer with today's numbers, and then the TV says it's using the
 //   plan. ?fresh asks again now rather than keep the last answer.
 // Adults only, as the rest of AI in Settings is. Never a dollar amount.
 

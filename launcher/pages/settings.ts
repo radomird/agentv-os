@@ -23,6 +23,7 @@ import { powerRows } from "./power.ts";
 import { aboutBox } from "./box.ts";
 import { aiPanel, aiValue, keyState, providerName, setKeyState } from "./key.ts";
 import { controllerRows, controllersPanel, loadControllers } from "./controllers.ts";
+import { gamesPanel, gamesValue, loadDriver, loadGames, xboxRow } from "./games.ts";
 import { loadPhones, phoneRows, phones } from "./phones.ts";
 import { loadNetwork, networkPanel, networkRows, watchNetwork } from "./wifi.ts";
 import { profileRows } from "./profiles.ts";
@@ -35,7 +36,7 @@ import { desktopPasswordNote, loadDesktopPassword, needsPassword } from "./deskt
 import { loadNews, newsPanel, newsState, newsValue } from "./tmdb.ts";
 import { TMDB_LOGO, TMDB_NOTICE } from "../tmdb-logo.ts";
 import { logoFor } from "../origaitv-logo.ts";
-import { loadSizes, resolutionName, setOutput, setSize, SIZE_NAMES, sizes, stepped } from "../size.ts";
+import { loadSizes, pictureSize, resolutionName, setOutput, setSize, SIZE_NAMES, sizes, stepped } from "../size.ts";
 import { properUnits } from "../box-lines.ts";
 
 // The times the screen saver can wait, in minutes (ADR-031).
@@ -307,6 +308,14 @@ export function settings(ctx: Ctx, open?: string): View {
     if (menu.isConnected) ctx.render("settings/look", "size");
   };
 
+  // Fit to screen's row: how much of the screen the picture fills, and its
+  // page. Only with the sizes on, which it rides on.
+  const fitRow = (): HTMLElement[] => {
+    const display = sizes();
+    if (!display) return [];
+    return [row("fit", "Fit to screen", display.margin === 0 ? "Whole screen" : `${pictureSize(display.margin)}%`, () => ctx.go("fit"))];
+  };
+
   // The resolution row, on a TV with more than 1080p: its full resolution,
   // or 1080p output, which the TV scales up. OK and left and right switch.
   const resolutionRow = (): HTMLElement[] => {
@@ -498,6 +507,8 @@ export function settings(ctx: Ctx, open?: string): View {
         // The TV's size (ADR-062), stepped with left and right, or OK for
         // the next one.
         ...(lookId() ? [sizeRow(), ...resolutionRow()] : []),
+        // Fit to screen (ADR-103): its own page, with the corner marks.
+        ...fitRow(),
         ...backgroundRows(),
         row("idle", "Screen saver", `After ${s.idleMinutes} min`, () => void save({ idleMinutes: IDLE[(IDLE.indexOf(s.idleMinutes) + 1) % IDLE.length] }, "look", "idle"), true),
         toggle("Reduce motion", s.reduceMotion, "motion", () => save({ reduceMotion: !s.reduceMotion }, "look", "motion")),
@@ -527,6 +538,8 @@ export function settings(ctx: Ctx, open?: string): View {
       rows: () => [
         h("button", { class: "button", "data-focus": true, "data-action": "edit", onclick: () => ctx.edit() }, "Edit home"),
         row("apps", "All apps", String(ctx.state.apps.length), () => ctx.go("apps")),
+        // Every game platform, to add and remove (ADR-103).
+        row("games", "Games", gamesValue(), () => openPage("games")),
         row("weather", "Weather", weather ? weather.name || "No city yet" : "", () => openPage("weather")),
         // What came out this week on the household's apps, from TMDB (S8.1).
         row("tmdb", "New this week", newsValue(), () => openPage("tmdb")),
@@ -540,7 +553,13 @@ export function settings(ctx: Ctx, open?: string): View {
     {
       key: "phones",
       label: "Phones and controllers",
-      rows: () => [...phoneRows(ctx), ...controllerRows((action) => openPage("controllers", action)), h("button", { class: "button", "data-focus": true, "data-action": "controllers", onclick: () => openPage("controllers") }, "Pair a controller")],
+      rows: () => [
+        ...phoneRows(ctx),
+        ...controllerRows((action) => openPage("controllers", action)),
+        h("button", { class: "button", "data-focus": true, "data-action": "controllers", onclick: () => openPage("controllers") }, "Pair a controller"),
+        // The driver for Xbox controllers over Bluetooth (ADR-103).
+        xboxRow(ctx, () => refresh("phones")),
+      ],
     },
     ...(adult ? [{ key: "network", label: "Network", rows: () => networkRows(() => openPage("wifi")) }] : []),
     ...(adult
@@ -575,6 +594,8 @@ export function settings(ctx: Ctx, open?: string): View {
     { key: "pictures", in: "look", panel: themePictures },
     { key: "weather", in: "home", panel: weatherPanel },
     { key: "tmdb", in: "home", panel: () => newsPanel(ctx) },
+    // The game platforms (ADR-103): add one, remove one.
+    { key: "games", in: "home", panel: () => gamesPanel(ctx) },
     { key: "pin", in: "profiles", panel: pinPanel },
     // System's Power: Restart, Shut down, the boot menu and sleep (ADR-095).
     ...(adult ? [{ key: "power", in: "tv", panel: () => [h("div", { class: "panel-title" }, "Power"), ...powerRows(ctx)] }] : []),
@@ -708,6 +729,8 @@ export function settings(ctx: Ctx, open?: string): View {
   follow(() => desktopPasswordNote().map((line) => line.textContent), loadDesktopPassword(), "desktop");
   follow(() => phones, loadPhones(), "phones");
   follow(() => controllerRows().map((one) => one.textContent), loadControllers(), "phones");
+  follow(() => gamesValue(), loadGames(), "home");
+  follow(() => xboxRow(ctx, () => {})?.textContent, loadDriver(), "phones");
   follow(() => keyState, daemon.key().then((found) => setKeyState({ set: found.set, provider: found.provider, plans: found.plans, ai: found.ai })), "ai", "your-ai");
   follow(() => buildsState(), loadBuilds(ctx), "ai", "usage", "theme");
   // How much of a plan is used (ADR-103).

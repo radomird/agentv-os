@@ -6,8 +6,8 @@
 --
 -- Every window opens out of sight, on a special workspace that's never shown,
 -- and without focus. The daemon brings the one it wants to workspace 1 and
--- makes it full screen. So nothing takes the screen on its own, even before
--- the daemon has seen it.
+-- makes it full screen, or maximizes it inside Fit to screen's margin. So
+-- nothing takes the screen on its own, even before the daemon has seen it.
 
 local origaitv_path = os.getenv("ORIGAITV_PATH") or "/usr/share/origaitv"
 
@@ -27,10 +27,13 @@ hl.env("HYPRCURSOR_SIZE", "24")
 -- sets them for the size picked, the TV's full resolution at a scale that
 -- turns it into a 1600, 1920 or 2400 wide canvas, and keeps the last ones it
 -- set on one line in ~/.local/state/origaitv/display, such as
--- "HDMI-A-1 3840x2160@60 2". The session starts at that line, so there's no
--- flash of another mode before the daemon looks. With no line (the sizes
+-- "HDMI-A-1 3840x2160@60 2 58 32". The last two are Fit to screen's margin
+-- (ADR-103), across and down in logical pixels, which the monitor keeps as
+-- its reserved area: maximized apps and the sign-in bar stay inside it. The
+-- session starts at that line, so there's no flash of another mode, or of
+-- apps out to the edges, before the daemon looks. With no line (the sizes
 -- switched off, or a TV it hasn't seen yet), the TV's preferred mode at
--- Hyprland's automatic scale.
+-- Hyprland's automatic scale, and no margin.
 hl.monitor({ output = "", mode = "preferred", position = "auto", scale = "auto" })
 
 local function kept_display()
@@ -44,19 +47,30 @@ local function kept_display()
   end
   local line = file:read("*l") or ""
   file:close()
-  -- Only a plain connector name, mode and number, since they go into the
-  -- monitor's rule.
-  local output, mode, scale = line:match("^([%w%._%-]+) (%d+x%d+@[%d%.]+) ([%d%.]+)$")
+  -- Only a plain connector name, mode and numbers, since they go into the
+  -- monitor's rule. A line from before Fit to screen has no margin.
+  local output, mode, scale, x, y = line:match("^([%w%._%-]+) (%d+x%d+@[%d%.]+) ([%d%.]+) (%d+) (%d+)$")
+  if not output then
+    output, mode, scale = line:match("^([%w%._%-]+) (%d+x%d+@[%d%.]+) ([%d%.]+)$")
+  end
   scale = tonumber(scale)
-  if output and #output <= 32 and scale and scale > 0 and scale <= 8 then
-    return { output = output, mode = mode, scale = scale }
+  x = tonumber(x) or 0
+  y = tonumber(y) or 0
+  if output and #output <= 32 and scale and scale > 0 and scale <= 8 and x <= 2048 and y <= 2048 then
+    return { output = output, mode = mode, scale = scale, x = x, y = y }
   end
   return nil
 end
 
 local kept = kept_display()
 if kept then
-  hl.monitor({ output = kept.output, mode = kept.mode, position = "auto", scale = kept.scale })
+  hl.monitor({
+    output = kept.output,
+    mode = kept.mode,
+    position = "auto",
+    scale = kept.scale,
+    reserved = { top = kept.y, right = kept.x, bottom = kept.y, left = kept.x },
+  })
 end
 
 -- The keyboard layout the installer set, the way Omarchy's desktop reads it.

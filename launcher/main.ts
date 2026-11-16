@@ -12,6 +12,7 @@ import { Focus } from "./focus.ts";
 import { listen as listenInput, type Action } from "./input.ts";
 import type { Placed } from "./layout.ts";
 import { addApp, installMoved } from "./pages/add-app.ts";
+import { gamesMoved } from "./pages/games.ts";
 import { appSetup } from "./pages/app-setup.ts";
 import { buildAsk, buildChange, buildPage, buildsMoved, loadBuilds } from "./pages/build.ts";
 import { apps } from "./pages/apps.ts";
@@ -42,8 +43,11 @@ import { field } from "../setup/frame.ts";
 import { applyLook, canvas, loadLook, lookId, preview, previewColours } from "./looks/looks.ts";
 import { onFeatures } from "./features.ts";
 import { lookHome } from "./looks/homes.ts";
+import { openNext } from "./looks/glass/home.ts";
 import { forgetTiles, onTileLanded } from "./looks/cards.ts";
 import { setWatching } from "./loading.ts";
+import { applyMargin, loadSizes } from "./size.ts";
+import { fitPage } from "./pages/fit.ts";
 import { forecast } from "./pages/forecast.ts";
 import { newWeek } from "./pages/new-week.ts";
 import { checkWhileAmbient } from "./box.ts";
@@ -55,6 +59,9 @@ export interface View {
   focused?(el: HTMLElement): void;
   // True while the page has the pointer, as edit mode does during a drag.
   busy?(): boolean;
+  // Apps in the bar, where a look's home has Apps in it, as Glass's list
+  // (D12). True when the home took it.
+  apps?(): boolean;
 }
 
 export interface Ctx {
@@ -86,6 +93,8 @@ export interface Ctx {
   // The ambient screen, as the built-in Clock opens it.
   ambient(): void;
   saveLayout(layout: Placed[]): Promise<boolean>;
+  // Glass's pinned row (D12), kept as it is saved.
+  savePinned(pinned: string[]): Promise<boolean>;
   // The grant from the PIN entered earlier in this visit, while it lasts.
   held(): string | undefined;
   saveSettings(change: Partial<Settings>, grant?: string): Promise<void>;
@@ -135,6 +144,16 @@ const ctx: Ctx = {
       void grantFor("settings").then((grant) => grant !== null && ctx.go(route));
       return;
     }
+    // In Glass, Apps is home's list (D12): it comes up on home, from home
+    // itself or from any other page.
+    if (route === "apps" && lookId() === "glass") {
+      if (history.length === 1 && history[0] === "home" && view?.apps?.()) return;
+      openNext({ list: true });
+      history = ["home"];
+      show("home", "back");
+      sounds.play("forward");
+      return;
+    }
     history.push(route);
     show(route, "forward");
     sounds.play("forward");
@@ -142,6 +161,10 @@ const ctx: Ctx = {
   top(route) {
     if (route === "home") {
       act("home");
+      return;
+    }
+    if (route === "apps" && lookId() === "glass") {
+      ctx.go(route);
       return;
     }
     if (history[history.length - 1] === route) return;
@@ -158,6 +181,8 @@ const ctx: Ctx = {
     sounds.play("back");
   },
   home(focusOn) {
+    // In Glass, an app that isn't pinned is in the list, which comes up on it.
+    if (lookId() === "glass") openNext({ list: !(ctx.state.pinned ?? []).includes(focusOn), focus: focusOn });
     history = ["home"];
     show("home", "back", focusOn);
     // Glass features the app in focus, as when the arrows land on it.
@@ -203,6 +228,17 @@ const ctx: Ctx = {
     if (grant === null) return false;
     try {
       ctx.state.layout = (await daemon.saveLayout(layout, grant)).layout;
+      return true;
+    } catch (error) {
+      ctx.toast((error as Error).message, "fail");
+      return false;
+    }
+  },
+  async savePinned(pinned) {
+    const grant = childWithPin() ? await grantFor("changing home") : undefined;
+    if (grant === null) return false;
+    try {
+      ctx.state.pinned = (await daemon.savePinned(pinned, grant)).pinned;
       return true;
     } catch (error) {
       ctx.toast((error as Error).message, "fail");
@@ -418,6 +454,8 @@ function viewFor(route: string): View {
   // Move in an app's details: edit mode with that app in hand (ADR-103).
   if (name === "move" && arg) return edit(ctx, arg, true);
   if (name === "whats-new") return whatsNew(ctx);
+  // Fit to screen, from Settings, Appearance (ADR-103).
+  if (name === "fit") return fitPage(ctx);
   if (name === "update-off") return checkView(ctx);
   if (name === "settings") return settings(ctx, arg);
   if (name === "profile") return profile(ctx, arg);
@@ -706,6 +744,8 @@ function act(action: Action): void {
   } else if (action === "home") {
     if (history.length > 1 || history[0] !== "home") {
       history = ["home"];
+      // Glass's home comes back at rest, with its list away.
+      if (lookId() === "glass") openNext({ list: false });
       show("home", "back");
       sounds.play("back");
     }
@@ -853,6 +893,8 @@ async function lookAgain(): Promise<void> {
   applyLook();
   await previewColours();
   fit(canvas());
+  // Fit to screen's margin, for the looks' safe area (launcher/size.ts).
+  applyMargin(preview() ? null : await loadSizes(), canvas());
   focus.refresh();
 }
 
@@ -950,7 +992,11 @@ async function start(): Promise<void> {
       if (notice.text) ctx.toast(`${notice.name ?? "An app"}: ${notice.text}`, "ok");
     },
     // An app added from Apps, or picked in setup, is installing.
-    "setup-apps": () => installMoved(ctx, history[history.length - 1] === "add-app"),
+    "setup-apps": () => {
+      installMoved(ctx, history[history.length - 1] === "add-app");
+      // Settings' Games page and its Xbox row (ADR-103).
+      if (history[history.length - 1].startsWith("settings")) gamesMoved(redraw);
+    },
     // A build moved on (ADR-043 to ADR-046): its tile, its page and home's bar.
     builds: () => buildsMoved(ctx, history[history.length - 1], redraw),
     // Someone else is watching (S4.2): their home, at once. A child's profile

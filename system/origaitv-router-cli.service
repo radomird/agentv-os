@@ -2,7 +2,12 @@
 # provider's own CLI, once per sentence, with no tools, as origaitv-builder,
 # which signed in to the plan through the CLI's own login when the builder
 # first ran (ADR-040). The plan's tokens stay in the CLI's own files in the
-# builder's home, and OrigaiTV never reads them.
+# builder's home, and the daemon never reads them.
+#
+# This service also runs Omarchy's own usage check (ADR-103,
+# daemon/plan-usage.ts), which does read the plan's sign-in, to ask the
+# provider how much of the plan is used. Only the numbers leave here: which
+# window, how much of it is used, and when it starts over.
 #
 # Like a build (origaitv-builder@.service), it has no network of its own:
 # its only way out is origaitv-router's cli-net.sock, which reaches the plans'

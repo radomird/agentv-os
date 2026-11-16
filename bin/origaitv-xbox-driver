@@ -1,0 +1,68 @@
+#!/bin/bash
+
+# origaitv:summary=Install the driver for Xbox controllers over Bluetooth
+# origaitv:hidden=true
+# origaitv:requires-sudo=true
+
+# Settings, Phones and controllers' Xbox row (ADR-103). Xbox controllers
+# pair over Bluetooth with the kernel's own driver, but many of their
+# buttons don't work without xpadneo. This does what
+# omarchy-install-gaming-xbox-controllers does, as root, without its
+# questions and without restarting the box:
+#
+# - xpadneo-dkms, from the repositories the box already uses;
+# - the old xpad driver kept from loading, so the two don't fight, and
+#   xpadneo loaded at boot;
+# - the driver swapped in now where it can be. When the old one is in use,
+#   the new one takes over from the next start, and the TV says so.
+#
+# Omarchy also adds the person to the input group. OrigaiTV leaves that out:
+# the person at the TV reads controllers through logind's seat already
+# (udev's uaccess), and the input group would let any of their programs read
+# every keyboard too.
+#
+# origaitv-setup-apps starts it through origaitv-xbox-driver.service, in turn
+# with the apps, so two installs never wait on pacman's lock. Why it didn't
+# work, and whether a restart is wanted, go in /run/origaitv-app-package.
+
+set -euo pipefail
+
+ERRORS=${ORIGAITV_APP_PACKAGE_ERRORS:-/run/origaitv-app-package}
+ETC=${ORIGAITV_ETC:-/etc}
+SYNC=${ORIGAITV_PACMAN_SYNC:-/var/lib/pacman/sync}
+export OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+export PATH="$OMARCHY_PATH/bin:$PATH"
+
+mkdir -p "$ERRORS"
+rm -f "$ERRORS/xpadneo.error" "$ERRORS/xpadneo.restart"
+
+fail() {
+  printf '%s\n' "$1" >"$ERRORS/xpadneo.error"
+  echo "origaitv-xbox-driver: $1" >&2
+  exit 1
+}
+
+if ! pacman -Q xpadneo-dkms >/dev/null 2>&1; then
+  for repo in $(pacman-conf --repo-list 2>/dev/null); do
+    [[ -f $SYNC/$repo.db ]] || fail "Update OrigaiTV in Settings first, then try again"
+  done
+  omarchy-pkg-add xpadneo-dkms || fail "Couldn't install the driver. Try again later."
+fi
+
+mkdir -p "$ETC/modprobe.d" "$ETC/modules-load.d"
+echo "blacklist xpad" >"$ETC/modprobe.d/blacklist-xpad.conf"
+echo "hid_xpadneo" >"$ETC/modules-load.d/xpadneo.conf"
+
+restart=false
+if lsmod | grep -q '^xpad '; then
+  modprobe -r xpad 2>/dev/null || restart=true
+fi
+if ! $restart && ! modprobe hid_xpadneo; then
+  restart=true
+fi
+if $restart; then
+  touch "$ERRORS/xpadneo.restart"
+  echo "origaitv-xbox-driver: installed; it takes over after a restart"
+else
+  echo "origaitv-xbox-driver: installed and loaded"
+fi

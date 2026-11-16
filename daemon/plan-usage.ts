@@ -10,8 +10,11 @@
 // counts of what was asked.
 //
 // The daemon asks the service now and then, and keeps the answer a little
-// while, as Omarchy's own panel does. Where the check can't answer, the TV
-// says it's using the plan, and no number.
+// while, as Omarchy's own panel does. Only numbers the check measured just
+// now count. One whose sign-in has lapsed, or that couldn't ask, prints the
+// last numbers it kept, marked stale, and those aren't shown as today's:
+// the TV says it's using the plan, and no number. Where the plan's sign-in
+// ran out, or was never done, the TV says so and offers signing in.
 
 import type { Provider } from "./ai.ts";
 
@@ -33,10 +36,27 @@ export interface UsageWindow {
   resets?: string; // ISO 8601
 }
 
+// The plan's sign-in has to be done again ("expired"), or hasn't been done
+// ("none").
+export type UsageSignIn = "expired" | "none";
+
 export interface PlanUsage {
   provider: UsageProvider;
   windows: UsageWindow[];
+  // With no windows: the plan's sign-in is what's missing.
+  signIn?: UsageSignIn;
   at: string;
+}
+
+// What the plan's service answers the daemon: the windows, or that the
+// plan's sign-in has to be done. Anything else is no answer.
+export type UsageReply = { windows: UsageWindow[] } | { signIn: UsageSignIn };
+
+// What a check printed comes to, for the service: its reply, and what kind
+// of answer it was for the service's log, never a number.
+export interface UsageAnswer {
+  reply: UsageReply | null;
+  said: string;
 }
 
 // Omarchy's check, as the plan's service runs it: the builder's home, the
@@ -56,6 +76,9 @@ export function usageCommand(provider: UsageProvider, o: { home: string; omarchy
     CLAUDE_CONFIG_DIR: `${o.home}/.claude`,
     CODEX_HOME: `${o.home}/.codex`,
     GROK_HOME: `${o.home}/.grok`,
+    // Omarchy's own collectors, and no Python packages from the builder's
+    // home in their place.
+    PYTHONNOUSERSITE: "1",
     NO_PROXY: "127.0.0.1,localhost",
     no_proxy: "127.0.0.1,localhost",
   };
@@ -63,17 +86,43 @@ export function usageCommand(provider: UsageProvider, o: { home: string; omarchy
   return { command: `${omarchy}/bin/${CHECKS[provider]}`, args: ["--limits-only"], env };
 }
 
-// The windows a check printed, and nothing else of it: a 5-hour window, the
-// week and, for a plan that counts by the month, the month. Null when it
-// has none to say, as when it isn't signed in or can't reach its provider.
-export function usageWindows(printed: string): UsageWindow[] | null {
-  let record: unknown;
+// Omarchy's words for a sign-in that has to be done.
+const SIGNED_OUT = new Map<string, UsageSignIn>([
+  ["Sign-in expired", "expired"],
+  ["Waiting for auth", "none"],
+]);
+
+// What a check printed, and nothing else of it: the windows it measured just
+// now, a 5-hour window, the week and, for a plan that counts by the month,
+// the month. Its last line is its record. Numbers kept past a check that
+// couldn't ask (limitsStale, or a status such as "Limits paused") are old,
+// and no answer. "Sign-in expired" and "Waiting for auth" say the plan's
+// sign-in is what's missing.
+export function usageAnswer(printed: string): UsageAnswer {
+  let record: Record<string, unknown>;
   try {
-    record = JSON.parse(printed.trim().split("\n").filter(Boolean).at(-1) ?? "");
+    const parsed: unknown = JSON.parse(printed.trim().split("\n").filter(Boolean).at(-1) ?? "");
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return { reply: null, said: "nothing to read" };
+    record = parsed as Record<string, unknown>;
   } catch {
-    return null;
+    return { reply: null, said: "nothing to read" };
   }
-  const limits = (record as { limits?: unknown })?.limits;
+  const status = typeof record.usageStatusText === "string" ? record.usageStatusText : "";
+  const signIn = SIGNED_OUT.get(status);
+  if (signIn) return { reply: { signIn }, said: signIn === "expired" ? "sign-in expired" : "not signed in" };
+  if (record.limitsStale === true || record.live === false) return { reply: null, said: "old numbers" };
+  if (status) return { reply: null, said: status === "Limits paused" ? "limits paused" : "no numbers" };
+  const windows = windowsOf(record.limits);
+  return windows ? { reply: { windows }, said: `${windows.length} window${windows.length === 1 ? "" : "s"}` } : { reply: null, said: "no windows" };
+}
+
+// The windows alone, or null when there are none to show now.
+export function usageWindows(printed: string): UsageWindow[] | null {
+  const { reply } = usageAnswer(printed);
+  return reply && "windows" in reply ? reply.windows : null;
+}
+
+function windowsOf(limits: unknown): UsageWindow[] | null {
   if (!Array.isArray(limits)) return null;
   const windows: UsageWindow[] = [];
   for (const limit of limits) {
@@ -95,7 +144,7 @@ export function usageWindows(printed: string): UsageWindow[] | null {
 
 export interface PlanUsageOptions {
   // The plan's service, asked for a provider's windows (router-client.ts).
-  ask: (provider: UsageProvider) => Promise<UsageWindow[] | null>;
+  ask: (provider: UsageProvider) => Promise<UsageReply | null>;
   now?: () => number;
   // How long an answer is kept, and a failed one.
   keepMs?: number;
@@ -120,15 +169,19 @@ export class PlanUsages {
   async get(provider: Provider | null, fresh = false): Promise<PlanUsage | null> {
     if (!hasUsage(provider)) return null;
     const kept = this.kept.get(provider);
-    const keep = kept?.usage ? (this.o.keepMs ?? 120_000) : (this.o.failedMs ?? 30_000);
+    // Numbers are kept a while. No answer, and a sign-in to do, are asked
+    // again sooner, so a sign-in just done shows its numbers.
+    const keep = kept?.usage?.windows.length ? (this.o.keepMs ?? 120_000) : (this.o.failedMs ?? 30_000);
     if (kept && !fresh && this.now() - kept.at < keep) return kept.usage;
     let asking = this.asking.get(provider);
     if (!asking) {
       asking = this.o
         .ask(provider)
         .catch(() => null)
-        .then((windows) => {
-          const usage = windows?.length ? { provider, windows, at: new Date(this.now()).toISOString() } : null;
+        .then((reply) => {
+          const at = new Date(this.now()).toISOString();
+          const usage: PlanUsage | null =
+            reply && "windows" in reply && reply.windows.length ? { provider, windows: reply.windows, at } : reply && "signIn" in reply ? { provider, windows: [], signIn: reply.signIn, at } : null;
           this.kept.set(provider, { at: this.now(), usage });
           return usage;
         })

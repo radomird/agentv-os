@@ -1,0 +1,85 @@
+#!/bin/bash
+
+# origaitv:summary=A game platform's first steps in your own home
+# origaitv:args=<retroarch|battlenet>
+# origaitv:hidden=true
+
+# What Omarchy's gaming installers do in the person's own home, without the
+# terminal they expect (ADR-103). bin/origaitv-app-package runs it as the
+# person, with no sudo and nothing of root's, once the platform's packages
+# are in. Each step can run again: it only sets what it sets.
+#
+#   retroarch   ~/Games/bios and ~/Games/roms, and RetroArch's settings as
+#               omarchy-install-gaming-retroarch has them, without opening
+#               the folder in a file manager at the end.
+#   battlenet   ~/Games/battlenet, Battle.net's entry in Omarchy's app
+#               launcher, and its Windows setup, downloaded for its first
+#               start (bin/origaitv-battlenet), as
+#               omarchy-install-gaming-battlenet does, without asking and
+#               without starting it.
+
+set -euo pipefail
+
+OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+BATTLENET_SETUP_URL=${ORIGAITV_BATTLENET_SETUP_URL:-https://downloader.battle.net/download/getInstallerForGame?os=win&gameProgram=BATTLENET_APP&version=Live}
+
+retroarch() {
+  local cfg="$HOME/.config/retroarch/retroarch.cfg"
+
+  mkdir -p "$HOME/Games/bios" "$HOME/Games/roms" "$(dirname -- "$cfg")" "$HOME/.config/retroarch/config"
+  touch "$cfg"
+
+  # set_cfg <key> <value>: one line of RetroArch's settings, in place.
+  set_cfg() {
+    local next="$cfg.next"
+    grep -v "^$1 = " "$cfg" >"$next" || true
+    printf '%s = "%s"\n' "$1" "$2" >>"$next"
+    mv -f "$next" "$cfg"
+  }
+
+  set_cfg rgui_browser_directory "$HOME/Games/roms"
+  set_cfg system_directory "$HOME/Games/bios"
+  # The cores, assets and database pacman put in.
+  set_cfg libretro_directory "/usr/lib/libretro"
+  set_cfg libretro_info_path "/usr/share/libretro/info"
+  set_cfg overlay_directory "/usr/share/libretro/overlays"
+  set_cfg osk_overlay_directory "/usr/share/libretro/overlays/keyboards"
+  set_cfg video_shader_dir "/usr/share/libretro/shaders/shaders_slang"
+  set_cfg joypad_autoconfig_dir "/usr/share/libretro/autoconfig"
+  set_cfg content_database_path "/usr/share/libretro/database/rdb"
+  set_cfg cheat_database_path "/usr/share/libretro/database/cht"
+  set_cfg cursor_directory "/usr/share/libretro/database/cursors"
+  # Vulkan, the PS3-style menu and the CRT look, as Omarchy picks them.
+  set_cfg video_driver "vulkan"
+  set_cfg menu_driver "xmb"
+  set_cfg video_shader_enable "true"
+  set_cfg auto_shaders_enable "true"
+  echo '#reference "/usr/share/libretro/shaders/shaders_slang/crt/crt-royale.slangp"' >"$HOME/.config/retroarch/config/global.slangp"
+  set_cfg content_show_images "false"
+  set_cfg content_show_video "false"
+  echo "origaitv-game-setup: RetroArch is set up, with ~/Games for your games"
+}
+
+battlenet() {
+  local prefix="$HOME/Games/battlenet" cache="$HOME/.cache/origaitv" entry="$OMARCHY_PATH/default/applications/battlenet.desktop"
+
+  mkdir -p "$prefix" "$cache" "$HOME/.local/share/applications"
+  if [[ -f $entry ]]; then
+    install -m 644 "$entry" "$HOME/.local/share/applications/battlenet.desktop"
+    update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
+  fi
+  if [[ ! -s $cache/Battle.net-Setup.exe ]]; then
+    curl --fail --silent --show-error --location --retry 3 --max-time 600 --output "$cache/Battle.net-Setup.exe.part" "$BATTLENET_SETUP_URL"
+    mv -f "$cache/Battle.net-Setup.exe.part" "$cache/Battle.net-Setup.exe"
+  fi
+  echo "origaitv-game-setup: Battle.net's setup is ready for its first start"
+}
+
+case ${1:-} in
+  retroarch) retroarch ;;
+  battlenet) battlenet ;;
+  *)
+    echo "Usage: origaitv-game-setup <retroarch|battlenet>" >&2
+    exit 2
+    ;;
+esac
