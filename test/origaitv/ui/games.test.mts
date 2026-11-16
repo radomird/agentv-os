@@ -200,8 +200,11 @@ test("T23.1 adding two games: the second waits its turn, both land on home's Gam
     assert.equal(await focused(page), "game-origaitv.xboxcloud");
     await page.keyboard.press("Enter");
     await page.keyboard.press("Enter");
+    // Root's step, the daemon's next look and the page drawn again come
+    // first, so the row's words are waited for as an install's are. The
+    // notice goes up in the same moment.
+    await page.waitForFunction(() => document.querySelector('.panel [data-action="game-origaitv.xboxcloud"] .button-value')?.textContent === "Couldn't remove · Try again", undefined, { timeout: 10000 });
     await toast(page, "Couldn't remove Xbox Cloud Gaming. Try again.");
-    await page.waitForFunction(() => document.querySelector('.panel [data-action="game-origaitv.xboxcloud"] .button-value')?.textContent === "Couldn't remove · Try again", undefined, { timeout: 8000 });
     const after = await (await fetch(`${url}/api/home`)).json();
     assert.deepEqual((after.apps as { id: string }[]).filter((app) => app.id.startsWith("origaitv.") && GAMES.some((one) => one.id === app.id)).map((app) => app.id), ["origaitv.xboxcloud"]);
     // Home and apps says how many are on the TV.
