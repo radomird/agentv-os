@@ -278,11 +278,15 @@ export class SetupApps {
       else found[id] = { state: "queued" };
     }
     // A removal root hasn't started yet; once it has, its line says, and
-    // once it's done, the line is gone.
+    // once it's done, the line is gone, or says why it isn't. Root may be
+    // done before the daemon looks, so once root has taken the hand-over,
+    // its line is what counts.
     for (const id of this.removing) {
-      if (this.seenRemoving.has(id) && found[id]?.state !== "removing") this.removing.delete(id);
-      else if (found[id]?.state === "removing") this.seenRemoving.add(id);
-      else found[id] = { state: "removing" };
+      if (found[id]?.state === "removing") this.seenRemoving.add(id);
+      else if (this.seenRemoving.has(id) || !existsSync(this.drop)) {
+        this.removing.delete(id);
+        this.seenRemoving.delete(id);
+      } else found[id] = { state: "removing" };
     }
     return found;
   }
@@ -414,13 +418,16 @@ export class SetupApps {
     return why;
   }
 
-  // An official app off the TV, from Settings' Games page (ADR-103). Root
+  // An official game off the TV, from Settings' Games page (ADR-103). Root
   // removes the app and leaves its program, its games and its saves.
   async remove(id: unknown, present: Present[]): Promise<string | null> {
     if (typeof id !== "string" || !ID.test(id)) return "send the app to remove as its id";
     const app = present.find((one) => one.id === id);
     if (!app) return "That app isn't on your TV";
     if (app.tier !== "official") return "Only apps from OrigaiTV are removed here";
+    // Settings' Games page removes games, and nothing else.
+    const { apps } = await this.official();
+    if (!this.isGame(apps, id)) return "Only games are removed here";
     if (GOING.includes(this.status()[id]?.state)) return null;
     const why = await this.handOver({ apps: [], remove: [id] });
     if (why) return why;

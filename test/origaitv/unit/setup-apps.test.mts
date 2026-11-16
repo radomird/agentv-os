@@ -400,8 +400,9 @@ test("T23.1 several games added while one installs go into one hand-over, each q
 
 test("T23.1 removing a game hands it to root, official apps on the TV only, and its line says removing", async () => {
   const { drop, apps } = busyRoot(join(scratch, "remove"));
-  const here: Present[] = [MUSIC, { id: "origaitv.retroarch", name: "RetroArch", tier: "official" }, { id: "local.blocks", name: "Blocks", tier: "local" }];
+  const here: Present[] = [MUSIC, { id: "origaitv.retroarch", name: "RetroArch", tier: "official" }, { id: "origaitv.jellyfin", name: "Jellyfin", tier: "official" }, { id: "local.blocks", name: "Blocks", tier: "local" }];
   assert.equal(await apps.remove("origaitv.lutris", here), "That app isn't on your TV");
+  assert.equal(await apps.remove("origaitv.jellyfin", here), "Only games are removed here", "an official app that isn't a game");
   assert.equal(await apps.remove("local.blocks", here), "Only apps from OrigaiTV are removed here");
   assert.equal(await apps.remove("origaitv.music", here), "Only apps from OrigaiTV are removed here", "not a built-in one");
   assert.equal(await apps.remove("../x", here), "send the app to remove as its id");
@@ -411,6 +412,22 @@ test("T23.1 removing a game hands it to root, official apps on the TV only, and 
   // Another game added meanwhile joins the same hand-over.
   assert.equal(await apps.add("origaitv.xboxcloud", here), null);
   assert.deepEqual(JSON.parse(readFileSync(drop, "utf8")), { apps: ["origaitv.xboxcloud"], remove: ["origaitv.retroarch"] });
+  apps.stop();
+});
+
+test("a removal root finishes before the daemon looks isn't left saying removing", async () => {
+  const { statusPath, drop, apps } = busyRoot(join(scratch, "remove-quick"));
+  const here: Present[] = [MUSIC, { id: "origaitv.retroarch", name: "RetroArch", tier: "official" }, { id: "origaitv.lutris", name: "Lutris", tier: "official" }];
+  assert.equal(await apps.remove("origaitv.retroarch", here), null);
+  assert.equal(await apps.remove("origaitv.lutris", here), null);
+  assert.equal(apps.status()["origaitv.retroarch"].state, "removing", "waiting for root");
+  // Root takes the hand-over and is done with both before the daemon reads
+  // its status again: one gone, one that stayed and says why.
+  rmSync(drop);
+  writeFileSync(statusPath, JSON.stringify({ apps: { "origaitv.lutris": { state: "installed", error: "Couldn't remove it", at: new Date().toISOString() } } }));
+  const now = apps.status();
+  assert.equal(now["origaitv.retroarch"], undefined);
+  assert.deepEqual([now["origaitv.lutris"].state, now["origaitv.lutris"].error], ["installed", "Couldn't remove it"]);
   apps.stop();
 });
 

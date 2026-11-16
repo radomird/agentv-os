@@ -2053,8 +2053,6 @@ export class Daemon {
     this.json(response, 404, { ok: false, error: "not found" });
   }
 
-  // The builder for make and change from the Ask box (ADR-068), for who's
-  // watching: adults only, with the AI set up the way a build needs it.
   // What the box check says about games, for setup's games group (ADR-103),
   // or null with the box check off or no answer in a few seconds.
   private async gamesVerdict(): Promise<GamesVerdict> {
@@ -2064,6 +2062,8 @@ export class Daemon {
     return games === "none" || games === "light" || games === "good" ? games : null;
   }
 
+  // The builder for make and change from the Ask box (ADR-068), for who's
+  // watching: adults only, with the AI set up the way a build needs it.
   private execBuilds(viewer: { id: string; role: "adult" | "child" }): ExecBuilds {
     return {
       adult: viewer.role === "adult",
