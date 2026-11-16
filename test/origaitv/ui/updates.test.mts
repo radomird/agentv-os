@@ -314,12 +314,65 @@ test("S2.14 Keep stays on the new version, and home doesn't ask again for that c
   const again = await tv();
   await again.waitForTimeout(800);
   assert.equal(await again.locator(".check-rows").count(), 0);
-  // Settings → Updates still offers Go back while the snapshot is kept.
+  // Settings → Updates still offers Go back while the snapshot is kept. The
+  // row says Go back, and its page names the version and asks first.
   await openUpdates(again);
-  assert.match(await again.locator('.panel [data-action="go-back"]').innerText(), /^go back to 0\.2\.1$/);
+  assert.match(await again.locator('.panel [data-action="go-back"]').innerText(), /^go back\s*$/);
   await again.locator('.panel [data-action="go-back"]').click();
+  await again.waitForSelector('.settings-panel[data-page="go-back"]');
+  assert.match(await again.locator(".settings-panel").innerText(), /go back to origaitv 0\.2\.1\?/);
+  assert.equal(await again.evaluate(() => document.querySelector(".focused")?.getAttribute("data-action")), "go-back-now");
+  await again.keyboard.press("Enter");
   await requested(again, "update-go-back");
   await again.close();
+});
+
+test("S2.14 Go back's page has Stay, which goes back to Updates and doesn't go back", async () => {
+  write("status.json", UPDATED);
+  write("go-back.json", GO_BACK);
+  rmSync(join(updates, "after.json"), { force: true });
+  const page = await tv();
+  await openUpdates(page);
+  await page.locator('.panel [data-action="go-back"]').click();
+  await page.waitForSelector('.settings-panel[data-page="go-back"] [data-action="stay"]');
+  const choices = await page.locator('.settings-panel [data-focus]').evaluateAll((els) => els.map((el) => [el.getAttribute("data-action"), el.textContent]));
+  assert.deepEqual(choices, [
+    ["go-back-now", "Go back"],
+    ["stay", "Stay"],
+  ]);
+  await page.locator('.settings-panel [data-action="stay"]').click();
+  await page.waitForSelector('.settings-panel[data-page="updates"]');
+  assert.equal(await page.evaluate(() => document.querySelector(".focused")?.getAttribute("data-action")), "go-back");
+  assert.equal(await page.evaluate(() => (window as unknown as { screenRequests: { cmd: string }[] }).screenRequests.some((r) => r.cmd === "update-go-back")), false);
+  await page.close();
+});
+
+test("S2.14 there's no Go back when the version to go back to is the one installed", async () => {
+  // What an update of Omarchy's packages alone used to write: OrigaiTV the
+  // same on both sides.
+  write("status.json", UPDATED);
+  write("go-back.json", { ...GO_BACK, from: { origaitv: "0.3.0-1", omarchy: "4.0.6-1" }, to: { origaitv: "0.3.0-1", omarchy: "4.5.0-1" } });
+  write("after.json", { ...AFTER, at: "2026-10-24T22:01:00Z" });
+  const page = await tv();
+  await page.waitForTimeout(800);
+  // Nor does home make way for it when the check after finds something off.
+  assert.equal(await page.locator(".check-rows").count(), 0);
+  await openUpdates(page);
+  assert.equal(await page.locator('.panel [data-action="go-back"]').count(), 0);
+  await page.close();
+  // Nor when only the package's own number differs, which shown() trims:
+  // the page then names the whole version.
+  write("go-back.json", { ...GO_BACK, from: { origaitv: "0.3.0-1", omarchy: "4.0.6-1" }, to: { origaitv: "0.3.0-2", omarchy: "4.0.6-1" } });
+  write("status.json", { ...UPDATED, origaitv: { installed: "0.3.0-2", available: null } });
+  rmSync(join(updates, "after.json"), { force: true });
+  const rebuilt = await tv();
+  await openUpdates(rebuilt);
+  await rebuilt.locator('.panel [data-action="go-back"]').click();
+  await rebuilt.waitForSelector('.settings-panel[data-page="go-back"]');
+  assert.match(await rebuilt.locator(".settings-panel").innerText(), /go back to origaitv 0\.3\.0-1\?/);
+  await rebuilt.close();
+  write("go-back.json", GO_BACK);
+  write("status.json", UPDATED);
 });
 
 test("S2.14 going back covers the TV until the restart, and home says so after", async () => {
