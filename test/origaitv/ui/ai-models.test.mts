@@ -52,9 +52,11 @@ async function tv(): Promise<Page> {
   return page;
 }
 
-// Until nothing on the page is still moving in: Glass fades a page in, and
-// its words read fainter until it's there.
+// Until the page has stopped drawing: Settings draws AI again as each of its
+// answers comes in, and each drawing fades in, its words fainter until it's
+// there.
 async function settled(page: Page): Promise<void> {
+  await page.waitForTimeout(300);
   await page.waitForFunction(() => document.getAnimations().every((one) => one.playState !== "running" || one.effect?.getComputedTiming().endTime === Infinity), null, { timeout: 5000 });
 }
 
