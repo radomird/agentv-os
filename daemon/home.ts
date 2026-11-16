@@ -832,21 +832,27 @@ export class Home {
   // What opening an app means, for the screen daemon: its home address with
   // its setup fields filled in, or its command. Nothing, for an app a child's
   // profile can't open.
-  async launch(id: string, viewer?: Viewer): Promise<{ runtime: "web"; url: string; name: string } | { runtime: "native"; exec: string[]; name: string } | { runtime: "page"; name: string } | null> {
+  // Its category goes with it: the screen daemon opens a game as a game
+  // (ADR-103).
+  async launch(
+    id: string,
+    viewer?: Viewer,
+  ): Promise<{ runtime: "web"; url: string; name: string; category: string } | { runtime: "native"; exec: string[]; name: string; category: string } | { runtime: "page"; name: string; category: string } | null> {
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
     if (!found) return null;
     if (viewer?.role === "child" && !(await this.apps(viewer)).some((app) => app.id === id)) return null;
     const tv = found.manifest.tv;
     const name = found.manifest.name;
-    if (tv.runtime === "native") return { runtime: "native", exec: tv.exec ?? [], name };
+    const category = tv.category;
+    if (tv.runtime === "native") return { runtime: "native", exec: tv.exec ?? [], name, category };
     // A page app opens on home, in its frame (ADR-043).
-    if (tv.runtime === "page") return { runtime: "page", name };
+    if (tv.runtime === "page") return { runtime: "page", name, category };
     const values = (await this.appSettings())[id] ?? {};
     const url = (tv.homeUrl ?? "").replace(/^\{([A-Za-z][A-Za-z0-9]*)\}/, (_, key: string) => (values[key] ?? "").replace(/\/+$/, ""));
     try {
       const parsed = new URL(url);
       if (!allowedOrigins(found.manifest, values, this.onBox(found)).has(parsed.origin)) return null;
-      return { runtime: "web", url: parsed.href, name };
+      return { runtime: "web", url: parsed.href, name, category };
     } catch {
       return null;
     }
