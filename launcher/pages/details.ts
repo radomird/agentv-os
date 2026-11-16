@@ -38,8 +38,11 @@ export function details(ctx: Ctx, id: string): View {
   );
 
   // Move: home in edit mode with this app in hand, to carry with the
-  // arrows (ADR-103). With the looks on, and only while it's on home.
-  const moveIt = onHome && lookId() ? h("button", { class: "button", "data-focus": true, "data-action": "move", onclick: () => ctx.edit(id, true) }, "Move") : null;
+  // arrows (ADR-103). In Glass and Cinema, while it's on home. Terminal's
+  // details stack their buttons with no room for another, and its grid's
+  // own edit already moves a tile every way.
+  const look = lookId();
+  const moveIt = onHome && (look === "glass" || look === "cinema") ? h("button", { class: "button", "data-focus": true, "data-action": "move", onclick: () => ctx.edit(id, true) }, "Move") : null;
 
   // Whether a child's profile can open it, past the PIN once there is one.
   const children =
