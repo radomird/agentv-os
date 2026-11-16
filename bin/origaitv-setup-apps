@@ -13,40 +13,65 @@
 # since this one can't write the system. /run/origaitv-setup-apps/state.json
 # says how each is going, for the TV: queued, installing, installed or
 # failed, with why.
+#
+# It's a queue (ADR-103): while it installs, the daemon can leave more, and
+# it takes each new hand-over once it's done with the one before, until none
+# is left. A hand-over can also name official apps to remove, which takes
+# the app off the TV and leaves its program, its games and its saves where
+# they are, and the Xbox controller driver from Settings, Phones and
+# controllers, which origaitv-xbox-driver.service installs. The removals go
+# first, then the apps, then the driver, one at a time, so pacman is never
+# asked twice at once.
 
+# shellcheck disable=SC2016 # the single quotes hold jq's own filters
 set -euo pipefail
 
 DROP=${ORIGAITV_SETUP_APPS_DROP:-/var/lib/origaitv/daemon/apps-drop/install.json}
 STATUS=${ORIGAITV_SETUP_APPS_STATUS:-/run/origaitv-setup-apps/state.json}
 INSTALL=${ORIGAITV_APP_INSTALL:-origaitv-app-install}
+REMOVE=${ORIGAITV_APP_REMOVE:-origaitv-app-remove}
 APPS=${ORIGAITV_APPS:-/var/lib/origaitv/apps}
 PACKAGE=${ORIGAITV_APP_PACKAGE:-}
+DRIVER=${ORIGAITV_XBOX_DRIVER:-}
 PACKAGE_ERRORS=${ORIGAITV_APP_PACKAGE_ERRORS:-/run/origaitv-app-package}
+ID='^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$'
 
 [[ -f $DROP ]] || exit 0
-mapfile -t apps < <(jq -r '.apps[]? | strings' "$DROP" 2>/dev/null || true)
-rm -f "$DROP"
 
 install -d -m 755 "$(dirname -- "$STATUS")"
 [[ -f $STATUS ]] && jq -e '.apps | type == "object"' "$STATUS" >/dev/null 2>&1 || echo '{"apps":{}}' >"$STATUS"
 
-# set_state <id> <state> [why]: one app's line in the status file.
-set_state() {
-  local next="$STATUS.next"
-  jq --arg id "$1" --arg state "$2" --arg error "${3:-}" --arg at "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" \
-    '.apps[$id] = ({state: $state, at: $at} + (if $error == "" then {} else {error: $error} end)) | .at = $at' "$STATUS" >"$next"
+# write <jq filter> [jq args]: the status file, changed in one step.
+write() {
+  local next="$STATUS.next" filter=$1
+  shift
+  jq "$@" --arg at "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" "$filter | .at = \$at" "$STATUS" >"$next"
   chmod 644 "$next"
   mv -f "$next" "$STATUS"
 }
 
-# needs_program <id>: whether an official native app that just installed
-# names a program the box doesn't have yet.
+# set_state <id> <state> [why]: one app's line in the status file.
+set_state() {
+  write '.apps[$id] = ({state: $state, at: $at} + (if $error == "" then {} else {error: $error} end))' --arg id "$1" --arg state "$2" --arg error "${3:-}"
+}
+
+# driver_state <state> [why] [restart]: the Xbox controller driver's line.
+driver_state() {
+  write '.drivers.xpadneo = ({state: $state, at: $at} + (if $error == "" then {} else {error: $error} end) + (if $restart == "yes" then {restart: true} else {} end))' \
+    --arg state "$1" --arg error "${2:-}" --arg restart "${3:-}"
+}
+
+official() {
+  [[ $(jq -r --arg id "$1" '.[$id].tier // empty' "$APPS/installed.json" 2>/dev/null) == "official" ]]
+}
+
+# needs_program <id>: whether an app that just installed is an official
+# native app. Its program comes with it, and so do the first steps of a
+# game platform (ADR-103), even when the program was there already:
+# origaitv-app-package installs only what's missing.
 needs_program() {
-  local pkg
-  [[ $(jq -r --arg id "$1" '.[$id].tier // empty' "$APPS/installed.json" 2>/dev/null) == "official" ]] || return 1
-  pkg=$(jq -r 'select(.tv.runtime == "native") | .tv.package.pacman // .tv.package.flatpak // empty' "$APPS/$1/manifest.json" 2>/dev/null || true)
-  [[ -n $pkg ]] || return 1
-  ! pacman -Q -- "$pkg" >/dev/null 2>&1
+  official "$1" || return 1
+  [[ $(jq -r '.tv.runtime // empty' "$APPS/$1/manifest.json" 2>/dev/null) == "native" ]]
 }
 
 # install_program <id>: the app's program, as root, in its own unit.
@@ -58,17 +83,9 @@ install_program() {
   fi
 }
 
-wanted=()
-for id in "${apps[@]}"; do
-  if [[ ! $id =~ ^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$ ]]; then
-    echo "origaitv-setup-apps: '$id' isn't an app id; left out" >&2
-    continue
-  fi
-  wanted+=("$id")
-  set_state "$id" queued
-done
-
-for id in "${wanted[@]}"; do
+# install_app <id>
+install_app() {
+  local id=$1 out why
   set_state "$id" installing
   if out=$("$INSTALL" "$id" 2>&1); then
     echo "origaitv-setup-apps: installed $id"
@@ -79,7 +96,7 @@ for id in "${wanted[@]}"; do
         [[ -n $why ]] || why="Couldn't install it"
         set_state "$id" failed "$why"
         echo "origaitv-setup-apps: the program $id opens didn't install: $why" >&2
-        continue
+        return
       fi
     fi
     set_state "$id" installed
@@ -92,4 +109,68 @@ for id in "${wanted[@]}"; do
     set_state "$id" failed "$why"
     echo "origaitv-setup-apps: $id didn't install: $why" >&2
   fi
+}
+
+# remove_app <id>: an official app off the TV. Its program stays, with its
+# games and saves: Omarchy's own remove scripts would delete those, so none
+# of them runs here.
+remove_app() {
+  local id=$1
+  if ! official "$id"; then
+    echo "origaitv-setup-apps: $id isn't an official app on this TV; left as it is" >&2
+    write 'del(.apps[$id])' --arg id "$id"
+    return
+  fi
+  set_state "$id" removing
+  if "$REMOVE" "$id" >/dev/null 2>&1; then
+    write 'del(.apps[$id])' --arg id "$id"
+    echo "origaitv-setup-apps: removed $id, and left its program and its saves"
+  else
+    set_state "$id" installed "Couldn't remove it"
+    echo "origaitv-setup-apps: $id wasn't removed" >&2
+  fi
+}
+
+# install_driver: the Xbox controller driver, in its own unit.
+install_driver() {
+  local why restart=""
+  driver_state installing
+  if if [[ -n $DRIVER ]]; then "$DRIVER"; else systemctl start origaitv-xbox-driver.service; fi; then
+    [[ -f $PACKAGE_ERRORS/xpadneo.restart ]] && restart=yes
+    driver_state installed "" "$restart"
+    echo "origaitv-setup-apps: the Xbox controller driver is in"
+  else
+    why=$(head -n 1 "$PACKAGE_ERRORS/xpadneo.error" 2>/dev/null | cut -c1-200 || true)
+    [[ -n $why ]] || why="Couldn't install the driver"
+    driver_state failed "$why"
+    echo "origaitv-setup-apps: the Xbox controller driver didn't install: $why" >&2
+  fi
+}
+
+# Each hand-over, until the daemon has left no more.
+while [[ -f $DROP ]]; do
+  mapfile -t apps < <(jq -r '.apps[]? | strings' "$DROP" 2>/dev/null || true)
+  mapfile -t gone < <(jq -r '.remove[]? | strings' "$DROP" 2>/dev/null || true)
+  driver=$(jq -r 'if .driver == "xpadneo" then "xpadneo" else empty end' "$DROP" 2>/dev/null || true)
+  rm -f "$DROP"
+
+  wanted=()
+  for id in "${apps[@]}"; do
+    if [[ ! $id =~ $ID ]]; then
+      echo "origaitv-setup-apps: '$id' isn't an app id; left out" >&2
+      continue
+    fi
+    wanted+=("$id")
+    set_state "$id" queued
+  done
+  removing=()
+  for id in "${gone[@]}"; do
+    [[ $id =~ $ID ]] || continue
+    removing+=("$id")
+  done
+  [[ -z $driver ]] || driver_state queued
+
+  for id in "${removing[@]}"; do remove_app "$id"; done
+  for id in "${wanted[@]}"; do install_app "$id"; done
+  [[ -z $driver ]] || install_driver
 done

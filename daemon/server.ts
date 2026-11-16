@@ -72,7 +72,7 @@ import { network, Setup, type SetupState } from "./setup.ts";
 import { SetupRoutes } from "./routes/setup.ts";
 import { AiIcons, type PROVIDER_SITES } from "./ai-icons.ts";
 import { PlanSignIn } from "./plan-sign-in.ts";
-import { SetupApps } from "./setup-apps.ts";
+import { SetupApps, type GamesVerdict } from "./setup-apps.ts";
 import { cleanFound, currentTheme, previews, THEME_NAME, type ThemePreview } from "./themes.ts";
 import { ControllerRoutes } from "./routes/controllers.ts";
 import { currentLook, lookRoute } from "./routes/look.ts";
@@ -2024,6 +2024,15 @@ export class Daemon {
 
   // The builder for make and change from the Ask box (ADR-068), for who's
   // watching: adults only, with the AI set up the way a build needs it.
+  // What the box check says about games, for setup's games group (ADR-103),
+  // or null with the box check off or no answer in a few seconds.
+  private async gamesVerdict(): Promise<GamesVerdict> {
+    if (!(await this.features.on("boxcheck"))) return null;
+    const report = await Promise.race([this.box.report().catch(() => null), new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000).unref?.())]);
+    const games = report?.verdicts?.games;
+    return games === "none" || games === "light" || games === "good" ? games : null;
+  }
+
   private execBuilds(viewer: { id: string; role: "adult" | "child" }): ExecBuilds {
     return {
       adult: viewer.role === "adult",
@@ -2538,7 +2547,7 @@ export class Daemon {
     // PIN once there is one.
     if (method === "GET" && path === "/api/setup/apps") {
       const setup = await this.setup();
-      const list = await this.setupApps.list(setup.goal, await this.home.apps(), await this.features.on("starter"));
+      const list = await this.setupApps.list(setup.goal, await this.home.apps(), await this.features.on("starter"), await this.gamesVerdict());
       this.json(response, 200, { ok: true, goal: setup.goal, wishes: setup.wishes, ...list });
       return;
     }
@@ -2730,6 +2739,53 @@ export class Daemon {
         this.log(`apps: adding ${String(id)}`);
       }
       this.json(response, 200, { ok: true, ...(await this.setupApps.available(await this.home.apps())) });
+      return;
+    }
+
+    // Settings' Games page (ADR-103): every game platform in the index, on
+    // the TV or not, and how adding or removing each is going. Adding goes
+    // through /api/apps/add; removing takes the app off and leaves its
+    // program, its games and its saves. A child's profile doesn't change
+    // them.
+    if (method === "GET" && path === "/api/games") {
+      this.json(response, 200, { ok: true, ...(await this.setupApps.games(await this.home.apps())) });
+      return;
+    }
+    if (method === "POST" && path === "/api/games/remove") {
+      if ((await this.profiles.active()).role === "child") {
+        this.json(response, 403, { ok: false, error: "Only adults can remove apps" });
+        return;
+      }
+      if (!this.guarded(request, response, "removing an app")) return;
+      const id = ((await this.body(request)) as { id?: unknown } | undefined)?.id;
+      const why = await this.setupApps.remove(id, await this.home.apps());
+      if (why) {
+        this.json(response, 400, { ok: false, error: why });
+        return;
+      }
+      this.log(`apps: removing ${String(id)}`);
+      this.json(response, 200, { ok: true, ...(await this.setupApps.games(await this.home.apps())) });
+      return;
+    }
+
+    // Settings, Phones and controllers' Xbox row (ADR-103): the driver for
+    // Xbox controllers over Bluetooth, installed by root in turn with the
+    // apps.
+    if (path === "/api/games/driver" && (method === "GET" || method === "POST")) {
+      if (method === "POST") {
+        if ((await this.profiles.active()).role === "child") {
+          this.json(response, 403, { ok: false, error: "Only adults can add a driver" });
+          return;
+        }
+        if (!this.guarded(request, response, "adding a driver")) return;
+        const why = await this.setupApps.addDriver();
+        if (why) {
+          this.json(response, 400, { ok: false, error: why });
+          return;
+        }
+        this.log("controllers: adding the Xbox controller driver");
+      }
+      this.json(response, 200, { ok: true, driver: this.setupApps.driver() });
       return;
     }
 
