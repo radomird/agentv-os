@@ -33,8 +33,26 @@ export interface RemoteOptions {
   // Answers the daemon's asks. Without it, as on Omarchy's desktop, text is
   // typed as keystrokes and play and pause is the media key.
   ask?: (ask: RemoteAsk) => Promise<object>;
+  // Two fingers on the phone's pad (ADR-103): scroll the page in front by
+  // dx to the right and dy down, in its pixels, from its middle, or from
+  // the pointer in pointer mode. Without it, as on Omarchy's desktop, it's
+  // the virtual device's wheel where the pointer is.
+  wheel?: (dx: number, dy: number, at: "page" | "pointer") => Promise<void>;
   log?: (line: string) => void;
   retryMs?: number;
+}
+
+// How far one notch of a mouse's wheel scrolls a page in Chromium on
+// Linux, in pixels.
+export const WHEEL_NOTCH_PX = 53;
+
+// A page's scroll, dx right and dy down in pixels, as the virtual device's
+// wheel: right and up, in 120ths of a notch (daemon/input.py). Null when
+// it's less than the wheel's smallest turn.
+export function wheelTurn(dx: number, dy: number): { wheel: [number, number] } | null {
+  const turn = (px: number) => Math.round((px * 120) / WHEEL_NOTCH_PX) || 0;
+  const wheel: [number, number] = [turn(dx), -turn(dy) || 0];
+  return wheel[0] || wheel[1] ? { wheel } : null;
 }
 
 // One JSON line to input.py's socket, and its answer.
@@ -63,6 +81,7 @@ export class RemoteInput {
   private send: (request: Record<string, unknown>) => Promise<void>;
   private command: (cmd: string) => Promise<void>;
   private ask: (ask: RemoteAsk) => Promise<object>;
+  private wheel: (dx: number, dy: number, at: "page" | "pointer") => Promise<void>;
   private native = new NativeTyping();
   private log: (line: string) => void;
   private retryMs: number;
@@ -78,6 +97,12 @@ export class RemoteInput {
     this.send = options.send ?? ((request) => sendInput(request));
     this.command = options.command ?? (async () => {});
     this.ask = options.ask ?? ((ask) => this.keystrokes(ask));
+    this.wheel =
+      options.wheel ??
+      (async (dx, dy) => {
+        const turn = wheelTurn(dx, dy);
+        if (turn) await this.send(turn);
+      });
     this.log = options.log ?? ((line) => console.log(line));
     this.retryMs = options.retryMs ?? 2000;
   }
@@ -140,8 +165,9 @@ export class RemoteInput {
       return;
     }
     const cmd = typeof request.cmd === "string" ? request.cmd : null;
+    const wheel = Array.isArray(request.wheel) && request.wheel.length === 2 && request.wheel.every(Number.isFinite) ? (request.wheel as [number, number]) : null;
     this.chain = this.chain
-      .then(() => (cmd ? this.command(cmd) : this.send(request)))
+      .then(() => (cmd ? this.command(cmd) : wheel ? this.wheel(wheel[0], wheel[1], request.at === "pointer" ? "pointer" : "page") : this.send(request)))
       .then(() => {
         this.failed = "";
       })

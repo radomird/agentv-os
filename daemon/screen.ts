@@ -71,8 +71,8 @@ import { PageMedia } from "./page-media.ts";
 import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
 import type { Item } from "../apps/contract/contract.ts";
-import { RemoteInput, sendInput } from "./remote.ts";
-import { BACK_TAP, FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "./remote-page.ts";
+import { RemoteInput, sendInput, wheelTurn } from "./remote.ts";
+import { BACK_TAP, FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION, WHEEL_AT } from "./remote-page.ts";
 import { type Bar, FIELD, PhoneTyping, type TypingFront } from "./remote-text.ts";
 import { MEDIA_PLAYING, PhonePlayback, type PlaybackFront } from "./remote-play.ts";
 import type { SayAnswer, SayAsk } from "./say.ts";
@@ -686,6 +686,43 @@ export class Screen {
     const playback = this.playback;
     const id = front.id;
     return { kind: "page", id, evaluate: front.evaluate, app: playback?.call ? (path) => playback.call!(id, path) : undefined };
+  }
+
+  // Two fingers on the phone's pad (ADR-103): the page in front scrolls by
+  // dx to the right and dy down, from its middle, through its own Chromium,
+  // so where the screen's pointer was doesn't matter. An app's page scrolls
+  // from what the arrows focused, while the ring is on it
+  // (daemon/remote-page.ts). False for a native window, which gets the
+  // virtual device's wheel where the pointer is. While the ambient screen
+  // is up, nothing scrolls.
+  async phoneWheel(dx: number, dy: number): Promise<boolean> {
+    if (this.ambient) return true;
+    const middle = "[Math.round(innerWidth / 2), Math.round(innerHeight / 2)]";
+    const point = (value: unknown): [number, number] | null =>
+      Array.isArray(value) && value.length === 2 && value.every(Number.isFinite) ? [value[0], value[1]] : null;
+    const front = this.front();
+    if (!front || front.role === "home") {
+      const home = this.apps.get("home")?.cdp;
+      if (!home?.wheel) return false;
+      const [x, y] = point(await home.evaluate(HOME_URL, middle).catch(() => null)) ?? [960, 540];
+      await home.wheel(HOME_URL, x, y, dx, dy);
+      return true;
+    }
+    const inPage = async (cdp: DevTools, target: string, world: boolean) => {
+      const at = world ? await cdp.evaluateInWorld?.(target, REMOTE_WORLD, WHEEL_AT).catch(() => null) : null;
+      const [x, y] = point(at) ?? point(await cdp.evaluateIn(target, middle).catch(() => null)) ?? [960, 540];
+      await cdp.wheelIn!(target, x, y, dx, dy);
+      return true;
+    };
+    const web = this.apps.get("web")?.cdp;
+    const entry = this.opens.find((o) => o.address === front.address && o.target);
+    if (front.role === "web" && web?.wheelIn && entry?.target) return inPage(web, entry.target, true);
+    const share = this.apps.get("share")?.cdp;
+    if (front.role === "share" && share?.wheelIn) {
+      const page = (await share.pages()).at(-1);
+      if (page) return inPage(share, page.targetId, true);
+    }
+    return false;
   }
 
   // Stops the timers, for the tests.
@@ -3329,6 +3366,14 @@ async function main(): Promise<void> {
       if (cmd === "update-install") await screen.fromHome({ cmd }, true);
       // The phone's menu (ADR-065): home in front, then the page.
       if (cmd === "apps" || cmd === "settings") await screen.phonePage(cmd);
+    },
+    // Two fingers on the phone's pad: the page in front from its middle,
+    // or the wheel where the pointer is, in pointer mode and for a native
+    // window.
+    wheel: async (dx, dy, at) => {
+      if (at === "page" && (await screen.phoneWheel(dx, dy).catch(() => false))) return;
+      const turn = wheelTurn(dx, dy);
+      if (turn) await sendInput(turn);
     },
     ask: async (ask) => {
       if (ask.kind === "text") return typing.text(ask.value, ask.caret, ask.bar);

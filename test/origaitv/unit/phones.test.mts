@@ -436,14 +436,16 @@ test("ADR-037 the trackpad's moves, clicks and scrolls reach the stream, Omarchy
   })().catch(() => {});
   await sleep(30);
   assert.deepEqual([(await send(phone, "GET", "/api/phone/state", { token })).data.tv.view, (await send(phone, "GET", "/api/phone/state", { token })).data.tv.desktop], ["trackpad", true]);
-  for (const body of [{ move: [12, -7] }, { click: "left" }, { click: "right" }, { scroll: -3 }]) {
+  // Two fingers on the new remote's pad (ADR-103): how far, right and down,
+  // and from the pointer in pointer mode.
+  for (const body of [{ move: [12, -7] }, { click: "left" }, { click: "right" }, { scroll: -3 }, { wheel: [0, 240] }, { wheel: [-90, 0], at: "pointer" }]) {
     assert.deepEqual((await send(phone, "POST", "/api/phone/remote", { token, body })).data, { ok: true }, JSON.stringify(body));
   }
-  for (const body of [{ move: [1] }, { move: [1, "2"] }, { move: [99_999, 0] }, { click: "double" }, { scroll: 0 }, { scroll: 1.5 }]) {
+  for (const body of [{ move: [1] }, { move: [1, "2"] }, { move: [99_999, 0] }, { click: "double" }, { scroll: 0 }, { scroll: 1.5 }, { wheel: [0, 0] }, { wheel: [0, 4001] }, { wheel: [1.5, 0] }, { wheel: [1] }, { wheel: 3 }]) {
     assert.equal((await send(phone, "POST", "/api/phone/remote", { token, body })).status, 400, JSON.stringify(body));
   }
   await sleep(30);
-  assert.deepEqual(got, ['{"move":[12,-7]}', '{"click":"left"}', '{"click":"right"}', '{"scroll":-3}']);
+  assert.deepEqual(got, ['{"move":[12,-7]}', '{"click":"left"}', '{"click":"right"}', '{"scroll":-3}', '{"wheel":[0,240]}', '{"wheel":[-90,0],"at":"pointer"}']);
   controller.abort();
   await sleep(50);
   assert.equal((await send(phone, "GET", "/api/phone/state", { token })).data.tv.view, "remote", "the desktop's gone");

@@ -1814,8 +1814,14 @@ export class Daemon {
       else if (Array.isArray(body.move) && body.move.length === 2 && body.move.every((d) => whole(d, 2000))) event = { move: body.move };
       else if (body.click === "left" || body.click === "right" || body.click === "middle") event = { click: body.click };
       else if (whole(body.scroll, 50) && body.scroll !== 0) event = { scroll: body.scroll };
+      // Two fingers on the new remote's pad (ADR-103): how far to scroll,
+      // right and down, as a page's wheel says it. The page in front scrolls
+      // from its middle, or from the pointer in pointer mode.
+      else if (Array.isArray(body.wheel) && body.wheel.length === 2 && body.wheel.every((d) => whole(d, 4000)) && body.wheel.some((d) => d !== 0)) {
+        event = { wheel: body.wheel, ...(body.at === "pointer" ? { at: "pointer" } : {}) };
+      }
       if (!event) {
-        this.json(response, 400, { ok: false, error: "a key, a held key, text of up to 500 characters, or a move, click or scroll" });
+        this.json(response, 400, { ok: false, error: "a key, a held key, text of up to 500 characters, or a move, click, scroll or wheel" });
         return;
       }
       if (!this.remote(event)) {

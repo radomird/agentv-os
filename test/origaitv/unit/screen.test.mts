@@ -10,13 +10,13 @@ import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
-import { BACK_TAP, FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE } from "../../../daemon/remote-page.ts";
+import { BACK_TAP, FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, WHEEL_AT } from "../../../daemon/remote-page.ts";
 import { FIELD } from "../../../daemon/remote-text.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
 import { Sleep } from "../../../daemon/sleep.ts";
 import { NO_WEBRTC } from "../../../apps/contract/page.ts";
-import { homeArguments, pageArguments, HELD_WORKSPACE, HOME_PROFILE, HOME_UP, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
+import { homeArguments, pageArguments, HELD_WORKSPACE, HOME_PROFILE, HOME_UP, HOME_URL, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
   type SignIn, type Sound, type Role, type Music, type Pictures, type AppTarget, type MonitorMode } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -198,6 +198,9 @@ class FakeBrowser implements DevTools {
   bindIn?: DevTools["bindIn"];
   // What runs in a page's own world, for a test that stands one in.
   evaluateInWorld?: DevTools["evaluateInWorld"];
+  // The mouse's wheel in a page, for a test that stands one in.
+  wheelIn?: DevTools["wheelIn"];
+  wheel?: DevTools["wheel"];
   // What the page answers, for a test that needs more than an empty object.
   answer?: (expression: string) => object | undefined;
   async evaluate(_prefix: string, expression: string) {
@@ -1331,6 +1334,40 @@ test("T8.2 the phone's play and pause reaches the app in front, with its own pla
   assert.deepEqual([front?.kind, (front as { id: string }).id], ["page", "origaitv.tube"]);
   await (front as { app: (path: string) => Promise<unknown> }).app("playback.pause");
   assert.deepEqual(calls, ["origaitv.tube playback.pause"]);
+  t.screen.stop();
+});
+
+test("T21.1 two fingers on the phone scroll the page in front from its middle, through its Chromium, and a native window gets the device's wheel", async () => {
+  const t = await tv();
+  const wheels: { where: string; at: number[]; by: number[] }[] = [];
+  t.launcher.homeBrowser.wheel = async (prefix, x, y, dx, dy) => void wheels.push({ where: prefix, at: [x, y], by: [dx, dy] });
+  t.launcher.homeBrowser.answer = (expression) => (expression.includes("innerWidth / 2") ? [800, 450] : undefined);
+  // Home in front: the middle of home's page.
+  assert.equal(await t.screen.phoneWheel(0, 300), true);
+  assert.deepEqual(wheels.at(-1), { where: HOME_URL, at: [800, 450], by: [0, 300] });
+  // An app's page: from what the arrows focused, as its world says.
+  const page = await openApp(t, "origaitv.tube", "0xb");
+  t.launcher.browser.wheelIn = async (target, x, y, dx, dy) => void wheels.push({ where: target, at: [x, y], by: [dx, dy] });
+  t.launcher.browser.evaluateInWorld = async (_target, world, expression) => (world === REMOTE_WORLD && expression === WHEEL_AT ? [1200, 700] : null);
+  assert.equal(await t.screen.phoneWheel(-120, 0), true);
+  assert.deepEqual(wheels.at(-1), { where: page, at: [1200, 700], by: [-120, 0] });
+  // A page whose world can't answer: its middle.
+  t.launcher.browser.evaluateInWorld = async () => {
+    throw new Error("no world");
+  };
+  const evaluateIn = t.launcher.browser.evaluateIn.bind(t.launcher.browser);
+  t.launcher.browser.evaluateIn = async (target: string, expression: string) => (expression.includes("innerWidth / 2") ? [960, 540] : evaluateIn(target, expression));
+  assert.equal(await t.screen.phoneWheel(0, -60), true);
+  assert.deepEqual(wheels.at(-1), { where: page, at: [960, 540], by: [0, -60] });
+  // The ambient screen: nothing scrolls.
+  t.screen.ambient = true;
+  const before = wheels.length;
+  assert.equal(await t.screen.phoneWheel(0, 300), true);
+  assert.equal(wheels.length, before);
+  t.screen.ambient = false;
+  // Without the services' Chromium's wheel, as for a native window: no.
+  t.launcher.browser.wheelIn = undefined;
+  assert.equal(await t.screen.phoneWheel(0, 300), false);
   t.screen.stop();
 });
 

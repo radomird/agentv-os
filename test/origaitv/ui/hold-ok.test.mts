@@ -388,7 +388,7 @@ test("a hold on the phone's swipe pad opens details only on an app's tile, on ho
   await useLook("glass");
   const page = await tv();
   const hand = await phone(false);
-  const hint = () => hand.locator(".r2-surface .r2-hint > span").last().textContent();
+  const hint = () => hand.locator('.r2-surface [data-hint="hold"]').textContent();
   const says = (what: string) => until(async () => (await hint()) === what);
   const pointerAndNothingSent = async (where: string) => {
     await says("Hold for the pointer");
