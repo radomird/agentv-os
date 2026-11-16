@@ -157,9 +157,13 @@ export class Meter {
       const usage = e.response?.usage ?? (e.object === "response" ? e.usage : null);
       if (!usage) return;
       this.seen = true;
+      // Of the input, what came from the cache and what was written to it,
+      // each at its own rate (prices.ts).
       const cached = n(usage.input_tokens_details?.cached_tokens);
+      const written = n(usage.input_tokens_details?.cache_write_tokens);
       this.usage.cacheRead = cached;
-      this.usage.input = Math.max(0, n(usage.input_tokens) - cached);
+      this.usage.cacheWrite5m = written;
+      this.usage.input = Math.max(0, n(usage.input_tokens) - cached - written);
       this.usage.output = n(usage.output_tokens);
       ticks(usage);
       return;

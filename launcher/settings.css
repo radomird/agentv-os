@@ -64,6 +64,39 @@
   background: currentColor;
 }
 
+/* A row with a short line under its words, as the bar sits under the
+   spending row's: a model that can cost extra on a plan (pages/models.ts,
+   pages/build.ts). The line takes the row's own colour. */
+.button.noted {
+  --row: 80px;
+  --row-pad: 32px;
+  position: relative;
+  min-height: calc(var(--row) + 30px);
+  padding-bottom: 30px;
+}
+
+:root[data-look="glass"] .button.noted,
+:root[data-look="cinema"] .button.noted {
+  --row: 76px;
+  --row-pad: 36px;
+}
+
+.button .button-note {
+  display: none;
+}
+
+.button.noted .button-note {
+  display: block;
+  position: absolute;
+  left: var(--row-pad);
+  right: var(--row-pad);
+  bottom: 12px;
+  font-size: 22px;
+  line-height: 26px;
+  text-align: left;
+  white-space: nowrap;
+}
+
 /* The same bar on the spending row's own page. */
 div.metered {
   max-width: 640px;

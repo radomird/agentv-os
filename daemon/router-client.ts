@@ -11,7 +11,7 @@ import { AI_NAMES } from "../builder/reasons.ts";
 import { isCliProvider } from "./providers/cli.ts";
 import { CANT_ANSWER, GETTING_READY, TOOK_TOO_LONG } from "./providers/no-answer.ts";
 import { NONE, type Routed, type RouterApp } from "./router.ts";
-import type { UsageProvider, UsageWindow } from "./plan-usage.ts";
+import type { UsageProvider, UsageReply } from "./plan-usage.ts";
 
 export const ROUTER_SOCKETS = { api: "/run/origaitv-router/router.sock", cli: "/run/origaitv-router-cli/route.sock" };
 
@@ -49,8 +49,9 @@ export function viaSocket(path: string, body: { provider: Provider; sentence: st
 }
 
 // How much of a plan is used (ADR-103), from the plan's service: the
-// windows, or null when it can't say.
-export function usageViaSocket(path: string, provider: UsageProvider, timeoutMs = 50_000): Promise<UsageWindow[] | null> {
+// windows, or that the plan's sign-in has to be done, or null when it
+// can't say.
+export function usageViaSocket(path: string, provider: UsageProvider, timeoutMs = 50_000): Promise<UsageReply | null> {
   return new Promise((resolve) => {
     const asked = request({ socketPath: path, path: "/usage", method: "POST", headers: { "Content-Type": "application/json" }, timeout: timeoutMs }, (response) => {
       let text = "";
@@ -59,7 +60,9 @@ export function usageViaSocket(path: string, provider: UsageProvider, timeoutMs 
       response.on("end", () => {
         try {
           const answer = JSON.parse(text);
-          resolve(answer.ok && Array.isArray(answer.windows) ? (answer.windows as UsageWindow[]) : null);
+          if (answer.ok && Array.isArray(answer.windows)) resolve({ windows: answer.windows });
+          else if (answer.ok && (answer.signIn === "expired" || answer.signIn === "none")) resolve({ signIn: answer.signIn });
+          else resolve(null);
         } catch {
           resolve(null);
         }

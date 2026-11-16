@@ -3,8 +3,9 @@
 // AI has a row with a bar for the 5 hours and one for the week, in each
 // look, dark and light, and its page says when each starts over. No dollar
 // amount shows anywhere in AI on a plan, and no key's limits. Where the
-// check can't answer, the row says it's using the plan. A key keeps its
-// spending bar against the month.
+// check can't answer, the row says it's using the plan, and where the plan's
+// sign-in ran out, it offers signing in again. A key keeps its spending bar
+// against the month.
 
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
@@ -12,7 +13,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
-import type { UsageWindow } from "../../../daemon/plan-usage.ts";
+import type { UsageReply, UsageWindow } from "../../../daemon/plan-usage.ts";
 import type { Daemon } from "../../../daemon/server.ts";
 import { FIXTURES, rest, startBox } from "./box.mts";
 import { rendered, shortfalls } from "./legible.mts";
@@ -32,6 +33,7 @@ let phone: TestPhone;
 const errors: string[] = [];
 // What the stand-in check says, and how often it was asked.
 let windows: UsageWindow[] | null = null;
+let signIn: "expired" | "none" | null = null;
 let asked = 0;
 
 const send = (method: string, path: string, body?: unknown) =>
@@ -43,7 +45,7 @@ async function use(path: "plan" | "key"): Promise<void> {
 }
 
 before(async () => {
-  ({ daemon, url, state } = await startBox(0, FIXTURES, { features: { looks: true }, planUsage: async () => (asked++, windows) }));
+  ({ daemon, url, state } = await startBox(0, FIXTURES, { features: { looks: true }, planUsage: async (): Promise<UsageReply | null> => (asked++, signIn ? { signIn } : windows ? { windows } : null) }));
   browser = await chromium.launch({ executablePath: process.env.ORIGAITV_UI_BROWSER });
   const code = (await (await send("POST", "/api/phones/pair", {})).json()).pairing.code;
   phone = await pairPhone(`http://127.0.0.1:${daemon.lanPort}`, code, "pixel");
@@ -119,6 +121,24 @@ for (const look of LOOKS) {
     assert.deepEqual(problems, [], `${look}:\n${problems.join("\n")}`);
   });
 }
+
+test("T19.1 where the plan's sign-in ran out, AI says to sign in again, and OK opens the plan's sign-in", async () => {
+  await send("PUT", "/api/look", { look: "glass" });
+  signIn = "expired";
+  await daemon.planUsages.get("claude", true);
+  const page = await tv();
+  try {
+    await go(page, "settings/ai");
+    await page.waitForSelector('.settings-panel [data-action="usage-sign-in"]');
+    assert.equal((await page.locator('.settings-panel [data-action="usage-sign-in"]').innerText()).replace(/\s+/g, " ").trim(), "Limits Sign in again");
+    assert.equal(await page.locator('[data-action^="plan-"] .meter').count(), 0, "no old numbers");
+    await page.locator('.settings-panel [data-action="usage-sign-in"]').click();
+    await page.waitForSelector(".page.plan-sign-in");
+  } finally {
+    await page.close();
+    signIn = null;
+  }
+});
 
 test("T19.1 where the check can't answer, the row says it's using the plan; a key keeps its spending bar against the month", async () => {
   await send("PUT", "/api/look", { look: "glass" });

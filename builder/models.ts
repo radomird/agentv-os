@@ -29,21 +29,23 @@ export interface Model {
   id: string; // as the API and the CLI take it
   name: string; // as the provider names it
   only?: "plan" | "key"; // offered one way in only
+  // On a plan, it can use extra usage, billed past the plan's own limits
+  // (Q324): the TV says so on its row, and it's never a default.
+  costsExtra?: "plan";
 }
 
 export const MODELS: Record<Provider, Model[]> = {
   claude: [
-    { id: "claude-fable-5-2", name: "Fable 5.2" },
+    { id: "claude-fable-5-2", name: "Fable 5.2", costsExtra: "plan" },
     { id: "claude-opus-5-5", name: "Opus 5.5" },
     { id: "claude-sonnet-5-5", name: "Sonnet 5.5" },
     { id: "claude-haiku-5-5", name: "Haiku 5.5" },
   ],
   chatgpt: [
-    { id: "gpt-6-astra", name: "GPT-6 Astra", only: "plan" },
-    { id: "gpt-6.1-sol", name: "GPT-6.1 Sol", only: "plan" },
-    { id: "gpt-6-luna", name: "GPT-6 Luna", only: "plan" },
-    { id: "gpt-5.6-sol", name: "GPT-5.6 Sol", only: "key" },
-    { id: "gpt-5.6-terra", name: "GPT-5.6 Terra", only: "key" },
+    { id: "gpt-6-astra", name: "GPT-6 Astra" },
+    { id: "gpt-6.1-sol", name: "GPT-6.1 Sol" },
+    { id: "gpt-6-luna", name: "GPT-6 Luna" },
+    // With a key, the router still asks on the model its evals ran on.
     { id: "gpt-5.6-luna", name: "GPT-5.6 Luna", only: "key" },
   ],
   gemini: [
@@ -70,7 +72,7 @@ type Pair = { ask: string; build: string };
 // and its middle one for building.
 export const DEFAULT_MODELS: Record<Provider, Record<"plan" | "key", Pair>> = {
   claude: { plan: { ask: "claude-haiku-5-5", build: "claude-sonnet-5-5" }, key: { ask: "claude-haiku-5-5", build: "claude-sonnet-5-5" } },
-  chatgpt: { plan: { ask: "gpt-6-luna", build: "gpt-6.1-sol" }, key: { ask: "gpt-5.6-luna", build: "gpt-5.6-terra" } },
+  chatgpt: { plan: { ask: "gpt-6-luna", build: "gpt-6.1-sol" }, key: { ask: "gpt-5.6-luna", build: "gpt-6.1-sol" } },
   gemini: { plan: { ask: "gemini-3.8-flash", build: "gemini-3.8-flash" }, key: { ask: "gemini-3.8-flash", build: "gemini-3.8-flash" } },
   grok: { plan: { ask: "grok-4.7", build: "grok-4.7" }, key: { ask: "grok-4.7", build: "grok-4.7" } },
   muse: { plan: { ask: "muse-spark-1.3", build: "muse-spark-1.3" }, key: { ask: "muse-spark-1.3", build: "muse-spark-1.3" } },
@@ -79,7 +81,9 @@ export const DEFAULT_MODELS: Record<Provider, Record<"plan" | "key", Pair>> = {
 // The models on offer for a provider, by plan or key: with a key, only the
 // ones the relay prices.
 export function modelsFor(provider: Provider, path: "plan" | "key"): Model[] {
-  return MODELS[provider].filter((model) => (!model.only || model.only === path) && (path === "plan" || rateFor(provider, model.id) !== null)).map(({ id, name }) => ({ id, name }));
+  return MODELS[provider]
+    .filter((model) => (!model.only || model.only === path) && (path === "plan" || rateFor(provider, model.id) !== null))
+    .map(({ id, name, costsExtra }) => ({ id, name, ...(costsExtra === path ? { costsExtra } : {}) }));
 }
 
 // Whether a model is one this provider offers by this path.

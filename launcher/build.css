@@ -40,3 +40,12 @@
   justify-content: center;
   margin-top: 8px;
 }
+
+/* "Make X?"'s model row (pages/build.ts): its name and the model apart, as
+   a Settings row has them, and wide enough for the line under them when
+   the model can cost extra on a plan. */
+.build-page .button.build-model {
+  gap: 32px;
+  min-width: 560px;
+  box-sizing: border-box;
+}

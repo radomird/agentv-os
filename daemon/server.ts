@@ -58,7 +58,7 @@ import { boxRoute, phoneBoxRoute, type BoxRoutes } from "./routes/box.ts";
 import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
 import { aiModelRoutes } from "./routes/ai-models.ts";
 import { planUsageRoutes } from "./routes/plan-usage.ts";
-import { PlanUsages, type UsageProvider, type UsageWindow } from "./plan-usage.ts";
+import { PlanUsages, type UsageProvider, type UsageReply } from "./plan-usage.ts";
 import { backgroundVideoRoutes } from "./routes/backgrounds.ts";
 import { askRoutes, askView, type AskRoutes } from "./routes/ask.ts";
 import { NO_AI } from "./executors/index.ts";
@@ -176,7 +176,7 @@ export interface DaemonOptions {
   router?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
   // How much of a plan is used (ADR-103), from the plan router's service,
   // unless a test stands it in.
-  planUsage?: (provider: UsageProvider) => Promise<UsageWindow[] | null>;
+  planUsage?: (provider: UsageProvider) => Promise<UsageReply | null>;
   // Where each AI provider's icon is fetched from: their own sites, unless a
   // test stands them in.
   aiSites?: Partial<typeof PROVIDER_SITES>;
@@ -582,7 +582,20 @@ export class Daemon {
     this.planSignIn = new PlanSignIn({ state: options.state, drop: join(options.state, "build-drop"), run: options.buildRun ?? "/run/origaitv-build" });
     this.planUsages = new PlanUsages({ ask: options.planUsage ?? ((provider) => usageViaSocket(ROUTER_SOCKETS.cli, provider)) });
     this.buildAwake = options.inhibitor?.("building an app") ?? { set: () => {} };
-    this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
+    this.builds = new Builds({
+      state: options.state,
+      drop: join(options.state, "build-drop"),
+      builds: options.builds,
+      run: options.buildRun,
+      spend: options.spend,
+      warnings: options.npmWarnings,
+      // The household's model for building, for a build with none of its
+      // own: its pick for that provider and way in, or where they start.
+      buildModel: async (provider, path) => {
+        const ai = await this.ai.read();
+        return (ai.provider === provider && ai.path === path ? ai.models?.build : undefined) ?? defaultModel(provider, path, "build");
+      },
+    });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/origaitv/backgrounds" });
     this.shared = new Shared({ dir: options.shared ?? "/var/lib/origaitv/shared" });
     this.art = new ArtArchives({ cache: options.state, userAgent: userAgent(options.root), ...options.art });

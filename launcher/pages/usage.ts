@@ -8,7 +8,8 @@
 // A plan has its own limits, and shows how much of them is used instead
 // (ADR-103, Q313): a row with a bar for each window the provider says, the
 // 5 hours and the week, and never a dollar amount. Where the TV can't see
-// them, the row says it's using the plan. The caps are a key's only.
+// today's numbers, the row says it's using the plan, and where the plan's
+// sign-in ran out, it offers signing in again. The caps are a key's only.
 
 import { daemon, type BuilderSettings, type PlanUsageState } from "../api.ts";
 import { h } from "../dom.ts";
@@ -62,9 +63,17 @@ export function startsOver(iso: string | undefined, now = new Date()): string | 
   return `Starts over ${at.toLocaleDateString("en-GB", { weekday: "long" })} at ${time}`;
 }
 
-// A plan's rows: a bar for each window, or one line when there are none to show.
-function planRows(open: () => void): HTMLElement[] {
+// What a plan's row says when its sign-in is what's missing.
+const signInSaid = (signIn: "expired" | "none") => (signIn === "expired" ? "Sign in again" : "Sign in");
+
+// A plan's rows: a bar for each window, one that offers signing in where
+// that's what's missing, or one line when there's nothing to show.
+function planRows(ctx: Ctx, open: () => void): HTMLElement[] {
   const windows = planState?.usage?.windows ?? [];
+  const signIn = planState?.usage?.signIn;
+  if (!windows.length && signIn) {
+    return [h("button", { class: "button", "data-focus": true, "data-action": "usage-sign-in", onclick: () => ctx.go("plan-sign-in") }, h("span", {}, "Limits"), h("span", { class: "button-value" }, signInSaid(signIn)))];
+  }
   if (!windows.length) {
     return [h("button", { class: "button", "data-focus": true, "data-action": "usage", onclick: open }, h("span", {}, "Limits"), h("span", { class: "button-value" }, planState ? "Using your plan" : loadingMark()))];
   }
@@ -130,7 +139,7 @@ export function usageRows(ctx: Ctx, open: () => void): HTMLElement[] {
     h("span", {}, "Extra safety checks"),
     h("span", { class: "button-value" }, settings.safeguards ? "On" : "Off"),
   );
-  if (onPlan()) return [...planRows(open), safeguards];
+  if (onPlan()) return [...planRows(ctx, open), safeguards];
   const limit = (label: string, value: number, adjust: string) =>
     h(
       "button",
@@ -156,10 +165,18 @@ export function usagePanel(ctx: Ctx): HTMLElement[] {
   const { settings, warnings } = state;
   // A plan: how much of each window is used, and when it starts over.
   const windows = planState?.usage?.windows ?? [];
+  const signIn = planState?.usage?.signIn;
+  const name = providerName(keyState?.ai?.provider);
   const plan = onPlan()
     ? [
-        h("div", { class: "panel-title" }, `Your ${providerName(keyState?.ai?.provider)} plan`),
-        ...(windows.length
+        h("div", { class: "panel-title" }, `Your ${name} plan`),
+        ...(!windows.length && signIn
+          ? [
+              h("div", { class: "panel-big" }, signInSaid(signIn)),
+              note(signIn === "expired" ? `Your ${name} sign-in ran out` : "Sign in to see how much of your plan is used"),
+              h("button", { class: "button primary", "data-focus": true, "data-action": "usage-sign-in", onclick: () => ctx.go("plan-sign-in") }, "Sign in"),
+            ]
+          : windows.length
           ? windows.flatMap((w) => {
               const over = startsOver(w.resets);
               return [h("div", { class: "panel-note plan-window" }, windowName(w)), h("div", { class: "panel-big" }, `${w.percent}% used`), h("div", { class: "metered" }, bar(w.percent)), ...(over ? [note(over)] : [])];

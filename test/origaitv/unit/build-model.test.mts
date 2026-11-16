@@ -15,19 +15,19 @@ import { DEFAULT_MODELS, defaultModel, MODELS, modelsFor, offered } from "../../
 import { command, type StepRun } from "../../../builder/providers.ts";
 import { rateFor } from "../../../builder/sandbox/prices.ts";
 import { checkRequest } from "../../../builder/sandbox/hand-over.ts";
-import { Builds } from "../../../daemon/builds.ts";
+import { Builds, type BuildsOptions } from "../../../daemon/builds.ts";
 
 const PROVIDERS: Provider[] = ["claude", "chatgpt", "gemini", "grok", "muse"];
 const scratch = mkdtempSync(join(tmpdir(), "origaitv-build-model-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 let count = 0;
 
-function box() {
+function box(extra: Pick<BuildsOptions, "buildModel"> = {}) {
   const base = join(scratch, `box${++count}`);
   const o = { state: join(base, "daemon"), drop: join(base, "daemon", "build-drop"), builds: join(base, "build"), run: join(base, "run"), spend: join(base, "spend.json"), warnings: join(base, "warnings.json") };
   mkdirSync(o.builds, { recursive: true });
   let clock = Date.parse("2026-11-16T18:00:00Z");
-  const builds = new Builds({ ...o, now: () => new Date((clock += 1000)) });
+  const builds = new Builds({ ...o, ...extra, now: () => new Date((clock += 1000)) });
   const drop = (name: string) => {
     const path = join(o.drop, `${name}.json`);
     if (!existsSync(path)) return null;
@@ -56,12 +56,17 @@ test("T19.1 each provider's list is short and strongest first, with its two defa
       assert.ok(ids.includes(build), `${provider} by ${path}: building starts on its list`);
       assert.ok(ids.indexOf(build) <= ids.indexOf(ask), `${provider} by ${path}: building's never weaker than asking's`);
       assert.equal(defaultModel(provider, path, "build"), build);
+      for (const model of [ask, build]) assert.ok(!MODELS[provider].find((m) => m.id === model)?.costsExtra, `${provider} by ${path}: one that can cost extra is never a default (Q324)`);
+      if (path === "key") assert.ok(modelsFor(provider, path).every((m) => !m.costsExtra), `${provider}: nothing costs extra on a plan with a key`);
     }
     for (const model of modelsFor(provider, "key")) assert.ok(rateFor(provider, model.id), `${provider}: ${model.id} is priced`);
   }
   for (const path of ["plan", "key"] as const) assert.deepEqual(DEFAULT_MODELS.claude[path], { ask: "claude-haiku-5-5", build: "claude-sonnet-5-5" }, "Q312: Haiku 5.5 for asking, Sonnet 5.5 for building");
-  assert.deepEqual(modelsFor("claude", "key").map((m) => m.name), ["Opus 5.5", "Sonnet 5.5", "Haiku 5.5"], "Fable 5.2 isn't priced yet");
+  assert.deepEqual(modelsFor("claude", "key").map((m) => m.name), ["Fable 5.2", "Opus 5.5", "Sonnet 5.5", "Haiku 5.5"], "Fable 5.2 is priced for a key");
+  assert.deepEqual(modelsFor("chatgpt", "key").map((m) => m.id), ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-luna"], "the GPT-6 line, and the model the router's evals ran on");
+  assert.deepEqual(modelsFor("muse", "key").map((m) => m.id), ["muse-wonder-1.0", "muse-spark-1.3", "muse-ember-1.0"]);
   assert.deepEqual(modelsFor("claude", "plan").map((m) => m.name), ["Fable 5.2", "Opus 5.5", "Sonnet 5.5", "Haiku 5.5"]);
+  assert.deepEqual(modelsFor("claude", "plan")[0], { id: "claude-fable-5-2", name: "Fable 5.2", costsExtra: "plan" }, "Q324: on a plan, Fable says it can cost extra");
 });
 
 const asked = (change: Record<string, unknown> = {}) => ({
@@ -84,7 +89,7 @@ test("T19.1 root takes a build's model only from its provider's list, and with a
   assert.equal(checkRequest(asked({ model: "claude-sonnet-5-5" })).request!.model, "claude-sonnet-5-5");
   assert.equal(checkRequest(asked({ model: "claude-haiku-5-5", path: "plan", cap: undefined })).request!.model, "claude-haiku-5-5");
   assert.match(checkRequest(asked({ model: "claude-opus-9" })).error!, /model on the provider's list/);
-  assert.match(checkRequest(asked({ provider: "chatgpt", model: "gpt-6-astra" })).error!, /relay prices/, "a plan's own model, with a key");
+  assert.match(checkRequest(asked({ provider: "chatgpt", model: "gpt-5.6-terra" })).error!, /relay prices/, "one the relay prices that isn't on the list");
   assert.match(checkRequest(asked({ provider: "chatgpt", path: "plan", cap: undefined, model: "gpt-5.6-terra" })).error!, /model on the provider's list/, "a key's own model, on a plan");
   assert.match(checkRequest(asked({ model: "gpt-5.6-sol" })).error!, /model on the provider's list/, "another provider's model");
   assert.match(checkRequest(asked({ model: "--dangerously-skip-permissions" })).error!, /model/, "nothing that reads as a flag");
@@ -173,6 +178,17 @@ test("T19.1 a build is understood on the household's model, made on the one pick
   status(build!.id, "1.1.0", { build: changed.build!.build, phase: "build", state: "kept", understood: { name: "Blocks", recipe: "game", says: "a falling-block game" } });
   await builds.next(build!.id, "make it red", { provider: "chatgpt", path: "plan", model: DEFAULT_MODELS.chatgpt.plan.build });
   assert.equal(drop("start").model, DEFAULT_MODELS.chatgpt.plan.build);
+});
+
+test("T19.1 a build with no model of its own shows the household's for building at Make X?, and is made on it when none is picked", async () => {
+  const { builds, drop, status } = box({ buildModel: async (provider, path) => (provider === "claude" && path === "plan" ? "claude-sonnet-5-5" : undefined) });
+  // As from before models were kept: the build has none.
+  const { build } = await builds.ask("a game like tetris", { provider: "claude", path: "plan" });
+  assert.equal(drop("start").model, undefined);
+  status(build!.id, "1.0.0", { build: build!.build, phase: "understand", state: "confirm", understood: { name: "Blocks", recipe: "game", says: "a falling-block game" } });
+  assert.equal((await builds.list())[0].model, "claude-sonnet-5-5", "the TV and the phone both show the household's");
+  await builds.confirm(build!.build);
+  assert.equal(drop("start").model, "claude-sonnet-5-5", "and it's made on it");
 });
 
 test("T19.1 with a key, a model the relay can't price isn't kept, and the CLI's own is used", async () => {
