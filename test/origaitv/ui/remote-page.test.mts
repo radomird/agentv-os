@@ -359,8 +359,9 @@ test("T21.1 two fingers scroll the page from its middle, sideways the row that h
 
   // A page that scrolls in an area of its own: the area under the middle.
   const inner = await app("inner.html");
-  // Once its first rows have loaded and it has somewhere to scroll.
-  for (let tries = 0; tries < 50 && !(await cdp.evaluateIn(inner.target, `(() => { const main = document.getElementById("main"); return main.scrollHeight > main.clientHeight + 400; })()`)); tries++) await sleep(50);
+  // Once its rows have loaded and it has somewhere to scroll.
+  for (let tries = 0; tries < 100 && !(await cdp.evaluateIn(inner.target, `(() => { const main = document.getElementById("main"); return main.scrollHeight > main.clientHeight + 400; })()`)); tries++) await sleep(50);
+  assert.ok(await cdp.evaluateIn(inner.target, `(() => { const main = document.getElementById("main"); return main.scrollHeight > main.clientHeight + 400; })()`), "its rows loaded");
   await wheel(inner.target, 0, 400);
   for (let tries = 0; tries < 50 && !(await cdp.evaluateIn(inner.target, `document.getElementById("main").scrollTop >= 300`)); tries++) await sleep(50);
   assert.ok(await cdp.evaluateIn(inner.target, `document.getElementById("main").scrollTop >= 300`), "the page's own scroll area scrolled");
