@@ -76,6 +76,32 @@ test("a layout is kept only when the grid can draw it", async () => {
   assert.deepEqual((await get("/api/home")).layout, good);
 });
 
+test("T20.1 with the looks on, home has no tile limit: a tile past Terminal's three rows is kept, and Terminal at more on screen starts from those that fit", async () => {
+  const before = (await get("/api/home")).layout;
+  const long = [
+    { id: "origaitv.sample", x: 0, y: 0, size: "s" },
+    { id: "origaitv.tube", x: 1, y: 3, size: "s" },
+    { id: "someone.radio", x: 2, y: 9, size: "s" },
+  ];
+  try {
+    assert.equal((await send("PUT", "/api/layout", { layout: long })).status, 200);
+    assert.deepEqual((await get("/api/home")).layout, long);
+    // Terminal's 5 × 4, never arranged: the tiles that fit it, in the same places.
+    assert.deepEqual((await get("/api/home?grid=5x4")).layout, long.slice(0, 2));
+    // Phase 1's home, with the looks off, keeps its 4 × 3.
+    assert.equal((await send("PUT", "/api/features", { looks: false })).status, 200);
+    try {
+      const { status, data } = await send("PUT", "/api/layout", { layout: long });
+      assert.equal(status, 400);
+      assert.match(data.error, /doesn't fit/);
+    } finally {
+      await send("PUT", "/api/features", { looks: true });
+    }
+  } finally {
+    assert.equal((await send("PUT", "/api/layout", { layout: before })).status, 200);
+  }
+});
+
 test("the TV's settings change only to values they can take", async () => {
   // Updating overnight on its own is off until someone turns it on (Q79).
   assert.equal((await get("/api/home")).settings.updateOvernight, false);

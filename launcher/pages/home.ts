@@ -10,7 +10,7 @@
 
 import { daemon, screen, type App, type Item, type TileData, type TileEntry } from "../api.ts";
 import { clock, h, monogram, tint } from "../dom.ts";
-import { GRID_MORE, span, type Placed } from "../layout.ts";
+import { GRID_MORE, inside, span, type Placed } from "../layout.ts";
 import { keepAsking, showLoading, SHOWN_MS } from "../loading.ts";
 import type { Ctx, View } from "../main.ts";
 import { pixel } from "../pixels.ts";
@@ -436,8 +436,16 @@ export function home(ctx: Ctx): View {
   keepOnly(ctx);
   const grid = h("div", { class: currentGrid() === GRID_MORE ? "grid grid-5x4" : "grid" });
   const byId = new Map(ctx.state.apps.map((app) => [app.id, app]));
+  // The grid shows the tiles that fit it. With the looks on, home has no
+  // tile limit (ADR-103), so a profile's home can go on past it: Glass and
+  // Cinema draw those, and here the bar says Apps has them.
   const ordered = [...ctx.state.layout].sort((a, b) => a.y - b.y || a.x - b.x);
+  let past = 0;
   for (const placed of ordered) {
+    if (!inside(placed, currentGrid())) {
+      if (byId.has(placed.id)) past++;
+      continue;
+    }
     const tile = tileFor(ctx, placed);
     if (tile) grid.append(tile);
   }
@@ -449,7 +457,7 @@ export function home(ctx: Ctx): View {
   // a build that's going or waiting says so after it.
   const next = release(ctx.updates);
   const update = !next ? "" : tonight(ctx.updates) ? `OrigaiTV ${next} installs tonight` : later(ctx.updates) ? "" : `OrigaiTV ${next} is ready, in Settings`;
-  const notice = update || buildNotice();
+  const notice = update || buildNotice() || (past ? `${past} more in Apps` : "");
   const el = h("div", { class: "screen" }, grid, bar(ctx, "home", notice, undefined, HOLD_HINT));
   return {
     el,
