@@ -38,7 +38,7 @@ if [[ -f $UNFINISHED && -d $PREFIX && -n $(ls -A -- "$PREFIX" 2>/dev/null) ]]; t
 fi
 mkdir -p "$PREFIX" "$(dirname -- "$SETUP")"
 if [[ ! -s $SETUP ]]; then
-  curl --fail --silent --show-error --location --retry 3 --max-time 600 --output "$SETUP.part" "$BATTLENET_SETUP_URL"
+  curl --fail --silent --show-error --location --proto =https --proto-redir =https --retry 3 --max-time 600 --output "$SETUP.part" "$BATTLENET_SETUP_URL"
   mv -f "$SETUP.part" "$SETUP"
 fi
 
