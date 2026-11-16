@@ -139,6 +139,10 @@ export interface SetupApps {
   goal: Goal | null;
   wishes: string[];
   for: SetupApp[];
+  // Every game platform that isn't the goal's own (ADR-103), and the ones
+  // that start ticked.
+  games?: SetupApp[];
+  suggested?: string[];
   more: SetupApp[];
   // The streaming starter pack, with its switch on.
   starter?: SetupApp[];

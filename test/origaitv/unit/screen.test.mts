@@ -17,7 +17,7 @@ import type { PageBroker } from "../../../daemon/apps/loader.ts";
 import { Sleep } from "../../../daemon/sleep.ts";
 import { NO_WEBRTC } from "../../../apps/contract/page.ts";
 import { homeArguments, pageArguments, HELD_WORKSPACE, HOME_PROFILE, HOME_UP, HOME_URL, TWO_FRAMES, SERVICES_PROFILE, SHARE_PROFILE, Screen, launcher, type App, type Launcher, type NightUpdates, type Playback, type ProfilesForViewer,
-  type SignIn, type Sound, type Role, type Music, type Pictures } from "../../../daemon/screen.ts";
+  type SignIn, type Sound, type Role, type Music, type Pictures, type AppTarget, type MonitorMode } from "../../../daemon/screen.ts";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -305,11 +305,18 @@ class FakeLauncher implements Launcher {
     this.browser.addPage(url);
     return app;
   }
-  steam() {
-    if (!this.steamInstalled) throw new Error("Steam isn't installed.");
-    return this.launch("steam");
+  // Each native game started, with its command and the mode it was given.
+  games: Array<{ exec: string[]; mode: MonitorMode; app: FakeApp }> = [];
+  game(exec: string[], mode: MonitorMode, name?: string) {
+    if (exec[0] === "steam" && !this.steamInstalled) throw new Error(`${name ?? "Steam"} isn't installed. Add it again in Settings, under Games.`);
+    if (exec[0] !== "steam" && !this.installed.has(exec[0])) throw new Error(`${name ?? exec[0]} isn't installed. Add it again in Settings, under Games.`);
+    const app = this.launch("game");
+    this.games.push({ exec, mode, app });
+    return app;
   }
-  targets = new Map<string, { runtime: "web"; url: string; name?: string } | { runtime: "native"; exec: string[] }>();
+  // The other games' commands the box has, besides Steam's.
+  installed = new Set<string>();
+  targets = new Map<string, AppTarget>();
   bars: (string | null)[] = [];
   async signInBar(name: string | null) {
     this.bars.push(name);
@@ -752,11 +759,11 @@ test("a window of the services' Chromium that the daemon didn't start is known b
 test("a window from a child process of an app belongs to that app", async () => {
   const { hypr, launcher, screen } = await tv();
   await screen.handle({ cmd: "open", app: "steam" });
-  launcher.parents.set(700, launcher.last("steam").pid);
+  launcher.parents.set(700, launcher.last("game").pid);
   hypr.open("0xf", 700, "gamescope");
   await screen.idle();
   assert.deepEqual(hypr.onTv(), ["0xf"]);
-  assert.equal(screen.front()?.role, "steam");
+  assert.equal(screen.front()?.role, "game");
 });
 
 test("Steam that isn't installed says so", async () => {
@@ -1399,10 +1406,10 @@ test("S2.15 a game keeps running under home, with Quit, and doesn't count as one
   const t = await tv();
   t.launcher.targets.set("origaitv.games", { runtime: "native", exec: ["steam", "-gamepadui"] });
   assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "origaitv.games" }), { ok: true });
-  const steam = t.launcher.last("steam");
+  const steam = t.launcher.last("game");
   t.hypr.open("0xf", steam.pid, "gamescope");
   await t.screen.idle();
-  assert.equal(t.screen.front()?.role, "steam");
+  assert.equal(t.screen.front()?.role, "game");
   await t.screen.home();
   assert.equal(t.screen.front()?.role, "home");
   assert.equal(steam.stopped, false);
@@ -1509,10 +1516,10 @@ test("S2.16 the guide button is a game's own; on the home screen Home goes to it
   const t = await tv();
   t.launcher.targets.set("origaitv.games", { runtime: "native", exec: ["steam", "-gamepadui"] });
   await t.screen.fromHome({ cmd: "open-app", app: "origaitv.games" });
-  t.hypr.open("0xf", t.launcher.last("steam").pid, "gamescope");
+  t.hypr.open("0xf", t.launcher.last("game").pid, "gamescope");
   await t.screen.idle();
   await t.screen.handle({ cmd: "home", from: "guide" });
-  assert.equal(t.screen.front()?.role, "steam");
+  assert.equal(t.screen.front()?.role, "game");
   await t.screen.handle({ cmd: "home", from: "key" });
   assert.equal(t.screen.front()?.role, "home");
   await t.screen.handle({ cmd: "home" });
@@ -1523,12 +1530,12 @@ test("T16.3 holding the guide button goes home from Steam, once, and Steam stays
   const t = await tv();
   t.launcher.targets.set("origaitv.games", { runtime: "native", exec: ["steam", "-gamepadui"] });
   await t.screen.fromHome({ cmd: "open-app", app: "origaitv.games" });
-  const steam = t.launcher.last("steam");
+  const steam = t.launcher.last("game");
   t.hypr.open("0xf", steam.pid, "gamescope");
   await t.screen.idle();
   // The press is Steam's own, and so is a tap, which is a press and no more.
   await t.screen.handle({ cmd: "home", from: "guide" });
-  assert.equal(t.screen.front()?.role, "steam");
+  assert.equal(t.screen.front()?.role, "game");
   assert.ok(!t.lines.some((line) => line.includes("guide button held")), t.lines.join("\n"));
   // input.py says the hold while the button is still down.
   assert.deepEqual(await t.screen.handle({ cmd: "home", from: "guide-hold" }), { ok: true });
@@ -1547,7 +1554,7 @@ test("T16.3 holding the guide button goes home from Steam, once, and Steam stays
   // Its tile brings the same Steam back, where it was.
   await t.screen.fromHome({ cmd: "open-app", app: "origaitv.games" });
   assert.equal(t.screen.front()?.address, "0xf");
-  assert.equal(t.launcher.last("steam"), steam, "no second Steam");
+  assert.equal(t.launcher.last("game"), steam, "no second Steam");
 });
 
 test("T16.3 with a web app in front the guide button goes home at once, and its hold adds nothing", async () => {
@@ -1804,10 +1811,10 @@ async function withSteam(t: Awaited<ReturnType<typeof tv>>): Promise<{ steam: Fa
   await t.screen.home();
   t.launcher.targets.set("origaitv.games", { runtime: "native", exec: ["steam", "-gamepadui"] });
   assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "origaitv.games" }), { ok: true });
-  const steam = t.launcher.last("steam");
+  const steam = t.launcher.last("game");
   t.hypr.open("0xf", steam.pid, "gamescope");
   await t.screen.idle();
-  assert.equal(t.screen.front()?.role, "steam");
+  assert.equal(t.screen.front()?.role, "game");
   return { steam, page };
 }
 
@@ -1824,7 +1831,7 @@ test("T16.2 the TV off for a while closes every app but Steam, which stays in fr
   assert.deepEqual((await open(t.screen)).map((o) => o.id), ["origaitv.games"]);
   assert.equal(t.launcher.locks, 1, "the lock is asked for as before");
   assert.equal(t.screen.ambient, false, "no ambient screen over the game");
-  assert.equal(t.screen.front()?.role, "steam");
+  assert.equal(t.screen.front()?.role, "game");
   assert.equal(t.hypr.dpms, false, "the output is off");
   assert.ok(t.lines.includes("the TV has been off for a while; closing every app but origaitv.games"), t.lines.join("\n"));
   // A key with the TV still off: the output looks, goes off again, and the
@@ -1834,12 +1841,12 @@ test("T16.2 the TV off for a while closes every app but Steam, which stays in fr
   await t.screen.idle();
   assert.equal(t.hypr.dpms, false);
   assert.equal(t.screen.ambient, false);
-  assert.equal(t.screen.front()?.role, "steam");
+  assert.equal(t.screen.front()?.role, "game");
   on = true;
   await sleep(60);
   await t.screen.idle();
   assert.equal(t.hypr.dpms, true, "the output is on again");
-  assert.equal(t.screen.front()?.role, "steam", "on the game");
+  assert.equal(t.screen.front()?.role, "game", "on the game");
   assert.equal(t.hypr.get("0xf").workspace.name, "1");
   assert.equal(t.screen.ambient, false);
   t.screen.stop();
@@ -2669,4 +2676,173 @@ test("ADR-011 stage B refuses a page off the app's origins, before it opens or a
   const said = await t.screen.snapshot("https://stand-in.test/account", ["https://stand-in.test"]);
   assert.equal(said.error, "it went to https://login.elsewhere.test/, which isn't one of the app's origins");
   assert.equal(browser.closed.length, 1);
+});
+
+// --- Every game platform (ADR-103, track 23) ---------------------------------
+
+// A native game that isn't Steam, as its app's launch answer has it.
+const RETRO: AppTarget = { runtime: "native", exec: ["retroarch", "--fullscreen"], name: "RetroArch", category: "games" };
+
+// The stand-in game open, in front, in its gamescope.
+async function withGame(t: Awaited<ReturnType<typeof tv>>, id = "origaitv.retroarch", address = "0xa1"): Promise<FakeApp> {
+  t.launcher.installed.add("retroarch");
+  t.launcher.targets.set(id, RETRO);
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: id }), { ok: true });
+  const game = t.launcher.last("game");
+  t.hypr.open(address, game.pid, "gamescope");
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.address, address);
+  return game;
+}
+
+test("T23.1 a native game that isn't Steam opens in front, in a gamescope of its own at the TV's mode, with its own command", async () => {
+  const t = await tv();
+  await withGame(t);
+  assert.equal(t.screen.front()?.role, "game");
+  assert.deepEqual(t.launcher.games.at(-1)?.exec, ["retroarch", "--fullscreen"]);
+  assert.deepEqual(t.launcher.games.at(-1)?.mode, { width: 1920, height: 1080, refreshRate: 60 });
+  const status = (await t.screen.handle({ cmd: "status" })) as any;
+  assert.equal(status.front.app, "origaitv.retroarch", "the window is known as the game's");
+  assert.deepEqual(status.open, [{ id: "origaitv.retroarch", role: "game", game: true, paused: false, front: true, profile: null }]);
+  assert.deepEqual(await t.screen.fromHome({ cmd: "running" }), { ok: true, apps: [{ id: "origaitv.retroarch", game: true, paused: false }] });
+  // A window its launcher opens later, from a child process, is the game's too.
+  t.launcher.parents.set(900, t.launcher.last("game").pid);
+  t.hypr.open("0xa2", 900, "gamescope");
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.address, "0xa2");
+});
+
+test("T23.1 a native game whose program isn't there says so, and nothing is left open", async () => {
+  const t = await tv();
+  t.launcher.targets.set("origaitv.retroarch", RETRO);
+  const answer = (await t.screen.fromHome({ cmd: "open-app", app: "origaitv.retroarch" })) as { ok: boolean; error: string };
+  assert.equal(answer.ok, false);
+  assert.equal(answer.error, "RetroArch isn't installed. Add it again in Settings, under Games.");
+  assert.deepEqual(await open(t.screen), []);
+});
+
+test("T23.1 a native app that isn't a game still has no way onto the TV", async () => {
+  const t = await tv();
+  t.launcher.installed.add("kodi");
+  t.launcher.targets.set("someone.player", { runtime: "native", exec: ["kodi"], name: "Player", category: "media" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "someone.player" }), { ok: false, error: "Can't open that app yet" });
+  assert.equal(t.launcher.games.length, 0);
+});
+
+test("T23.1 the guide button's press is the game's own, its hold goes home, and the game keeps running behind it", async () => {
+  const t = await tv();
+  const game = await withGame(t);
+  await t.screen.handle({ cmd: "home", from: "guide" });
+  assert.equal(t.screen.front()?.address, "0xa1", "the press stays the game's");
+  await t.screen.handle({ cmd: "home", from: "guide-hold" });
+  assert.equal(t.screen.front()?.role, "home");
+  assert.equal(game.stopped, false);
+  assert.equal(t.hypr.get("0xa1").workspace.name, HELD_WORKSPACE);
+  assert.equal(t.lines.filter((line) => line.includes("guide button held")).length, 1, t.lines.join("\n"));
+  // Its tile brings the same game back.
+  await t.screen.fromHome({ cmd: "open-app", app: "origaitv.retroarch" });
+  assert.equal(t.screen.front()?.address, "0xa1");
+  assert.equal(t.launcher.games.length, 1, "no second one started");
+});
+
+test("T23.1 two games run side by side: each tile brings back its own, and quitting one leaves the other", async () => {
+  const t = await tv();
+  t.launcher.targets.set("origaitv.steam", { runtime: "native", exec: ["steam", "-gamepadui"], name: "Steam", category: "games" });
+  await t.screen.fromHome({ cmd: "open-app", app: "origaitv.steam" });
+  const steam = t.launcher.last("game");
+  t.hypr.open("0xf", steam.pid, "gamescope");
+  await t.screen.idle();
+  await t.screen.home();
+  const retro = await withGame(t);
+  // A late window of Steam's doesn't jump in front of RetroArch.
+  t.launcher.parents.set(901, steam.pid);
+  t.hypr.open("0xf2", 901, "gamescope");
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.address, "0xa1", "Steam's window waits out of sight");
+  assert.equal(t.hypr.get("0xf2").workspace.name, HELD_WORKSPACE);
+  await t.screen.home();
+  await t.screen.fromHome({ cmd: "open-app", app: "origaitv.steam" });
+  assert.equal(t.screen.front()?.role, "game");
+  assert.equal((await t.screen.handle({ cmd: "status" }) as any).front.app, "origaitv.steam");
+  await t.screen.home();
+  assert.deepEqual(await t.screen.fromHome({ cmd: "quit", app: "origaitv.retroarch" }), { ok: true });
+  assert.equal(retro.stopped, true);
+  assert.equal(steam.stopped, false, "Steam keeps running");
+  assert.deepEqual((await open(t.screen)).map((o) => o.id), ["origaitv.steam"]);
+});
+
+test("T23.1 the TV off for a while closes every app but a native game, which stays in front, and the TV comes back on to it", async () => {
+  let on = true;
+  const t = await tv({ idleReportMs: 0, ambientSettleMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150, tvSettleMs: 100 });
+  const page = await openApp(t, "origaitv.tube", "0xb");
+  await t.screen.home();
+  const game = await withGame(t);
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.deepEqual(t.launcher.browser.closed, [page], "the web app closed");
+  assert.equal(game.stopped, false, "the game didn't");
+  assert.deepEqual((await open(t.screen)).map((o) => o.id), ["origaitv.retroarch"]);
+  assert.equal(t.screen.ambient, false);
+  assert.equal(t.screen.front()?.address, "0xa1");
+  assert.ok(t.lines.includes("the TV has been off for a while; closing every app but origaitv.retroarch"), t.lines.join("\n"));
+  on = true;
+  await sleep(60);
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.address, "0xa1", "on the game");
+  t.screen.stop();
+});
+
+test("T23.1 a web app that's a game, such as a cloud game, is a game too: not paused under home, its guide press is its own, and the TV going off leaves it", async () => {
+  let on = true;
+  const t = await tv({ idleReportMs: 0, ambientSettleMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 150, tvSettleMs: 100 });
+  const tube = await openApp(t, "origaitv.tube", "0xb");
+  await t.screen.home();
+  const url = "https://cloud.example/play";
+  t.launcher.targets.set("origaitv.cloud", { runtime: "web", url, name: "Cloud", category: "games" });
+  assert.deepEqual(await t.screen.fromHome({ cmd: "open-app", app: "origaitv.cloud" }), { ok: true });
+  await sleep(20);
+  t.hypr.open("0xc", t.launcher.last("web").pid);
+  await t.screen.idle();
+  const cloud = t.launcher.browser.target(url);
+  t.launcher.browser.playing.set(cloud, true);
+  // The press stays the game's; the hold goes home, and the stream plays on.
+  await t.screen.handle({ cmd: "home", from: "guide" });
+  assert.equal(t.screen.front()?.address, "0xc");
+  await t.screen.handle({ cmd: "home", from: "guide-hold" });
+  assert.equal(t.screen.front()?.role, "home");
+  assert.equal(t.launcher.browser.playing.get(cloud), true, "not paused");
+  assert.deepEqual(await t.screen.fromHome({ cmd: "running" }), {
+    ok: true,
+    apps: [
+      { id: "origaitv.tube", game: false, paused: false },
+      { id: "origaitv.cloud", game: true, paused: false },
+    ],
+  });
+  // Two more web apps open, and the game isn't one of the two kept.
+  await openApp(t, "origaitv.player", "0xd");
+  await t.screen.home();
+  await openApp(t, "someone.radio", "0xe");
+  await t.screen.home();
+  assert.deepEqual(t.launcher.browser.closed, [tube], "the oldest web app closed, not the game");
+  // The TV goes off: the other apps close, and the game stays open.
+  await t.screen.fromHome({ cmd: "open-app", app: "origaitv.cloud" });
+  assert.equal(t.screen.front()?.address, "0xc");
+  on = false;
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(t.launcher.browser.closed.includes(cloud), false, "the game is still open");
+  assert.deepEqual((await open(t.screen)).map((o) => o.id), ["origaitv.cloud"]);
+  assert.equal(t.screen.front()?.address, "0xc");
+  t.screen.stop();
+});
+
+test("T23.1 origaitv screen close game closes every native game, and close steam still does", async () => {
+  const t = await tv();
+  const game = await withGame(t);
+  assert.deepEqual(await t.screen.handle({ cmd: "close", role: "steam" }), { ok: true });
+  assert.equal(game.stopped, true);
+  assert.deepEqual(await open(t.screen), []);
+  assert.deepEqual(await t.screen.handle({ cmd: "close", role: "game" }), { ok: true });
+  assert.equal(((await t.screen.handle({ cmd: "close", role: "nothing" })) as { ok: boolean }).ok, false);
 });
