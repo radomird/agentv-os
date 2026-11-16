@@ -90,7 +90,9 @@ export function rowEdit(ctx: Ctx, focusOn?: string, moving = false): View {
     const laid = same(before, layout);
     const kept = same(pinnedBefore, pinned);
     if (laid && kept) return;
-    if ((laid || (await ctx.saveLayout(layout))) && (kept || (await ctx.savePinned(pinned)))) {
+    // One change for the box: a move across the pinned row's edge keeps the
+    // layout and the pinned row together, or neither.
+    if (laid ? await ctx.savePinned(pinned) : await ctx.saveLayout(layout, kept ? undefined : pinned)) {
       layout = ctx.state.layout.map((tile) => ({ ...tile }));
       if (glass) pinned = [...(ctx.state.pinned ?? pinned)];
       ctx.sounds.play("confirm");

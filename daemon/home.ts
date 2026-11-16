@@ -983,21 +983,27 @@ export class Home {
     return saved.filter((id, at): id is string => typeof id === "string" && onHome.includes(id) && saved.indexOf(id) === at).slice(0, MOST_PINNED);
   }
 
-  // Keeps the viewer's pinned row, or says why not: each app on home, once,
-  // six at most.
-  async savePinned(viewer: string, pinned: unknown, layout: Placed[]): Promise<string | null> {
-    if (!Array.isArray(pinned) || pinned.some((id) => typeof id !== "string")) return "the top row is a list of apps";
-    if (pinned.length > MOST_PINNED) return `the top row holds ${MOST_PINNED} apps`;
-    if (new Set(pinned).size !== pinned.length) return "an app is in the top row twice";
-    const onHome = new Set(layout.filter((tile) => tile.id !== APPS_TILE).map((tile) => tile.id));
-    const off = (pinned as string[]).find((id) => !onHome.has(id));
-    if (off) return `${off} isn't on home`;
+  // Why a pinned row can't be kept, in words for the TV and the phone, or
+  // null: each app on home, once, six at most. onHome is the ids on the
+  // layout it goes with, and name gives an app's name.
+  checkPinned(pinned: unknown, onHome: Iterable<string>, name: (id: string) => string): string | null {
+    if (!Array.isArray(pinned) || pinned.some((id) => typeof id !== "string")) return "Couldn't change the top row. Try again.";
+    if (pinned.length > MOST_PINNED) return `The top row holds ${MOST_PINNED} apps. Remove one first.`;
+    const twice = (pinned as string[]).find((id, at) => pinned.indexOf(id) !== at);
+    if (twice) return `${name(twice)} is in the top row already`;
+    const home = new Set([...onHome].filter((id) => id !== APPS_TILE));
+    const off = (pinned as string[]).find((id) => !home.has(id));
+    if (off) return `${name(off)} isn't on home. Add it to home first.`;
+    return null;
+  }
+
+  // Keeps the viewer's pinned row, once checkPinned has passed it.
+  async writePinned(viewer: string, pinned: string[]): Promise<void> {
     await mkdir(this.state, { recursive: true });
     const file = join(this.state, "pinned.json");
     const all = await readJson<Record<string, string[]>>(file, {});
-    all[viewer] = pinned as string[];
+    all[viewer] = pinned;
     await writeJson(file, all);
-    return null;
   }
 
   async saveLayout(viewer: string, layout: unknown, role: Viewer["role"] = "adult", asked: Grid = GRID): Promise<string | null> {

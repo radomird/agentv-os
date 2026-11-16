@@ -87,7 +87,7 @@ import { Listening } from "./listening.ts";
 import { cleanField, type Field } from "./remote-text.ts";
 import { nowPlaying, PhoneRemote } from "./routes/remote.ts";
 import { MUSIC as MUSIC_APP } from "./music.ts";
-import type { Size } from "../launcher/layout.ts";
+import type { Grid, Size } from "../launcher/layout.ts";
 import type { Viewer } from "./apps/loader.ts";
 import { Discover, type DiscoverOptions } from "./discover.ts";
 import { discoverRoute, serverPickRoute } from "./routes/discover.ts";
@@ -1651,16 +1651,7 @@ export class Daemon {
     // within a second. A child's home is an adult's to arrange, past the PIN.
     if (method === "PUT" && path === "/api/phone/layout") {
       if (!(await this.adult(request, response, "arranging home from a phone"))) return;
-      const body = (await this.body(request)) as { layout?: unknown } | undefined;
-      const viewer = await this.profiles.active();
-      const why = await this.home.saveLayout(viewer.id, body?.layout, viewer.role);
-      if (why) {
-        this.json(response, 400, { ok: false, error: why });
-        return;
-      }
-      const layout = await this.home.layout(viewer.id, viewer.role);
-      this.broadcast("layout", { viewer: viewer.id, layout });
-      this.json(response, 200, { ok: true, layout });
+      await this.keepLayout(response, (await this.body(request)) as { layout?: unknown; pinned?: unknown } | undefined);
       return;
     }
 
@@ -2238,16 +2229,45 @@ export class Daemon {
     };
   }
 
-  // Keeps the active viewer's pinned row, and every TV page draws home again.
-  private async keepPinned(response: ServerResponse, body: { pinned?: unknown } | undefined): Promise<void> {
+  // Keeps the active viewer's layout, and Glass's pinned row with it when
+  // the body has one (D12): both, or neither, so a move across the pinned
+  // row's edge is one change. Every TV page draws home again.
+  private async keepLayout(response: ServerResponse, body: { layout?: unknown; pinned?: unknown } | undefined, grid?: Grid): Promise<void> {
     const viewer = await this.profiles.active();
-    const layout = await this.home.layout(viewer.id, viewer.role);
-    const why = await this.home.savePinned(viewer.id, body?.pinned, layout);
+    const apps = await this.home.apps(viewer);
+    const name = (id: string) => apps.find((app) => app.id === id)?.name ?? "That app";
+    if (body?.pinned !== undefined) {
+      const ids = Array.isArray(body.layout) ? body.layout.flatMap((tile) => (typeof tile?.id === "string" ? [tile.id as string] : [])) : [];
+      const why = this.home.checkPinned(body.pinned, ids, name);
+      if (why) {
+        this.json(response, 400, { ok: false, error: why });
+        return;
+      }
+    }
+    const why = await this.home.saveLayout(viewer.id, body?.layout, viewer.role, grid);
     if (why) {
       this.json(response, 400, { ok: false, error: why });
       return;
     }
-    const pinned = await this.home.pinned(viewer.id, layout, await this.home.apps(viewer));
+    if (body?.pinned !== undefined) await this.home.writePinned(viewer.id, body.pinned as string[]);
+    const layout = await this.home.layout(viewer.id, viewer.role, grid);
+    const pinned = await this.home.pinned(viewer.id, await this.home.layout(viewer.id, viewer.role), apps);
+    this.broadcast("layout", grid ? { viewer: viewer.id, layout, grid: `${grid.columns}x${grid.rows}` } : { viewer: viewer.id, layout });
+    this.json(response, 200, { ok: true, layout, pinned });
+  }
+
+  // Keeps the active viewer's pinned row, and every TV page draws home again.
+  private async keepPinned(response: ServerResponse, body: { pinned?: unknown } | undefined): Promise<void> {
+    const viewer = await this.profiles.active();
+    const layout = await this.home.layout(viewer.id, viewer.role);
+    const apps = await this.home.apps(viewer);
+    const why = this.home.checkPinned(body?.pinned, layout.map((tile) => tile.id), (id) => apps.find((app) => app.id === id)?.name ?? "That app");
+    if (why) {
+      this.json(response, 400, { ok: false, error: why });
+      return;
+    }
+    await this.home.writePinned(viewer.id, body!.pinned as string[]);
+    const pinned = await this.home.pinned(viewer.id, layout, apps);
     this.broadcast("layout", { viewer: viewer.id, layout });
     this.json(response, 200, { ok: true, pinned });
   }
@@ -2699,17 +2719,8 @@ export class Daemon {
 
     if (method === "PUT" && path === "/api/layout") {
       if (!(await this.adult(request, response, "changing home"))) return;
-      const body = (await this.body(request)) as { layout?: unknown; grid?: unknown } | undefined;
-      const viewer = await this.profiles.active();
-      const grid = gridNamed(body?.grid);
-      const why = await this.home.saveLayout(viewer.id, body?.layout, viewer.role, grid);
-      if (why) {
-        this.json(response, 400, { ok: false, error: why });
-        return;
-      }
-      const layout = await this.home.layout(viewer.id, viewer.role, grid);
-      this.broadcast("layout", { viewer: viewer.id, layout, grid: `${grid.columns}x${grid.rows}` });
-      this.json(response, 200, { ok: true, layout });
+      const body = (await this.body(request)) as { layout?: unknown; grid?: unknown; pinned?: unknown } | undefined;
+      await this.keepLayout(response, body, gridNamed(body?.grid));
       return;
     }
 
