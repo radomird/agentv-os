@@ -414,6 +414,20 @@ update || fail "an update of OrigaiTV goes through after" "$(cat "$SCRATCH/out")
   fail "an update of OrigaiTV writes Go back again" "$(cat "$ORIGAITV_UPDATE_STATE/go-back.json" 2>&1)"
 pass "Go back is written only when OrigaiTV's own version changed"
 
+# GeForce NOW and its runtime are flatpaks, which pacman doesn't update. On a
+# box with flatpak, root updates them after the packages, and one that can't
+# update doesn't hold up the rest.
+stub flatpak
+update || fail "an update on a box with flatpak goes through" "$(cat "$SCRATCH/out")"
+[[ $(grep -oE "^(omarchy-update-system-pkgs|flatpak update --system --noninteractive -y|omarchy-migrate)" "$calls" | head -n 3 | paste -sd,) == "omarchy-update-system-pkgs,flatpak update --system --noninteractive -y,omarchy-migrate" ]] ||
+  fail "flatpak updates right after the packages" "$(cat "$calls")"
+{ grep -qx "HOME=/root" "$SCRATCH/env/flatpak" && grep -qx "USER=root" "$SCRATCH/env/flatpak"; } || fail "as root" "$(cat "$SCRATCH/env/flatpak")"
+touch "$SCRATCH/fail/flatpak"
+update || fail "a flatpak that can't update doesn't hold up the update" "$(cat "$SCRATCH/out")"
+grep -q "The flatpak apps didn't update this time" "$ORIGAITV_UPDATE_STATE/update.log" || fail "the log says so" "$(cat "$ORIGAITV_UPDATE_STATE/update.log")"
+rm "$SCRATCH/fail/flatpak" "$SCRATCH/bin/flatpak"
+pass "the update updates GeForce NOW's flatpak and its runtime as root, and goes on when it can't"
+
 # Its steps, as the Updating screen sees them: the package lines move it on.
 # shellcheck disable=SC2016 # the progress function is read from the script
 bash -c '
