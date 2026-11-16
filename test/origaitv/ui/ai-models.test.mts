@@ -52,6 +52,12 @@ async function tv(): Promise<Page> {
   return page;
 }
 
+// Until nothing on the page is still moving in: Glass fades a page in, and
+// its words read fainter until it's there.
+async function settled(page: Page): Promise<void> {
+  await page.waitForFunction(() => document.getAnimations().every((one) => one.playState !== "running" || one.effect?.getComputedTiming().endTime === Infinity), null, { timeout: 5000 });
+}
+
 const go = (page: Page, route: string) => page.evaluate((r) => (window as unknown as { origaitvLauncher: { go(route: string): void } }).origaitvLauncher.go(r), route);
 const rows = (page: Page) => page.locator(".settings-panel [data-focus]").evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.action));
 const value = (page: Page, action: string) => page.locator(`.settings-panel [data-action="${action}"] .button-value`).innerText();
@@ -78,6 +84,7 @@ for (const look of LOOKS) {
         await go(page, "settings/ai");
         await page.waitForSelector('.settings-panel[data-page="ai"] [data-action="build-model"]');
         await rest(page);
+        await settled(page);
         const order = (await rows(page)).slice(0, 3).join(" ");
         if (order !== "your-ai ask-model build-model") problems.push(`${theme}: AI's rows start ${order}`);
         const words = (await page.locator('.settings-panel [data-action="ask-model"]').innerText()).replace(/\s+/g, " ").trim();
@@ -96,7 +103,7 @@ for (const look of LOOKS) {
 
 test("T19.1 left and right step along Claude's list, OK goes round it, and the daemon keeps each; with a PIN, a change asks for it", async () => {
   await send("PUT", "/api/look", { look: "glass" });
-  const page = await tv();
+  let page = await tv();
   try {
     await go(page, "settings/ai.ask-model");
     await page.waitForSelector('.settings-panel [data-action="ask-model"]');
@@ -119,8 +126,15 @@ test("T19.1 left and right step along Claude's list, OK goes round it, and the d
     await page.waitForFunction(() => document.querySelector('.settings-panel [data-action="build-model"] .button-value')?.textContent === "Fable 5.2");
     assert.equal((await models()).build, "claude-fable-5-2");
 
-    // A PIN: the next change waits for it.
+    // A PIN, set before the page opens (an open page hears of it a moment
+    // later): the next change waits for it.
     assert.equal((await send("PUT", "/api/pin", { pin: "2468" })).status, 200);
+    await page.close();
+    page = await tv();
+    await go(page, "settings/ai.build-model");
+    await page.waitForSelector('.settings-panel [data-action="build-model"]');
+    await page.locator('.settings-panel [data-action="build-model"]').hover();
+    assert.equal(await page.locator(".focused").getAttribute("data-action"), "build-model");
     await page.keyboard.press("ArrowRight");
     await page.waitForSelector(".pin-pad");
     assert.equal((await models()).build, "claude-fable-5-2", "nothing changes before the PIN");
