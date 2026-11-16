@@ -20,8 +20,10 @@
 
 :root {
   --font: "Manrope", system-ui, sans-serif;
-  --safe-x: 80px;
-  --safe-y: 60px;
+  /* Fit to screen moves these in by as much as its margin is over 3 percent
+     (launcher/size.ts). */
+  --safe-x: calc(80px + var(--fit-over-x, 0px));
+  --safe-y: calc(60px + var(--fit-over-y, 0px));
   --bar: 72px;
   --round: 28px;
   --glass: color-mix(in srgb, var(--background) 52%, transparent);

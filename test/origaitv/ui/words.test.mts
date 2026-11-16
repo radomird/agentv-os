@@ -316,10 +316,11 @@ function routes(profile: string): string[] {
     "power/shutdown",
     "power/restart",
     "power/bootmenu",
+    "fit",
   ];
 }
 
-const SETTINGS_PAGES = ["looks", "theme", "pictures", "weather", "tmdb", "pin", "power", "controllers", "wifi", "your-ai", "usage", "updates", "whats-new", "desktop", "about"];
+const SETTINGS_PAGES = ["looks", "theme", "pictures", "weather", "tmdb", "pin", "power", "controllers", "wifi", "your-ai", "usage", "updates", "whats-new", "go-back", "desktop", "about"];
 
 async function walk(look: Look, theme: string, size: Size, problems: string[]): Promise<void> {
   await dress(look, theme, size);

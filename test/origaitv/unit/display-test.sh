@@ -3,7 +3,8 @@
 # The TV's resolution and its three sizes (ADR-062): the rules and
 # /api/display (daemon/display.ts), and the TV session's monitor lines
 # (session/hypr.lua), which start the session at the mode and scale the
-# screen daemon kept, and take nothing else from that file.
+# screen daemon kept, with Fit to screen's margin as the monitor's reserved
+# area, and take nothing else from that file.
 
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
@@ -13,8 +14,8 @@ node_test "$ROOT/test/origaitv/unit/display.test.mts"
 hypr="$ROOT/session/hypr.lua"
 grep -qF 'hl.monitor({ output = "", mode = "preferred", position = "auto", scale = "auto" })' "$hypr" ||
   fail "the TV session starts at Hyprland's own mode and scale when there's nothing kept"
-grep -qF 'hl.monitor({ output = kept.output, mode = kept.mode, position = "auto", scale = kept.scale })' "$hypr" ||
-  fail "and at the kept mode and scale when there is"
+grep -qF 'reserved = { top = kept.y, right = kept.x, bottom = kept.y, left = kept.x },' "$hypr" ||
+  fail "and at the kept mode, scale and margin when there is"
 
 lua=$(type -P lua5.4 || type -P lua || true)
 if [[ -z $lua ]]; then
@@ -29,7 +30,11 @@ cat >"$SCRATCH/run.lua" <<'LUA'
 local function noop() return noop end
 local stub = setmetatable({}, { __index = function() return noop end })
 hl = setmetatable({
-  monitor = function(rule) print(rule.output .. "|" .. tostring(rule.mode) .. "|" .. tostring(rule.scale)) end,
+  monitor = function(rule)
+    local r = rule.reserved
+    local reserved = r and (r.top .. "," .. r.right .. "," .. r.bottom .. "," .. r.left) or "-"
+    print(rule.output .. "|" .. tostring(rule.mode) .. "|" .. tostring(rule.scale) .. "|" .. reserved)
+  end,
   dsp = stub,
 }, { __index = function() return noop end })
 dofile(arg[1])
@@ -38,17 +43,20 @@ rules() {
   XDG_STATE_HOME="$SCRATCH/state" HOME="$SCRATCH/home" "$lua" "$SCRATCH/run.lua" "$hypr"
 }
 
-[[ $(rules) == "|preferred|auto" ]] || fail "with nothing kept, only Hyprland's own" "$(rules)"
+[[ $(rules) == "|preferred|auto|-" ]] || fail "with nothing kept, only Hyprland's own" "$(rules)"
 mkdir -p "$SCRATCH/state/origaitv"
 echo "HDMI-A-1 3840x2160@60 2.4" >"$SCRATCH/state/origaitv/display"
-[[ $(rules) == $'|preferred|auto\nHDMI-A-1|3840x2160@60|2.4' ]] || fail "the session starts at the kept mode and scale" "$(rules)"
-for bad in 'HDMI"}) os.exit(1) --x 3840x2160@60 2' "HDMI-A-1 3840x2160@60 0" "HDMI-A-1 3840x2160@60 9" "HDMI-A-1 preferred 2" "HDMI-A-1 3840x2160@60 2 extra"; do
+[[ $(rules) == $'|preferred|auto|-\nHDMI-A-1|3840x2160@60|2.4|0,0,0,0' ]] || fail "the session starts at the kept mode and scale, with no margin on a line from before it" "$(rules)"
+echo "HDMI-A-1 3840x2160@60 2 58 32" >"$SCRATCH/state/origaitv/display"
+[[ $(rules) == $'|preferred|auto|-\nHDMI-A-1|3840x2160@60|2|32,58,32,58' ]] || fail "and with the kept margin, as the monitor's reserved area" "$(rules)"
+for bad in 'HDMI"}) os.exit(1) --x 3840x2160@60 2' "HDMI-A-1 3840x2160@60 0" "HDMI-A-1 3840x2160@60 9" "HDMI-A-1 preferred 2" "HDMI-A-1 3840x2160@60 2 extra" \
+  "HDMI-A-1 3840x2160@60 2 58" "HDMI-A-1 3840x2160@60 2 58 -32" "HDMI-A-1 3840x2160@60 2 3000 32" "HDMI-A-1 3840x2160@60 2 58 32 1"; do
   printf '%s\n' "$bad" >"$SCRATCH/state/origaitv/display"
-  [[ $(rules) == "|preferred|auto" ]] || fail "a kept line that isn't a plain mode and scale is ignored" "$bad: $(rules)"
+  [[ $(rules) == "|preferred|auto|-" ]] || fail "a kept line that isn't a plain mode, scale and margin is ignored" "$bad: $(rules)"
 done
 rm -rf "$SCRATCH/state"
 mkdir -p "$SCRATCH/home/.local/state/origaitv"
 echo "DP-2 1920x1080@59.94 1.2" >"$SCRATCH/home/.local/state/origaitv/display"
-[[ $(XDG_STATE_HOME="" HOME="$SCRATCH/home" "$lua" "$SCRATCH/run.lua" "$hypr" | tail -n 1) == "DP-2|1920x1080@59.94|1.2" ]] ||
+[[ $(XDG_STATE_HOME="" HOME="$SCRATCH/home" "$lua" "$SCRATCH/run.lua" "$hypr" | tail -n 1) == "DP-2|1920x1080@59.94|1.2|0,0,0,0" ]] ||
   fail "without XDG_STATE_HOME, the line is in ~/.local/state"
-pass "the TV session starts at the kept mode and scale, and ignores anything else in that file"
+pass "the TV session starts at the kept mode, scale and margin, and ignores anything else in that file"

@@ -44,6 +44,8 @@ import { onFeatures } from "./features.ts";
 import { lookHome } from "./looks/homes.ts";
 import { forgetTiles, onTileLanded } from "./looks/cards.ts";
 import { setWatching } from "./loading.ts";
+import { applyMargin, loadSizes } from "./size.ts";
+import { fitPage } from "./pages/fit.ts";
 import { forecast } from "./pages/forecast.ts";
 import { newWeek } from "./pages/new-week.ts";
 import { checkWhileAmbient } from "./box.ts";
@@ -403,6 +405,8 @@ function viewFor(route: string): View {
   if (name === "app-setup") return appSetup(ctx, arg);
   if (name === "edit") return edit(ctx, arg);
   if (name === "whats-new") return whatsNew(ctx);
+  // Fit to screen, from Settings, Appearance (ADR-103).
+  if (name === "fit") return fitPage(ctx);
   if (name === "update-off") return checkView(ctx);
   if (name === "settings") return settings(ctx, arg);
   if (name === "profile") return profile(ctx, arg);
@@ -832,6 +836,8 @@ async function lookAgain(): Promise<void> {
   applyLook();
   await previewColours();
   fit(canvas());
+  // Fit to screen's margin, for the looks' safe area (launcher/size.ts).
+  applyMargin(preview() ? null : await loadSizes(), canvas());
   focus.refresh();
 }
 

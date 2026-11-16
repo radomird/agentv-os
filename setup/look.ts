@@ -1,10 +1,11 @@
 // Setup's look step (ADR-063, D3), with the looks switch on: Terminal,
 // Glass and Cinema by name down the left, and home in the focused one on the
 // right, drawn by the launcher itself in a frame. OK on a name picks it and
-// goes on to the theme, step 11 of 12. Under the preview, with the sizes
-// switch on, the TV's sizes (ADR-062): OK on one sets it, and the preview
-// shows home at it. Where the TV has nothing of its own yet, the preview
-// fills in with open movies (launcher/looks/showcase.ts).
+// goes on to Fit to screen (setup/fit.ts), then the theme, step 11 of 12.
+// Under the preview, with the sizes switch on, the TV's sizes (ADR-062): OK
+// on one sets it, and the preview shows home at it. Where the TV has
+// nothing of its own yet, the preview fills in with open movies
+// (launcher/looks/showcase.ts).
 // Settings → Themes and backgrounds changes both any time.
 
 import { h } from "../launcher/dom.ts";
@@ -40,8 +41,11 @@ export async function look(ctx: Ctx): Promise<View> {
     }
     current = one.id;
     ctx.sounds.play("confirm");
-    // On to the theme and background, setup's next step.
-    await ctx.finish("look");
+    // On to Fit to screen, right after the size (ADR-103), then the theme
+    // and background, setup's next step. With the sizes off there's no
+    // margin to fit.
+    if (display) ctx.open("look/fit", "forward");
+    else await ctx.finish("look");
   };
 
   // The looks by name, the one in use marked.
