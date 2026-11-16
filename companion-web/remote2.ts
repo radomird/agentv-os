@@ -9,6 +9,10 @@
 //   Holding Back goes home, and the phone sends the hold;
 // - Ask, full width under them;
 // - one notice line at the bottom, the most important first;
+// - in Glass, the clickpad instead (D13): a round pad on top that you
+//   swipe, tap and hold, whose edge you press for the arrows, then Back
+//   and Home, play and Ask, as round keys in two columns, and no switch
+//   for a d-pad, since the edge is one;
 // - a menu with who's watching, edit home, share, Apps, Settings and the
 //   click and buzz switch.
 // The keyboard comes up by itself whenever a field on the TV has the focus,
@@ -97,6 +101,28 @@ const SCROLL_GAIN = 3;
 const SCROLL_EVERY_MS = 30;
 // The most one request scrolls, each way, in the TV page's pixels.
 const SCROLL_MOST = 4000;
+
+// How far a finger goes before a press becomes a swipe.
+const STILL_PX = 12;
+// The Glass clickpad (D13). Its middle, out to EDGE_INNER of the radius, is
+// the surface. A press on the ring around it is that side's arrow, as the
+// finger lifts. Held still, the arrow goes after EDGE_REPEAT_MS and then
+// every EDGE_EVERY_MS until it lifts. A press there that moves is a swipe.
+const EDGE_INNER = 0.6;
+const EDGE_REPEAT_MS = 450;
+const EDGE_EVERY_MS = 150;
+
+type Arrow = "up" | "down" | "left" | "right";
+const ARROWS: Arrow[] = ["up", "down", "left", "right"];
+
+// What a surface shows as it's used: a step of the focus (with no buzz of
+// its own after a hold's tick), an OK, and on the clickpad, which arrow its
+// edge is pressed for.
+interface Feel {
+  step(buzz?: boolean): void;
+  ok(): void;
+  edge?: { at(event: PointerEvent): Arrow | null; light(arrow: Arrow | null): void };
+}
 
 // The fingers on one pad, for its two-finger scroll. Once a second finger
 // is down, the pad is scrolling until every finger has lifted, so the one
@@ -276,6 +302,8 @@ export class Remote2 {
   private about: string | null = null;
   // The press on the d-pad's OK that's under way, if one is.
   private okPress: { finger: number; held: boolean; filling: boolean; left: boolean; timer: number } | null = null;
+  // Lines the clickpad's keys up under its sides as its size changes.
+  private padWatch: ResizeObserver | null = null;
 
   constructor(root: HTMLElement, kit: Kit) {
     this.root = root;
@@ -311,8 +339,14 @@ export class Remote2 {
     if (this.page === "update") return `update ${JSON.stringify(state.update)} ${state.pin.set}`;
     if (this.page === "build") return `build ${this.building} ${JSON.stringify(state.builds)}`;
     if (this.page !== "remote") return this.page;
-    const screen = this.keyboardFor(state) ? `keyboard ${fieldKey(state)}` : state.tv.view === "trackpad" ? "desktop" : this.pointer ? "pointer" : dpadOn() ? "dpad" : "surface";
-    return `${screen} ${this.sheet} ${state.viewer.id} ${state.viewer.name} ${state.viewer.role} ${Boolean(state.nowPlaying && state.tv.playing)} ${listKey(state.discover)}`;
+    const glass = this.glass(state);
+    const screen = this.keyboardFor(state) ? `keyboard ${fieldKey(state)}` : state.tv.view === "trackpad" ? "desktop" : this.pointer ? "pointer" : !glass && dpadOn() ? "dpad" : "surface";
+    return `${screen} ${this.sheet} ${state.viewer.id} ${state.viewer.name} ${state.viewer.role} ${Boolean(state.nowPlaying && state.tv.playing)} ${listKey(state.discover)} ${glass}`;
+  }
+
+  // Glass's remote is the clickpad. Terminal and Cinema keep the surface.
+  private glass(state: Phone): boolean {
+    return state.look === "glass";
   }
 
   // --- The screen -----------------------------------------------------------
@@ -322,17 +356,22 @@ export class Remote2 {
     this.playKey = null;
     this.card = null;
     this.holdHint = null;
+    this.padWatch?.disconnect();
+    this.padWatch = null;
     let children: (HTMLElement | null)[];
+    let clickpad = false;
     if (this.page !== "remote") children = this.subPage(state);
     else if (this.keyboardFor(state)) children = this.keyboard(state);
     else {
       this.card = this.playing(state);
       this.notice = this.noticeLine(state);
       const network = state.discover ? networkLine(state.discover, this.kit.failed) : null;
-      children = [this.top(state), this.card, network, this.surface(state), this.keys(state), this.askButton(), this.notice];
+      clickpad = this.glass(state);
+      if (clickpad) children = [this.top(state), this.card, network, ...this.clickpadParts(state), this.notice];
+      else children = [this.top(state), this.card, network, this.surface(state), this.keys(state), this.askButton(), this.notice];
     }
     if (this.page === "remote") this.kept = null;
-    this.root.replaceChildren(h("div", { class: "r2", "data-screen": this.shape.split(" ")[0] }, ...children));
+    this.root.replaceChildren(h("div", { class: "r2", "data-screen": this.shape.split(" ")[0], "data-shape": clickpad ? "clickpad" : undefined }, ...children));
     this.drawSheet(state);
   }
 
@@ -375,7 +414,8 @@ export class Remote2 {
       h(
         "span",
         { class: "r2-top-buttons" },
-        this.iconButton("dpad", "", {
+        // The clickpad's edge is the d-pad, so Glass has no switch for one.
+        this.glass(state) ? null : this.iconButton("dpad", "", {
           class: `r2-icon${dpad ? " on" : ""}`,
           "aria-label": "Use buttons",
           "aria-pressed": String(dpad),
@@ -411,7 +451,8 @@ export class Remote2 {
     if (!this.holdHint) return;
     const what = this.holds() ? "details" : "the pointer";
     if (this.holdHint.line.textContent !== `Hold for ${what}`) this.holdHint.line.textContent = `Hold for ${what}`;
-    this.holdHint.area.setAttribute("aria-label", `Swipe to move, tap for OK, hold for ${what}, two fingers to scroll`);
+    const edge = this.holdHint.area.classList.contains("cp-pad") ? ", press the edge for the arrows" : "";
+    this.holdHint.area.setAttribute("aria-label", `Swipe to move, tap for OK${edge}, hold for ${what}, two fingers to scroll`);
   }
 
   // The surface: swipes move the focus and a tap is OK. A hold on an app's
@@ -425,21 +466,103 @@ export class Remote2 {
     const area = h("div", { class: "r2-surface", role: "application", "data-action": "surface" }, h("span", { class: "r2-hint" }, h("span", {}, "Swipe to move"), h("span", {}, "Tap for OK"), line, h("span", {}, "Two fingers to scroll")));
     this.holdHint = { area, line };
     this.sayHold();
+    const flash = (buzz = true) => {
+      area.classList.add("pressed");
+      window.setTimeout(() => area.classList.remove("pressed"), 120);
+      if (buzz && feelOn()) navigator.vibrate?.(8);
+    };
+    this.gestures(area, { step: flash, ok: flash });
+    return area;
+  }
+
+  // Glass's clickpad (D13), from the top bar down: Pointer and Done while
+  // the pad is the pointer, the round pad, and Back and Home, then play and
+  // Ask, in two columns that line up under the pad's sides.
+  private clickpadParts(state: Phone): HTMLElement[] {
+    const desktop = state.tv.view === "trackpad";
+    const pointer = desktop || this.pointer;
+    const pad = pointer ? this.pointerPad(!desktop, true) : this.clickpad();
+    const keys = this.roundKeys(state);
+    this.padWatch = new ResizeObserver(() => keys.style.setProperty("--cp-gap", `${Math.max(64, Math.round(pad.offsetWidth * 0.62 - 76))}px`));
+    this.padWatch.observe(pad);
+    const parts = [h("div", { class: "cp-box" }, pad), keys];
+    if (pointer) parts.unshift(this.pointerTop(!desktop, "cp-pointer-top"));
+    return parts;
+  }
+
+  // The round pad: the same swipes, tap, hold and two fingers as the
+  // surface, in its middle. Its edge has a dot on each side, and a press
+  // there lights that quarter with its arrow.
+  private clickpad(): HTMLElement {
+    const line = h("span", { "data-hint": "hold" });
+    const center = h("div", { class: "cp-center" }, h("span", { class: "cp-hint" }, h("span", {}, "Swipe to move"), h("span", {}, "Tap for OK"), line, h("span", {}, "Two fingers to scroll")));
+    const pad = h(
+      "div",
+      { class: "cp-pad", role: "application", "data-action": "clickpad" },
+      ...ARROWS.map((arrow) => h("span", { class: `cp-dot ${arrow}` })),
+      h("span", { class: "cp-lit", "aria-hidden": "true" }),
+      ...ARROWS.map((arrow) => h("span", { class: `cp-arrow ${arrow}`, "aria-hidden": "true" }, icon(arrow, 26))),
+      center,
+    );
+    this.holdHint = { area: pad, line };
+    this.sayHold();
+    const flash = (el: HTMLElement, buzz = true) => {
+      el.classList.add("pressed");
+      window.setTimeout(() => el.classList.remove("pressed"), 120);
+      if (buzz && feelOn()) navigator.vibrate?.(8);
+    };
+    let lit: Arrow | null = null;
+    this.gestures(pad, {
+      step: (buzz) => flash(pad, buzz),
+      ok: () => flash(center),
+      edge: {
+        at: (event) => {
+          const box = pad.getBoundingClientRect();
+          const r = box.width / 2;
+          const x = event.clientX - box.left - r;
+          const y = event.clientY - box.top - r;
+          if (Math.hypot(x, y) < r * EDGE_INNER) return null;
+          return Math.abs(x) > Math.abs(y) ? (x > 0 ? "right" : "left") : y > 0 ? "down" : "up";
+        },
+        light: (arrow) => {
+          lit = arrow;
+          if (arrow) pad.dataset.edge = arrow;
+          // A quick press stays lit long enough to see.
+          else window.setTimeout(() => lit === null && delete pad.dataset.edge, 120);
+        },
+      },
+    });
+    // A long press is a hold or an arrow, not the phone's own menu.
+    pad.addEventListener("contextmenu", (event) => event.preventDefault());
+    return pad;
+  }
+
+  // One finger swipes, taps and holds, two fingers scroll, and on the
+  // clickpad a press on the edge is an arrow. The gesture is the first
+  // finger's, from down to up.
+  private gestures(area: HTMLElement, feel: Feel): void {
     const two = new TwoFingers((wheel) => this.send({ wheel }));
     let from: { x: number; y: number; at: number } | null = null;
-    // The one finger the gesture is, from down to up.
     let finger: number | null = null;
     let moved = false;
     let hold = 0;
-    const flash = () => {
-      area.classList.add("pressed");
-      window.setTimeout(() => area.classList.remove("pressed"), 120);
+    // A press on the clickpad's edge, and whether it's repeating yet.
+    let edge: { arrow: Arrow; repeating: boolean; timer: number } | null = null;
+    const arrow = (key: Arrow) => {
+      this.send({ key });
       if (feelOn()) navigator.vibrate?.(8);
     };
+    const letGo = () => {
+      if (!edge) return;
+      clearTimeout(edge.timer);
+      edge = null;
+      feel.edge?.light(null);
+    };
     area.addEventListener("pointerdown", (event) => {
-      // A second finger scrolls: no swipe, tap or hold for the first one.
+      // A second finger scrolls: no swipe, tap, hold or arrow for the first.
       if (two.down(event)) {
         clearTimeout(hold);
+        letGo();
         from = null;
         area.setPointerCapture(event.pointerId);
         return;
@@ -449,6 +572,19 @@ export class Remote2 {
       area.setPointerCapture(event.pointerId);
       from = { x: event.clientX, y: event.clientY, at: Date.now() };
       moved = false;
+      const side = feel.edge?.at(event) ?? null;
+      if (side) {
+        feel.edge?.light(side);
+        const press = { arrow: side, repeating: false, timer: 0 };
+        const again = () => {
+          press.repeating = true;
+          arrow(side);
+          press.timer = window.setTimeout(again, EDGE_EVERY_MS);
+        };
+        press.timer = window.setTimeout(again, EDGE_REPEAT_MS);
+        edge = press;
+        return;
+      }
       hold = window.setTimeout(() => {
         from = null;
         if (feelOn()) navigator.vibrate?.(20);
@@ -456,7 +592,7 @@ export class Remote2 {
         // the d-pad's OK asks.
         if (this.holds()) {
           this.send(DETAILS);
-          flash();
+          feel.step(false);
           return;
         }
         this.pointer = true;
@@ -468,15 +604,21 @@ export class Remote2 {
       if (!from || event.pointerId !== finger) return;
       const dx = event.clientX - from.x;
       const dy = event.clientY - from.y;
+      if (edge) {
+        // Still on the edge, or already repeating: the arrow stays.
+        if (edge.repeating || Math.abs(dx) + Math.abs(dy) <= STILL_PX) return;
+        // It moved: a swipe that started on the edge.
+        letGo();
+      }
       if (Math.abs(dx) < STEP_PX && Math.abs(dy) < STEP_PX) {
-        if (Math.abs(dx) + Math.abs(dy) > 12) clearTimeout(hold);
+        if (Math.abs(dx) + Math.abs(dy) > STILL_PX) clearTimeout(hold);
         return;
       }
       clearTimeout(hold);
       moved = true;
       const across = Math.abs(dx) >= Math.abs(dy);
       this.send({ key: across ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up" });
-      flash();
+      feel.step();
       // The next step counts from here, so a long swipe moves on.
       from = across ? { ...from, x: from.x + Math.sign(dx) * STEP_PX } : { ...from, y: from.y + Math.sign(dy) * STEP_PX };
     });
@@ -485,15 +627,19 @@ export class Remote2 {
       if (event.pointerId !== finger) return;
       finger = null;
       clearTimeout(hold);
-      if (from && !moved && !scrolled && event.type === "pointerup" && Date.now() - from.at < HOLD_MS) {
+      if (edge) {
+        // A press on the edge that lifts before it repeats is one arrow.
+        const pressed = edge;
+        letGo();
+        if (!pressed.repeating && !scrolled && event.type === "pointerup") arrow(pressed.arrow);
+      } else if (from && !moved && !scrolled && event.type === "pointerup" && Date.now() - from.at < HOLD_MS) {
         this.send({ key: "enter" });
-        flash();
+        feel.ok();
       }
       from = null;
     };
     area.addEventListener("pointerup", end);
     area.addEventListener("pointercancel", end);
-    return area;
   }
 
   // Whether a hold on OK, or on the surface, has anything to open: only
@@ -574,36 +720,39 @@ export class Remote2 {
     );
   }
 
-  // The pointer: move to point, tap to click. From a hold, done puts the
-  // surface back; on the desktop it stays.
-  private pointerPad(byHold: boolean): HTMLElement {
-    const dot = h("span", { class: "r2-dot", "aria-hidden": "true" });
-    const area = h(
-      "div",
-      { class: "r2-surface r2-pointer", role: "application", "aria-label": "Move to point, tap to click", "data-action": "trackpad" },
-      h(
-        "span",
-        { class: "r2-pointer-top" },
-        h("span", { class: "r2-chip" }, icon("pointer", 16), h("span", {}, "Pointer")),
-        byHold
-          ? h(
-              "button",
-              {
-                type: "button",
-                class: "r2-done",
-                "data-action": "pointer-done",
-                onclick: () => {
-                  this.pointer = false;
-                  this.draw(true);
-                },
+  // The pointer's chip, and Done when a hold gave it.
+  private pointerTop(byHold: boolean, cls: string): HTMLElement {
+    return h(
+      "span",
+      { class: cls },
+      h("span", { class: "r2-chip" }, icon("pointer", 16), h("span", {}, "Pointer")),
+      byHold
+        ? h(
+            "button",
+            {
+              type: "button",
+              class: "r2-done",
+              "data-action": "pointer-done",
+              onclick: () => {
+                this.pointer = false;
+                this.draw(true);
               },
-              "Done",
-            )
-          : null,
-      ),
-      dot,
-      h("span", { class: "r2-hint low" }, "Move to point · tap to click"),
+            },
+            "Done",
+          )
+        : null,
     );
+  }
+
+  // The pointer: move to point, tap to click. From a hold, done puts the
+  // surface back; on the desktop it stays. On the clickpad the whole round
+  // pad is the trackpad, with the chip and Done above it.
+  private pointerPad(byHold: boolean, round = false): HTMLElement {
+    const dot = h("span", { class: "r2-dot", "aria-hidden": "true" });
+    const props = { role: "application", "aria-label": "Move to point, tap to click", "data-action": "trackpad" };
+    const area = round
+      ? h("div", { class: "cp-pad pointer", ...props }, dot, h("span", { class: "cp-low" }, "Move to point · tap to click"))
+      : h("div", { class: "r2-surface r2-pointer", ...props }, this.pointerTop(byHold, "r2-pointer-top"), dot, h("span", { class: "r2-hint low" }, "Move to point · tap to click"));
     let last: { x: number; y: number } | null = null;
     let travelled = 0;
     let downAt = 0;
@@ -667,6 +816,19 @@ export class Remote2 {
     const size = small ? 22 : 28;
     const label = h("span", {}, small ? "" : "Back");
     const back = h("button", { type: "button", class: "r2-key", "aria-label": "Back, hold for home", "data-key": "back" }, icon("back", size), small ? null : label);
+    this.holdBack(back, label, small ? "" : "Back");
+    const home = this.iconButton("home", small ? "" : "Home", { class: "r2-key", "aria-label": "Home", "data-key": "home", onclick: () => this.send({ key: "home" }) }, size);
+    const play = this.iconButton("play", small ? "" : "Play", { class: "r2-key", "data-action": "playpause", onclick: () => void this.playback("toggle") }, size);
+    this.setPlay(play, state.tv.playing, small);
+    this.playKey = play;
+    const row = h("div", { class: `r2-keys${small ? " small" : ""}` }, back, home, play);
+    if (small) row.append(this.iconButton("ask", "", { class: "r2-key r2-ask-small", "aria-label": "Ask", "data-action": "ask", onclick: () => this.openSheet("ask") }, size));
+    return row;
+  }
+
+  // Back: a tap goes back, and held, it goes home, and the phone sends the
+  // hold. Its label says Home while it's held.
+  private holdBack(back: HTMLButtonElement, label: HTMLElement, word: string): void {
     let timer = 0;
     let held = false;
     back.addEventListener("pointerdown", () => {
@@ -683,7 +845,7 @@ export class Remote2 {
       clearTimeout(timer);
       back.classList.remove("holding");
       if (!held && event.type === "pointerup") this.send({ key: "back" });
-      if (held) window.setTimeout(() => (label.textContent = small ? "" : "Back"), 600);
+      if (held) window.setTimeout(() => (label.textContent = word), 600);
       held = false;
     };
     back.addEventListener("pointerup", release);
@@ -691,13 +853,21 @@ export class Remote2 {
     back.addEventListener("pointerleave", (event) => back.classList.contains("holding") && release(event));
     // A keyboard's Enter on the button, which has no pointer.
     back.addEventListener("click", (event) => event.detail === 0 && this.send({ key: "back" }));
-    const home = this.iconButton("home", small ? "" : "Home", { class: "r2-key", "aria-label": "Home", "data-key": "home", onclick: () => this.send({ key: "home" }) }, size);
-    const play = this.iconButton("play", small ? "" : "Play", { class: "r2-key", "data-action": "playpause", onclick: () => void this.playback("toggle") }, size);
-    this.setPlay(play, state.tv.playing, small);
+  }
+
+  // The clickpad's keys: Back and Home (a TV on it, as on a TV box's
+  // remote), then play and Ask, round, with their names under them.
+  private roundKeys(state: Phone): HTMLElement {
+    const key = (name: Icon, word: string, props: Record<string, unknown>) =>
+      h("button", { type: "button", ...props, class: `cp-key${props.class ? ` ${props.class}` : ""}` }, h("span", { class: "cp-round" }, icon(name, 28)), h("span", {}, word));
+    const back = key("back", "Back", { "aria-label": "Back, hold for home", "data-key": "back" });
+    this.holdBack(back, back.lastElementChild as HTMLElement, "Back");
+    const home = key("tv", "Home", { "aria-label": "Home", "data-key": "home", onclick: () => this.send({ key: "home" }) });
+    const play = key("play", "Play", { "data-action": "playpause", onclick: () => void this.playback("toggle") });
+    this.setPlay(play, state.tv.playing);
     this.playKey = play;
-    const row = h("div", { class: `r2-keys${small ? " small" : ""}` }, back, home, play);
-    if (small) row.append(this.iconButton("ask", "", { class: "r2-key r2-ask-small", "aria-label": "Ask", "data-action": "ask", onclick: () => this.openSheet("ask") }, size));
-    return row;
+    const ask = key("ask", "Ask", { class: "ask", "aria-label": "Ask", "data-action": "ask", onclick: () => this.openSheet("ask") });
+    return h("div", { class: "cp-keys" }, back, home, play, ask);
   }
 
   private setPlay(button: HTMLButtonElement, playing: boolean, small = button.closest(".small") !== null): void {
@@ -705,7 +875,9 @@ export class Remote2 {
     if (button.dataset.state === word) return;
     button.dataset.state = word;
     button.setAttribute("aria-label", playing ? "Pause" : "Play or pause");
-    button.replaceChildren(icon(playing ? "pause" : "play", small ? 22 : 28), small ? "" : h("span", {}, playing ? "Pause" : "Play"));
+    const name = playing ? "Pause" : "Play";
+    if (button.classList.contains("cp-key")) button.replaceChildren(h("span", { class: "cp-round" }, icon(word, 28)), h("span", {}, name));
+    else button.replaceChildren(icon(word, small ? 22 : 28), small ? "" : h("span", {}, name));
   }
 
   // Play and pause ask the box, which says whether it worked.
