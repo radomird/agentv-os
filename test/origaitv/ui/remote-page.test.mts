@@ -19,7 +19,7 @@ import { cdpCheckPage, checkApp } from "../../../builder/contract-run.ts";
 import { HARNESS } from "../harness.mts";
 import { type Contract, Fixtures } from "../../../builder/fixtures.ts";
 import { CdpPipe } from "../../../daemon/cdp.ts";
-import { BACK_TAP, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION } from "../../../daemon/remote-page.ts";
+import { BACK_TAP, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION, WHEEL_AT } from "../../../daemon/remote-page.ts";
 
 const DESK = resolve(import.meta.dirname, "../fixtures/apps/desk");
 const PAGES = join(DESK, "fixtures/pages");
@@ -316,6 +316,52 @@ test("the builder's contract tests on the box press the d-pad as the TV does (AD
   const failed = results.filter((result) => !result.ok);
   assert.deepEqual(failed, [], "every one of the stand-in's checks passes");
   assert.ok(results.some((result) => /OK presses/.test(result.name)));
+});
+
+// Two fingers on the phone's pad, as the screen daemon scrolls the page in
+// front: the wheel from where the page's world says, through Chromium.
+async function wheel(target: string, dx: number, dy: number): Promise<[number, number]> {
+  const at = (await cdp.evaluateInWorld(target, REMOTE_WORLD, WHEEL_AT)) as [number, number];
+  await cdp.wheelIn(target, at[0], at[1], dx, dy);
+  return at;
+}
+
+test("T21.1 two fingers scroll the page from its middle, sideways the row that has focus, and a page's own scroll area, with the ring left on", async () => {
+  const page = await app("rows.html");
+  const read = (expression: string) => cdp.evaluateIn(page.target, expression);
+  const settle = async (expression: string, what: string) => {
+    for (let tries = 0; tries < 50; tries++) {
+      if (await read(expression)) return;
+      await sleep(50);
+    }
+    assert.fail(what);
+  };
+  // Nothing has focus: the page's middle, wherever the pointer was.
+  await page.point(5, 5);
+  const middle = await read("[Math.round(innerWidth / 2), Math.round(innerHeight / 2)]");
+  assert.deepEqual(await wheel(page.target, 0, 600), middle);
+  await settle("scrollY >= 500", "the page scrolled down");
+  await wheel(page.target, 0, -600);
+  await settle("scrollY === 0", "and back up");
+  // A card in a row has the focus, with the ring on it: the row slides.
+  await read(`(() => { const card = document.querySelector("#row-1 .card"); card.tabIndex = -1; card.focus(); })()`);
+  await page.press("ArrowRight");
+  const ringed = await page.until((s) => s.ring !== null && s.box !== null, "an arrow put the ring on a card");
+  const at = await wheel(page.target, 500, 0);
+  assert.ok(at[0] > ringed.box!.left && at[0] < ringed.box!.right && at[1] > ringed.box!.top && at[1] < ringed.box!.bottom, `from the card: ${JSON.stringify([at, ringed.box])}`);
+  await settle(`document.getElementById("row-1").scrollLeft >= 400`, "the card's row slid sideways");
+  assert.equal(await read("scrollX"), 0, "the page didn't");
+  assert.notEqual((await page.state()).ring, null, "the wheel moves no pointer, so the ring stays");
+  await cdp.close(page.target);
+
+  // A page that scrolls in an area of its own: the area under the middle.
+  const inner = await app("inner.html");
+  // Once its first rows have loaded and it has somewhere to scroll.
+  for (let tries = 0; tries < 50 && !(await cdp.evaluateIn(inner.target, `(() => { const main = document.getElementById("main"); return main.scrollHeight > main.clientHeight + 400; })()`)); tries++) await sleep(50);
+  await wheel(inner.target, 0, 400);
+  for (let tries = 0; tries < 50 && !(await cdp.evaluateIn(inner.target, `document.getElementById("main").scrollTop >= 300`)); tries++) await sleep(50);
+  assert.ok(await cdp.evaluateIn(inner.target, `document.getElementById("main").scrollTop >= 300`), "the page's own scroll area scrolled");
+  await cdp.close(inner.target);
 });
 
 test("a shared link's page gets the ring, and Back is left to the screen daemon, which closes it (ADR-050, Q164)", async () => {

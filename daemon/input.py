@@ -19,13 +19,21 @@ Input. Nobody else on the box can use it.
   input.py move <dx> <dy>     move the pointer; pushed far enough, it stops
                               in a corner, such as the one with Home
   input.py click [button]     click: left, the default, right or middle
+  input.py wheel <h> <v>      turn the wheel: sideways h and up v, where
+                              120 is one notch of a mouse's wheel
 
 What it types is never logged, and no error names it (ADR-032): it can be
 a password, typed from the phone.
 
 A request is one JSON line: {"key": "up"}, {"hold": "back", "ms": 1200},
-{"text": "hello"}, {"move": [dx, dy]}, {"click": "left"} or {"scroll": n}.
-The answer is "ok" or an error, on one line.
+{"text": "hello"}, {"move": [dx, dy]}, {"click": "left"}, {"scroll": n}
+in whole notches, up for more than 0, or {"wheel": [h, v]}, right and up
+in 120ths of a notch. The answer is "ok" or an error, on one line.
+
+The wheel is a high-resolution one, both ways, as a touchpad's or a modern
+mouse's is, so the phone's two fingers scroll smoothly (ADR-103). It sends
+the whole notches too, once a notch's worth has gone, as such a mouse does,
+for whatever reads only those.
 
 It also watches the gamepads for their guide button, which is Home
 (ADR-031), and tells the screen daemon: once when it goes down, and once
@@ -50,7 +58,12 @@ import time
 # linux/input-event-codes.h
 EV_SYN, EV_KEY, EV_REL = 0x00, 0x01, 0x02
 SYN_REPORT, SYN_DROPPED = 0, 3
-REL_X, REL_Y, REL_WHEEL = 0x00, 0x01, 0x08
+REL_X, REL_Y, REL_HWHEEL, REL_WHEEL = 0x00, 0x01, 0x06, 0x08
+REL_WHEEL_HI_RES, REL_HWHEEL_HI_RES = 0x0B, 0x0C
+# One notch of the wheel, in the high-resolution wheel's units.
+NOTCH = 120
+# The most one request turns the wheel, in notches.
+WHEEL_MOST = 50
 BTN_LEFT, BTN_RIGHT, BTN_MIDDLE = 0x110, 0x111, 0x112
 BTN_MODE = 0x13C
 EVENT_SIZE = struct.calcsize("llHHi")
@@ -144,6 +157,9 @@ class Device:
     def __init__(self, write, pause=time.sleep):
         self.write = write
         self.pause = pause
+        # What's turned of a notch so far, sideways and up, until a whole one
+        # has gone.
+        self.part = [0, 0]
 
     def emit(self, *events):
         self.write(b"".join(events) + event(EV_SYN, SYN_REPORT, 0))
@@ -186,7 +202,36 @@ class Device:
         self.emit(event(EV_KEY, BUTTONS[button], 0))
 
     def scroll(self, amount):
-        self.emit(event(EV_REL, REL_WHEEL, int(amount)))
+        """Whole notches up, or down for less than 0, as the old remote's
+        scroll buttons send."""
+        if not isinstance(amount, int) or isinstance(amount, bool) or not 0 < abs(amount) <= WHEEL_MOST:
+            raise ValueError(f"scroll by 1 to {WHEEL_MOST} notches")
+        self.emit(event(EV_REL, REL_WHEEL_HI_RES, amount * NOTCH), event(EV_REL, REL_WHEEL, amount))
+
+    def wheel(self, across, up):
+        """The wheel turned sideways and up, in 120ths of a notch, with a
+        whole notch each way as each one's worth goes by."""
+        turn = []
+        for value in (across, up):
+            if not isinstance(value, int) or isinstance(value, bool) or abs(value) > WHEEL_MOST * NOTCH:
+                raise ValueError(f"turn the wheel by up to {WHEEL_MOST * NOTCH} each way")
+            turn.append(value)
+        if turn == [0, 0]:
+            raise ValueError("turn the wheel one way or the other")
+        events = []
+        for axis, (value, fine, whole) in enumerate(((turn[0], REL_HWHEEL_HI_RES, REL_HWHEEL), (turn[1], REL_WHEEL_HI_RES, REL_WHEEL))):
+            if not value:
+                continue
+            # A change of way starts the notch again.
+            if self.part[axis] * value < 0:
+                self.part[axis] = 0
+            self.part[axis] += value
+            notches = int(self.part[axis] / NOTCH)
+            self.part[axis] -= notches * NOTCH
+            events.append(event(EV_REL, fine, value))
+            if notches:
+                events.append(event(EV_REL, whole, notches))
+        self.emit(*events)
 
     def handle(self, request):
         if "key" in request:
@@ -201,8 +246,13 @@ class Device:
             self.click(str(request["click"]))
         elif "scroll" in request:
             self.scroll(request["scroll"])
+        elif "wheel" in request:
+            turn = request["wheel"]
+            if not isinstance(turn, list) or len(turn) != 2:
+                raise ValueError("wheel is [sideways, up]")
+            self.wheel(*turn)
         else:
-            raise ValueError("a request is key, hold, text, move, click or scroll")
+            raise ValueError("a request is key, hold, text, move, click, scroll or wheel")
 
 
 def create():
@@ -212,7 +262,7 @@ def create():
         fcntl.ioctl(fd, UI_SET_EVBIT, kind)
     for code in sorted(set(KEYS.values()) | {KEY_LEFTSHIFT} | {c for c, _ in PUNCTUATION.values()} | set(BUTTONS.values())):
         fcntl.ioctl(fd, UI_SET_KEYBIT, code)
-    for code in (REL_X, REL_Y, REL_WHEEL):
+    for code in (REL_X, REL_Y, REL_HWHEEL, REL_WHEEL, REL_WHEEL_HI_RES, REL_HWHEEL_HI_RES):
         fcntl.ioctl(fd, UI_SET_RELBIT, code)
     # struct uinput_setup: struct input_id, name[80], ff_effects_max.
     fcntl.ioctl(fd, UI_DEV_SETUP, struct.pack("HHHH80sI", BUS_VIRTUAL, 0, 1, 1, NAME, 0))
@@ -429,6 +479,8 @@ def main(args):
         return send({"move": [int(args[1]), int(args[2])]})
     if args[:1] == ["click"] and len(args) <= 2:
         return send({"click": args[1] if len(args) == 2 else "left"})
+    if args[:1] == ["wheel"] and len(args) == 3 and all(re.fullmatch(r"-?\d{1,4}", a) for a in args[1:]):
+        return send({"wheel": [int(args[1]), int(args[2])]})
     print(__doc__.split("\n\n")[1], file=sys.stderr)
     return 2
 

@@ -58,6 +58,12 @@ export const FOCUS_BINDING = "origaitvFocus";
 // What the screen daemon runs in that world when Back was a tap.
 export const BACK_TAP = "window.__origaitvBackTap?.() ?? null";
 
+// Where two fingers on the phone scroll the page from (ADR-103), in the
+// page's pixels: the middle of what the arrows focused, while the ring is
+// on it and it's in sight, so the row you're on is what slides sideways,
+// and otherwise the middle of the page.
+export const WHEEL_AT = "window.__origaitvWheelAt?.() ?? [innerWidth / 2, innerHeight / 2]";
+
 // The ring's width and the gap it leaves around what has focus, in pixels.
 const RING = 4;
 const GAP = 3;
@@ -388,6 +394,16 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
     },
     true,
   );
+  window.__origaitvWheelAt = () => {
+    const el = deepest();
+    const middle = [Math.round(innerWidth / 2), Math.round(innerHeight / 2)];
+    if (!shown || !el || el === document.body || el === document.documentElement) return middle;
+    const b = onScreen(el);
+    const x = (Math.max(b.left, 0) + Math.min(b.right, innerWidth)) / 2;
+    const y = (Math.max(b.top, 0) + Math.min(b.bottom, innerHeight)) / 2;
+    if (b.right <= 0 || b.left >= innerWidth || b.bottom <= 0 || b.top >= innerHeight) return middle;
+    return [Math.round(x), Math.round(y)];
+  };
   const hide = () => {
     if (!shown) return;
     shown = false;

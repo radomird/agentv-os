@@ -88,6 +88,70 @@ const BACK_HOLD_MS = 700;
 // its details on the TV (launcher/input.ts), as a gamepad's Y does.
 const DETAILS = { key: "i" };
 
+// Two fingers on a pad scroll the page in front (ADR-103): up, down and
+// sideways, the way one finger moves the focus, so two fingers going down
+// show what's further down. The TV's page moves SCROLL_GAIN times the
+// fingers' way, so a swipe across the pad is about a screen, and the phone
+// sends what's gathered at most every SCROLL_EVERY_MS.
+const SCROLL_GAIN = 3;
+const SCROLL_EVERY_MS = 30;
+// The most one request scrolls, each way, in the TV page's pixels.
+const SCROLL_MOST = 4000;
+
+// The fingers on one pad, for its two-finger scroll. Once a second finger
+// is down, the pad is scrolling until every finger has lifted, so the one
+// left behind neither swipes nor taps.
+class TwoFingers {
+  private fingers = new Map<number, { x: number; y: number }>();
+  private owed = [0, 0];
+  private timer = 0;
+  private send: (wheel: [number, number]) => void;
+  scrolling = false;
+
+  constructor(send: (wheel: [number, number]) => void) {
+    this.send = send;
+  }
+
+  // A finger down. True when it makes two, and the pad starts scrolling.
+  down(event: PointerEvent): boolean {
+    this.fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (this.fingers.size < 2 || this.scrolling) return false;
+    this.scrolling = true;
+    return true;
+  }
+
+  // A finger moving. True when it's scrolling, so nothing else takes it.
+  move(event: PointerEvent): boolean {
+    const was = this.fingers.get(event.pointerId);
+    if (!was) return this.scrolling;
+    this.fingers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (!this.scrolling || this.fingers.size < 2) return this.scrolling;
+    // The fingers' middle moves by a share of each one's way.
+    const share = 1 / this.fingers.size;
+    this.owed[0] += (event.clientX - was.x) * share * SCROLL_GAIN;
+    this.owed[1] += (event.clientY - was.y) * share * SCROLL_GAIN;
+    this.timer ||= window.setTimeout(() => this.flush(), SCROLL_EVERY_MS);
+    return true;
+  }
+
+  // A finger lifted. True while the pad was scrolling, so no tap follows.
+  up(event: PointerEvent): boolean {
+    this.fingers.delete(event.pointerId);
+    const was = this.scrolling;
+    if (this.fingers.size < 2) this.flush();
+    if (this.fingers.size === 0) this.scrolling = false;
+    return was;
+  }
+
+  private flush(): void {
+    clearTimeout(this.timer);
+    this.timer = 0;
+    const [dx, dy] = this.owed.map((d) => Math.max(-SCROLL_MOST, Math.min(SCROLL_MOST, Math.round(d))));
+    this.owed = [0, 0];
+    if (dx || dy) this.send([dx, dy]);
+  }
+}
+
 // A request whose answer says how it went, whether or not it worked.
 async function post<T extends object>(path: string, body: unknown): Promise<T & { ok: boolean; why?: string; error?: string }> {
   const response = await call("POST", path, { json: body });
@@ -347,7 +411,7 @@ export class Remote2 {
     if (!this.holdHint) return;
     const what = this.holds() ? "details" : "the pointer";
     if (this.holdHint.line.textContent !== `Hold for ${what}`) this.holdHint.line.textContent = `Hold for ${what}`;
-    this.holdHint.area.setAttribute("aria-label", `Swipe to move, tap for OK, hold for ${what}`);
+    this.holdHint.area.setAttribute("aria-label", `Swipe to move, tap for OK, hold for ${what}, two fingers to scroll`);
   }
 
   // The surface: swipes move the focus and a tap is OK. A hold on an app's
@@ -357,10 +421,11 @@ export class Remote2 {
   private surface(state: Phone): HTMLElement {
     if (state.tv.view === "trackpad" || this.pointer) return this.pointerPad(state.tv.view !== "trackpad");
     if (dpadOn()) return this.dpad();
-    const line = h("span", {});
-    const area = h("div", { class: "r2-surface", role: "application", "data-action": "surface" }, h("span", { class: "r2-hint" }, h("span", {}, "Swipe to move"), h("span", {}, "Tap for OK"), line));
+    const line = h("span", { "data-hint": "hold" });
+    const area = h("div", { class: "r2-surface", role: "application", "data-action": "surface" }, h("span", { class: "r2-hint" }, h("span", {}, "Swipe to move"), h("span", {}, "Tap for OK"), line, h("span", {}, "Two fingers to scroll")));
     this.holdHint = { area, line };
     this.sayHold();
+    const two = new TwoFingers((wheel) => this.send({ wheel }));
     let from: { x: number; y: number; at: number } | null = null;
     // The one finger the gesture is, from down to up.
     let finger: number | null = null;
@@ -372,11 +437,14 @@ export class Remote2 {
       if (feelOn()) navigator.vibrate?.(8);
     };
     area.addEventListener("pointerdown", (event) => {
-      // A second finger is no gesture of its own, and two aren't a hold.
-      if (finger !== null) {
+      // A second finger scrolls: no swipe, tap or hold for the first one.
+      if (two.down(event)) {
         clearTimeout(hold);
+        from = null;
+        area.setPointerCapture(event.pointerId);
         return;
       }
+      if (finger !== null || two.scrolling) return;
       finger = event.pointerId;
       area.setPointerCapture(event.pointerId);
       from = { x: event.clientX, y: event.clientY, at: Date.now() };
@@ -396,6 +464,7 @@ export class Remote2 {
       }, HOLD_MS);
     });
     area.addEventListener("pointermove", (event) => {
+      if (two.move(event)) return;
       if (!from || event.pointerId !== finger) return;
       const dx = event.clientX - from.x;
       const dy = event.clientY - from.y;
@@ -412,10 +481,11 @@ export class Remote2 {
       from = across ? { ...from, x: from.x + Math.sign(dx) * STEP_PX } : { ...from, y: from.y + Math.sign(dy) * STEP_PX };
     });
     const end = (event: PointerEvent) => {
+      const scrolled = two.up(event);
       if (event.pointerId !== finger) return;
       finger = null;
       clearTimeout(hold);
-      if (from && !moved && event.type === "pointerup" && Date.now() - from.at < HOLD_MS) {
+      if (from && !moved && !scrolled && event.type === "pointerup" && Date.now() - from.at < HOLD_MS) {
         this.send({ key: "enter" });
         flash();
       }
@@ -539,6 +609,8 @@ export class Remote2 {
     let downAt = 0;
     let owed = [0, 0];
     let flushing = 0;
+    // Two fingers scroll where the pointer is, as on a laptop.
+    const two = new TwoFingers((wheel) => this.send({ wheel, at: "pointer" }));
     const flush = () => {
       flushing = 0;
       const [dx, dy] = owed.map(Math.round);
@@ -552,6 +624,14 @@ export class Remote2 {
     area.addEventListener("pointerdown", (event) => {
       if ((event.target as Element).closest("button")) return;
       area.setPointerCapture(event.pointerId);
+      if (two.down(event)) {
+        // The pointer stays where the first finger left it.
+        last = null;
+        flush();
+        area.classList.remove("touching");
+        return;
+      }
+      if (two.scrolling) return;
       last = { x: event.clientX, y: event.clientY };
       travelled = 0;
       downAt = Date.now();
@@ -559,7 +639,7 @@ export class Remote2 {
       place(event);
     });
     area.addEventListener("pointermove", (event) => {
-      if (!last) return;
+      if (two.move(event) || !last) return;
       // Twice the finger's way, so a phone's width crosses the TV.
       const dx = (event.clientX - last.x) * 2;
       const dy = (event.clientY - last.y) * 2;
@@ -569,7 +649,8 @@ export class Remote2 {
       flushing ||= window.setTimeout(flush, 30);
       place(event);
     });
-    const end = () => {
+    const end = (event: PointerEvent) => {
+      if (two.up(event)) return;
       if (last && travelled < 12 && Date.now() - downAt < 250) this.send({ click: "left" });
       last = null;
       area.classList.remove("touching");

@@ -49,6 +49,9 @@ async function box(remote2: boolean): Promise<Box> {
   made.input = new RemoteInput({
     url: `${url}/api/remote`,
     send: async (request) => void made.keys.push(request),
+    // Two fingers' scroll as it reaches the screen daemon: how far, and from
+    // where.
+    wheel: async (dx, dy, at) => void made.keys.push({ wheel: [dx, dy], ...(at === "pointer" ? { at } : {}) }),
     command: async (cmd) => void made.commands.push(cmd),
     ask: async (ask) => {
       if (ask.kind === "text") {
@@ -186,7 +189,7 @@ test("T8.3 a password's field is the phone's password field, for its password ma
 test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold opens details on an app's tile and gives the pointer everywhere else, which moves and clicks", async () => {
   const b = await box(true);
   const hand = await phone(b);
-  const hint = () => hand.locator(".r2-surface .r2-hint > span").last().textContent();
+  const hint = () => hand.locator('.r2-surface [data-hint="hold"]').textContent();
   const label = () => hand.locator(".r2-surface").getAttribute("aria-label");
   const area = (await hand.locator(".r2-surface").boundingBox())!;
   const cx = area.x + area.width / 2;
@@ -218,14 +221,14 @@ test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold opens d
   };
   await context(b, { front: "home", screen: "home", details: true });
   await until(async () => (await hint()) === "Hold for details");
-  assert.equal(await label(), "Swipe to move, tap for OK, hold for details");
+  assert.equal(await label(), "Swipe to move, tap for OK, hold for details, two fingers to scroll");
   assert.deepEqual(await held(), { down: [{ key: "i" }], all: [{ key: "i" }], pointer: 0 });
   await context(b, { screen: "menu" });
   await wait(150);
   assert.equal(await hint(), "Hold for details");
   assert.deepEqual(await held(), { down: [{ key: "i" }], all: [{ key: "i" }], pointer: 0 }, "a tile in Apps has details too");
-  // Two fingers aren't a hold, and the first one's timer goes with it: a
-  // swipe that follows sends its step and nothing held.
+  // Two fingers aren't a hold, and the first one's timer goes with it: they
+  // scroll, with no step, no OK and nothing held (ADR-103).
   {
     const cdp = await hand.context().newCDPSession(hand);
     const at = b.keys.length;
@@ -238,7 +241,10 @@ test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold opens d
     await wait(700);
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await wait(200);
-    assert.deepEqual(b.keys.slice(at), [{ key: "right" }], "no held key lands mid-swipe");
+    const sent = b.keys.slice(at);
+    assert.ok(sent.length > 0 && sent.every((k) => Array.isArray(k.wheel) && k.at === undefined), `only the wheel: ${JSON.stringify(sent)}`);
+    assert.ok(sent.every((k) => (k.wheel as number[])[1] === 0), "sideways only");
+    assert.equal(sent.reduce((sum, k) => sum + (k.wheel as number[])[0], 0), 90, `the fingers' middle went 30 to the right, three times over on the TV: ${JSON.stringify(sent)}`);
     await cdp.detach();
   }
   // Home's other screens, where the focus is on no tile: Settings on a row,
@@ -260,7 +266,7 @@ test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold opens d
   // A hold with an app in front: the pointer, as it was, and nothing sent.
   await context(b, { front: "app", screen: "home", playing: false });
   await until(async () => (await hint()) === "Hold for the pointer");
-  assert.equal(await label(), "Swipe to move, tap for OK, hold for the pointer");
+  assert.equal(await label(), "Swipe to move, tap for OK, hold for the pointer, two fingers to scroll");
   const sent = b.keys.length;
   await hand.mouse.move(cx, cy);
   await hand.mouse.down();
@@ -283,6 +289,54 @@ test("T8.3 the surface: a swipe moves the focus, a tap is OK, and a hold opens d
   await until(() => JSON.stringify(b.keys.at(-1)) === JSON.stringify({ key: "up" }));
   await hand.reload();
   await hand.waitForSelector(".r2-dpad");
+  await hand.close();
+});
+
+test("T21.1 two fingers on the pad scroll the page in front, down, up and sideways, the way one finger moves, and from the pointer in pointer mode", async () => {
+  const b = await box(true);
+  const hand = await phone(b);
+  const cdp = await hand.context().newCDPSession(hand);
+  const drag = async (dx: number, dy: number) => {
+    const area = (await hand.locator(".r2-surface").boundingBox())!;
+    const x = Math.round(area.x + area.width / 2 - 30);
+    const y = Math.round(area.y + area.height / 2 - 40);
+    const at = b.keys.length;
+    const two = (by: number) => [
+      { x: x + Math.round(dx * by), y: y + Math.round(dy * by), id: 1 },
+      { x: x + 60 + Math.round(dx * by), y: y + Math.round(dy * by), id: 2 },
+    ];
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: two(0) });
+    for (let step = 1; step <= 5; step++) {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: two(step / 5) });
+      await wait(20);
+    }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await wait(150);
+    return b.keys.slice(at);
+  };
+  const total = (sent: Record<string, unknown>[]) => sent.reduce((sum, k) => [sum[0] + (k.wheel as number[])[0], sum[1] + (k.wheel as number[])[1]], [0, 0]);
+  // Down shows what's further down, as a swipe down moves the focus down.
+  let sent = await drag(0, 40);
+  assert.ok(sent.length > 0 && sent.every((k) => Array.isArray(k.wheel) && k.at === undefined), JSON.stringify(sent));
+  assert.deepEqual(total(sent), [0, 120], "three times the fingers' way, down");
+  sent = await drag(0, -40);
+  assert.deepEqual(total(sent), [0, -120], "and up");
+  sent = await drag(-30, 0);
+  assert.deepEqual(total(sent), [-90, 0], "and sideways");
+  assert.equal(await hand.locator(".r2-pointer").count(), 0, "two fingers held still a while aren't a hold");
+  // The pointer: from where it is, as on a laptop.
+  await context(b, { front: "app", screen: "home", playing: false });
+  const area = (await hand.locator(".r2-surface").boundingBox())!;
+  await hand.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
+  await hand.mouse.down();
+  await hand.waitForSelector(".r2-pointer", { timeout: 1500 });
+  await hand.mouse.up();
+  const moves = b.keys.length;
+  sent = await drag(0, 40);
+  assert.ok(sent.length > 0 && sent.every((k) => Array.isArray(k.wheel) && k.at === "pointer"), JSON.stringify(sent));
+  assert.deepEqual(total(sent), [0, 120]);
+  assert.ok(!b.keys.slice(moves).some((k) => k.move || k.click), "two fingers don't move the pointer or click");
+  await cdp.detach();
   await hand.close();
 });
 

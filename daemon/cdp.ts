@@ -156,6 +156,32 @@ export class CdpPipe {
     }
   }
 
+  // A turn of the mouse's wheel at x, y of one page, by its target id, in
+  // its own pixels: dx to the right and dy down, as a page's wheel event
+  // says them. It goes through Chromium's input, so the page scrolls what's
+  // under that point as it would for a mouse there, and the screen's
+  // pointer stays where it is.
+  async wheelIn(targetId: string, x: number, y: number, dx: number, dy: number): Promise<void> {
+    const session = await this.attachTarget(targetId);
+    try {
+      await this.send("Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX: dx, deltaY: dy, pointerType: "mouse" }, session);
+    } catch (error) {
+      this.sessions.delete(`target:${targetId}`);
+      throw error;
+    }
+  }
+
+  // The same, in the first page whose URL starts with prefix.
+  async wheel(prefix: string, x: number, y: number, dx: number, dy: number): Promise<void> {
+    const session = await this.attach(prefix);
+    try {
+      await this.send("Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX: dx, deltaY: dy, pointerType: "mouse" }, session);
+    } catch (error) {
+      this.sessions.delete(prefix);
+      throw error;
+    }
+  }
+
   // Runs source in one page now and in each document it loads after, in an
   // isolated world of that name, which the page's own scripts can't reach.
   async addScriptIn(targetId: string, source: string, worldName: string): Promise<void> {
@@ -222,4 +248,4 @@ export class CdpPipe {
 
 // What the screen daemon uses of a browser's pipe, so the tests can stand in
 // for one.
-export type DevTools = Pick<CdpPipe, "bind" | "evaluate" | "open" | "close" | "evaluateIn" | "pages" | "addScriptIn"> & Partial<Pick<CdpPipe, "bindIn" | "evaluateInWorld">>;
+export type DevTools = Pick<CdpPipe, "bind" | "evaluate" | "open" | "close" | "evaluateIn" | "pages" | "addScriptIn"> & Partial<Pick<CdpPipe, "bindIn" | "evaluateInWorld" | "wheelIn" | "wheel">>;
