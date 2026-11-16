@@ -80,6 +80,19 @@ async function put(body: unknown): Promise<Record<string, unknown>> {
 
 const display = async () => (await (await fetch(`${url}/api/display`)).json()) as { margin: number; inset: [number, number]; size: string };
 
+// The margin the TV has kept, once the last step's save has landed: the
+// page shows each step at once, and saves the last one after the one
+// that's out.
+async function kept(margin: number): Promise<number> {
+  const end = Date.now() + 5000;
+  let now = (await display()).margin;
+  while (now !== margin && Date.now() < end) {
+    await new Promise((done) => setTimeout(done, 100));
+    now = (await display()).margin;
+  }
+  return now;
+}
+
 async function tv(canvas: readonly [number, number]): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: canvas[0], height: canvas[1] } });
   page.on("pageerror", (error) => errors.push(`${page.url()}: ${error.message}`));
@@ -143,15 +156,13 @@ for (const look of LOOKS) {
         await page.keyboard.press("ArrowLeft");
         await page.keyboard.press("ArrowLeft");
         await page.waitForFunction(() => document.querySelector(".fit-value")?.textContent === "92%");
-        await page.waitForTimeout(400);
-        assert.equal((await display()).margin, 4);
+        assert.equal(await kept(4), 4);
         assert.deepEqual(reserved.at(-1), [77, 43], "the screen daemon is asked for the new margin");
         assert.deepEqual(await marks(page), everyMark(77, 43));
         // Bigger, all the way: no margin at all, and no further.
         for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowRight");
         await page.waitForFunction(() => document.querySelector(".fit-value")?.textContent === "Whole screen");
-        await page.waitForTimeout(400);
-        assert.equal((await display()).margin, 0);
+        assert.equal(await kept(0), 0);
         assert.deepEqual(await marks(page), everyMark(0, 0));
         assert.equal(await page.locator(".fit-size.biggest").count(), 1);
         // Done goes back to Appearance, on its row, which says so.
@@ -228,7 +239,7 @@ test("T22.1 setup shows Fit to screen right after the size, in Terminal's style,
     await page.keyboard.press("ArrowLeft");
     await page.waitForFunction(() => document.querySelector(".fit-value")?.textContent === "93%");
     assert.deepEqual(await marks(page), everyMark(67, 38));
-    await page.waitForTimeout(400);
+    assert.equal(await kept(3.5), 3.5);
     await page.keyboard.press("Enter");
     await page.waitForFunction(async () => ((await (await fetch("/api/setup")).json()) as { setup: { step: string } }).setup.step === "theme");
     assert.equal((await display()).margin, 3.5);
