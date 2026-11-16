@@ -1,0 +1,85 @@
+#!/bin/bash
+
+# origaitv:summary=Start the TV session's Hyprland again after a crash, not in its safe mode
+# origaitv:hidden=true
+
+# start-hyprland, Hyprland's own watchdog, runs this in place of Hyprland for
+# the TV session (bin/origaitv-session). When Hyprland crashes, start-hyprland
+# starts it again with --safe-mode: a stand-in setup with a box that only a
+# mouse or a keyboard gets past, so the TV was stuck on it until a restart.
+#
+# So after a crash this starts Hyprland as usual, with OrigaiTV's setup, and
+# the TV comes back to home. Only when that start crashes too, within a
+# minute, twice in a row, does safe mode go through, so a setup that can't
+# run still leaves a way in. Hyprland's crash report stays where it wrote it,
+# in ~/.cache/hyprland, and the journal names it.
+
+set -uo pipefail
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/origaitv"
+STARTS="$STATE_DIR/hyprland-starts"
+REPORTS="${XDG_CACHE_HOME:-$HOME/.cache}/hyprland"
+BOOT_ID=$(cat "${ORIGAITV_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}" 2>/dev/null || echo unknown)
+HYPRLAND=${ORIGAITV_HYPRLAND:-Hyprland}
+# A crash this soon after a start means it couldn't start.
+QUICK_SECONDS=60
+
+log() {
+  echo "origaitv-hyprland: $*" >&2
+  logger -t origaitv-session -- "$*" 2>/dev/null || true
+}
+
+# Hyprland's newest crash report.
+newest_report() {
+  local report newest=""
+
+  for report in "$REPORTS"/hyprlandCrashReport*.txt; do
+    [[ -f $report ]] || continue
+    if [[ -z $newest || $report -nt $newest ]]; then
+      newest=$report
+    fi
+  done
+  echo "$newest"
+}
+
+args=()
+safe=false
+for arg in "$@"; do
+  if [[ $arg == "--safe-mode" ]]; then
+    safe=true
+  else
+    args+=("$arg")
+  fi
+done
+
+# The last start: how many crashes in a row came within a minute of a start,
+# when it was, and in which boot.
+quick=0
+last=0
+if read -r was_quick was_last was_boot <"$STARTS" 2>/dev/null &&
+  [[ $was_boot == "$BOOT_ID" && $was_quick =~ ^[0-9]+$ && $was_last =~ ^[0-9]+$ ]]; then
+  quick=$was_quick
+  last=$was_last
+fi
+now=$(date +%s)
+mkdir -p "$STATE_DIR"
+
+if [[ $safe == "true" ]]; then
+  report=$(newest_report)
+  if (( now - last < QUICK_SECONDS )); then
+    quick=$(( quick + 1 ))
+  else
+    quick=0
+  fi
+  if (( quick >= 2 )); then
+    printf '%s %s %s\n' "$quick" "$now" "$BOOT_ID" >"$STARTS"
+    log "Hyprland crashed within $QUICK_SECONDS s of starting, $quick times in a row; starting it in its safe mode${report:+. Its crash report: $report}"
+    exec "$HYPRLAND" --safe-mode "${args[@]}"
+  fi
+  log "Hyprland crashed; starting the TV session's Hyprland again${report:+. Its crash report: $report}"
+else
+  quick=0
+fi
+
+printf '%s %s %s\n' "$quick" "$now" "$BOOT_ID" >"$STARTS"
+exec "$HYPRLAND" "${args[@]}"

@@ -45,7 +45,7 @@ state="$SCRATCH/home/.local/state/origaitv"
 # --- origaitv-session ---------------------------------------------------------
 
 run "$ROOT/bin/origaitv-session" 2>/dev/null || true
-grep -q "^start-hyprland -- --config $ROOT/session/hypr.lua tv=tv no-sd-target=1 desktop=OrigaiTV:Hyprland" "$calls" ||
+grep -q "^start-hyprland --path origaitv-hyprland -- --config $ROOT/session/hypr.lua tv=tv no-sd-target=1 desktop=OrigaiTV:Hyprland" "$calls" ||
   fail "with no note it starts the TV session with OrigaiTV's Hyprland setup" "$(cat "$calls")"
 grep -qx "systemctl --user stop origaitv-tv.target" "$calls" || fail "the TV session's units stop with it" "$(cat "$calls")"
 pass "S1.1 with no note, the log-in starts the TV session, without graphical-session.target"
@@ -93,6 +93,53 @@ run "$ROOT/bin/origaitv-session" 2>/dev/null || true
 [[ ! -f $state/quick-exits ]] || fail "a session left for the desktop isn't counted as a failure"
 pass "a TV session left for the desktop doesn't count as one that couldn't start"
 rm -f "$state/next-session"
+
+# --- origaitv-hyprland: after a crash, not Hyprland's safe mode ----------------
+
+# start-hyprland's own arguments, as it starts Hyprland: the watchdog's pipe,
+# --safe-mode after a crash, then the session's.
+hyprland() {
+  run "$ROOT/bin/origaitv-hyprland" --watchdog-fd 7 "$@" --config "$ROOT/session/hypr.lua" 2>>"$SCRATCH/hyprland.log" || true
+}
+mkdir -p "$SCRATCH/home/.cache/hyprland"
+echo "SIGSEGV" >"$SCRATCH/home/.cache/hyprland/hyprlandCrashReport886.txt"
+rm -f "$state/hyprland-starts"
+
+hyprland
+[[ $(cat "$calls") == "Hyprland --watchdog-fd 7 --config $ROOT/session/hypr.lua" ]] || fail "the first start is Hyprland as usual" "$(cat "$calls")"
+# It ran for an hour, as the NUC's did before its output went.
+printf '0 %s boot-one\n' "$(( $(date +%s) - 3600 ))" >"$state/hyprland-starts"
+hyprland --safe-mode
+[[ $(cat "$calls") == "Hyprland --watchdog-fd 7 --config $ROOT/session/hypr.lua" ]] ||
+  fail "a crash a minute or more after a start starts it again without safe mode" "$(cat "$calls")"
+grep -q "Its crash report: $SCRATCH/home/.cache/hyprland/hyprlandCrashReport886.txt" "$SCRATCH/hyprland.log" ||
+  fail "the crash report stays, and the journal names it" "$(cat "$SCRATCH/hyprland.log")"
+[[ -f $SCRATCH/home/.cache/hyprland/hyprlandCrashReport886.txt ]] || fail "the crash report stays"
+pass "T22.4 after a crash, Hyprland starts again as the TV, not in its safe mode, and its crash report stays"
+
+# Crashes within a minute of each start: the first starts it as usual again,
+# the second in safe mode, so a setup that can't run still leaves a way in.
+hyprland --safe-mode --locked
+[[ $(cat "$calls") == "Hyprland --watchdog-fd 7 --locked --config $ROOT/session/hypr.lua" ]] ||
+  fail "one crash soon after a start still starts it as usual" "$(cat "$calls")"
+hyprland --safe-mode
+[[ $(cat "$calls") == "Hyprland --safe-mode --watchdog-fd 7 --config $ROOT/session/hypr.lua" ]] ||
+  fail "two crashes in a row soon after a start go to safe mode" "$(cat "$calls")"
+pass "T22.4 only when it crashes again within a minute, twice in a row, does Hyprland start in its safe mode"
+
+# A start of its own, a new session's, counts from nothing again; so does a
+# new boot.
+hyprland
+hyprland --safe-mode
+[[ $(cat "$calls") == "Hyprland --watchdog-fd 7 --config $ROOT/session/hypr.lua" ]] ||
+  fail "a new session's start counts from nothing" "$(cat "$calls")"
+echo "boot-two" >"$SCRATCH/boot_id"
+hyprland --safe-mode
+[[ $(cat "$calls") == "Hyprland --watchdog-fd 7 --config $ROOT/session/hypr.lua" ]] ||
+  fail "a new boot counts from nothing" "$(cat "$calls")"
+echo "boot-one" >"$SCRATCH/boot_id"
+rm -f "$state/hyprland-starts"
+pass "a new session or a new boot counts crashes from nothing"
 
 # --- origaitv desktop ---------------------------------------------------------
 

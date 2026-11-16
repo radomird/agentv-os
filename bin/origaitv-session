@@ -85,8 +85,11 @@ tv() {
   # desktop.
   systemctl --user stop bt-agent.service 2>/dev/null
 
+  # start-hyprland starts Hyprland again after a crash, and
+  # origaitv-hyprland keeps it out of Hyprland's safe mode, which only a
+  # mouse or a keyboard gets out of.
   if omarchy-cmd-present start-hyprland; then
-    start-hyprland -- --config "$ORIGAITV_PATH/session/hypr.lua"
+    start-hyprland --path origaitv-hyprland -- --config "$ORIGAITV_PATH/session/hypr.lua"
   else
     Hyprland --config "$ORIGAITV_PATH/session/hypr.lua"
   fi
