@@ -7,7 +7,7 @@
 
 import type { SizeChoice } from "../api.ts";
 import { h, zoom } from "../dom.ts";
-import { at, choices, GRID_MORE, move, resize, span, unpin, type Placed, type Size } from "../layout.ts";
+import { at, choices, GRID_MORE, inside, move, resize, span, unpin, type Placed, type Size } from "../layout.ts";
 import { currentGrid, lookId } from "../looks/looks.ts";
 import { rowEdit } from "../looks/row-edit.ts";
 import type { Ctx, View } from "../main.ts";
@@ -38,16 +38,23 @@ function reduced(): boolean {
   return document.documentElement.classList.contains("reduce-motion") || matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-export function edit(ctx: Ctx, focusOn?: string): View {
+// With moving, the app focusOn names starts in hand, as Move in its details
+// opens it, and putting it down goes home with the focus on it.
+export function edit(ctx: Ctx, focusOn?: string, moving = false): View {
   // Glass and Cinema draw home as rows, so they're edited as rows.
   const look = lookId();
-  if (look === "glass" || look === "cinema") return rowEdit(ctx, focusOn);
+  if (look === "glass" || look === "cinema") return rowEdit(ctx, focusOn, moving);
   // The grid being arranged: Terminal's 5 × 4 at more on screen (D6), or 4 × 3.
   const g = currentGrid();
   const COLUMNS = g.columns;
   const ROWS = g.rows;
-  let layout = ctx.state.layout.map((tile) => ({ ...tile }));
-  let held: { id: string; before: Placed[] } | null = null;
+  // With the looks on, home has no tile limit (ADR-103), and the grid shows
+  // the tiles that fit it. The rest stay as they are, and every save keeps
+  // them.
+  const rest = ctx.state.layout.filter((tile) => !inside(tile, g)).map((tile) => ({ ...tile }));
+  let layout = ctx.state.layout.filter((tile) => inside(tile, g)).map((tile) => ({ ...tile }));
+  const saveAll = (tiles: Placed[]) => ctx.saveLayout([...tiles, ...rest]);
+  let held: { id: string; before: Placed[] } | null = moving && focusOn && layout.some((tile) => tile.id === focusOn) ? { id: focusOn, before: layout } : null;
   let drag: Drag | null = null;
   let picking = false;
   const tiles = new Map<string, HTMLElement>();
@@ -188,7 +195,7 @@ export function edit(ctx: Ctx, focusOn?: string): View {
     const previous = layout;
     layout = next;
     draw();
-    if (await ctx.saveLayout(layout)) {
+    if (await saveAll(layout)) {
       ctx.sounds.play(sound);
     } else {
       layout = previous;
@@ -240,7 +247,7 @@ export function edit(ctx: Ctx, focusOn?: string): View {
     const nearest = [...layout].sort((a, b) => Math.abs(a.x - gone.x) + Math.abs(a.y - gone.y) - (Math.abs(b.x - gone.x) + Math.abs(b.y - gone.y)))[0];
     const el = nearest && tiles.get(nearest.id);
     if (el) ctx.focus.set(el, false);
-    if (await ctx.saveLayout(layout)) {
+    if (await saveAll(layout)) {
       ctx.sounds.play("confirm");
     } else {
       layout = previous;
@@ -370,7 +377,7 @@ export function edit(ctx: Ctx, focusOn?: string): View {
       const previous = layout;
       layout = current.next;
       draw(from);
-      void ctx.saveLayout(layout).then((saved) => {
+      void saveAll(layout).then((saved) => {
         ctx.sounds.play(saved ? "confirm" : "failure");
         if (!saved) {
           layout = previous;
@@ -424,25 +431,31 @@ export function edit(ctx: Ctx, focusOn?: string): View {
         if (action in moves) {
           carry(...moves[action]);
         } else if (action === "ok") {
-          // Put it down.
+          // Put it down. Moved from its details, home shows where it went.
           const before = held.before;
+          const put = held.id;
           held = null;
           draw();
           if (!same(before, layout)) {
-            void ctx.saveLayout(layout).then((saved) => {
+            void saveAll(layout).then((saved) => {
               ctx.sounds.play(saved ? "confirm" : "failure");
               if (!saved) {
                 layout = before;
                 draw();
-              }
+              } else if (moving) ctx.home(put);
             });
-          } else ctx.sounds.play("back");
+          } else {
+            ctx.sounds.play("back");
+            if (moving) ctx.home(put);
+          }
         } else if (action === "back") {
-          // Put it back where it was.
+          // Put it back where it was, and back to its details if it came
+          // from there.
           layout = held.before;
           held = null;
           draw();
           ctx.sounds.play("back");
+          if (moving) ctx.back();
         }
         return true;
       }

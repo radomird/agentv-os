@@ -91,3 +91,55 @@ div.metered {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Settings, AI's sign-in to a plan (ADR-103), laid out as pairing a phone:
+   the code to scan on the left, and on the right the steps, numbered in the
+   accent, the field for the code in the last. Each look draws its own
+   buttons, field and type. */
+.plan-sign-in .pair-text {
+  width: 1100px;
+}
+
+.plan-sign-in .sign-in-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  margin: 44px 0 48px;
+  padding: 0;
+  list-style: none;
+  counter-reset: sign-in-step;
+  font-size: 36px;
+  color: var(--bright-foreground);
+}
+
+.plan-sign-in .sign-in-steps > li {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  row-gap: 20px;
+  align-items: baseline;
+  counter-increment: sign-in-step;
+}
+
+.plan-sign-in .sign-in-steps > li::before {
+  content: counter(sign-in-step);
+  grid-row: 1 / span 2;
+  color: var(--accent-ink, var(--accent));
+  font-weight: 800;
+}
+
+.plan-sign-in .sign-in-paste {
+  grid-column: 2;
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.plan-sign-in .sign-in-paste .music-search {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.plan-sign-in .sign-in-paste .button {
+  flex: none;
+}

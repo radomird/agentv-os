@@ -15,11 +15,15 @@ import { sayBox, type Said } from "./say.ts";
 
 // What the Ask box waits on (daemon/routes/ask.ts).
 export type AskView =
-  | { kind: "build"; n: number; build: string; app: string | null; what: string; state: string; phase: string; name: string | null; recipe: string | null; says: string | null; done: number; steps: number }
+  | { kind: "build"; n: number; build: string; app: string | null; what: string; state: string; phase: string; name: string | null; recipe: string | null; says: string | null; done: number; steps: number; model?: string | null; models?: { id: string; name: string }[] }
   | { kind: "change"; n: number; app: string; name: string; what: string; recipe: string | null };
 
 // A request that's new to the TV gets its steps checked before it's made.
 const STEPS_FIRST = "You'll check the steps first";
+
+// The model picked on the sheet, for each build, until it's made: the
+// household's to start with (ADR-103).
+const picked = new Map<string, string>();
 
 export function askSheet(said: Said | null | undefined, ask: AskView | null | undefined, adult: boolean, failed: (error: unknown) => void, done: () => void): HTMLElement[] {
   let value = "";
@@ -66,7 +70,12 @@ export function refreshAsk(ask: AskView | null | undefined, adult: boolean, fail
 
 // What your agent is on, from what was asked.
 function waiting(ask: AskView, failed: (error: unknown) => void, done: () => void): HTMLElement {
-  const answer = (what: "confirm" | "cancel") => () => void api("POST", `/api/phone/ask/${what}`, { n: ask.n }).then(done, failed);
+  const model = ask.kind === "build" ? (picked.get(ask.build) ?? ask.model ?? undefined) : undefined;
+  const answer = (what: "confirm" | "cancel") => () =>
+    void api("POST", `/api/phone/ask/${what}`, { n: ask.n, ...(what === "confirm" && model ? { model } : {}) }).then(() => {
+      if (ask.kind === "build") picked.delete(ask.build);
+      done();
+    }, failed);
   const buttons = (yes: string) =>
     h(
       "div",
@@ -79,7 +88,7 @@ function waiting(ask: AskView, failed: (error: unknown) => void, done: () => voi
   }
   const name = ask.name ?? ask.what;
   if (ask.state === "confirm") {
-    return h("div", { class: "ask-waiting", "data-ask": "confirm" }, h("p", { class: "r2-label" }, "Your own app"), h("h1", {}, `Make ${name}?`), h("p", { class: "note" }, ask.recipe ? "It stays on this TV" : STEPS_FIRST), buttons("Make it"));
+    return h("div", { class: "ask-waiting", "data-ask": "confirm" }, h("p", { class: "r2-label" }, "Your own app"), h("h1", {}, `Make ${name}?`), h("p", { class: "note" }, ask.recipe ? "It stays on this TV" : STEPS_FIRST), models(ask, model, failed, done), buttons("Make it"));
   }
   if ((ask.state === "starting" || ask.state === "running") && ask.phase === "understand") {
     return h("div", { class: "ask-waiting", "data-ask": "reading" }, h("p", { class: "r2-label" }, "Your own app"), h("p", { class: "note" }, "Working out what you'd like…"));
@@ -99,4 +108,34 @@ function waiting(ask: AskView, failed: (error: unknown) => void, done: () => voi
   // A plan or a finished app waits for the PIN in its notice, and a build
   // that failed says why on the TV.
   return h("div", { class: "ask-waiting", "data-ask": ask.state }, h("p", { class: "note" }, ask.state === "failed" ? `Couldn't make ${name}. See your TV.` : `${name}: see your notices`));
+}
+
+// The model row on "Make X?": the provider's list, strongest first, with
+// the one it'll be made on ticked. A tap picks another for this app only.
+function models(ask: Extract<AskView, { kind: "build" }>, model: string | undefined, failed: (error: unknown) => void, done: () => void): HTMLElement | null {
+  const list = ask.models ?? [];
+  if (list.length < 2) return null;
+  const chosen = model ?? list[0].id;
+  return h(
+    "div",
+    { class: "ask-models", role: "radiogroup", "aria-label": "Model" },
+    h("p", { class: "r2-label" }, "Model"),
+    ...list.map((m) =>
+      h(
+        "button",
+        {
+          type: "button",
+          class: `chip${m.id === chosen ? " on" : ""}`,
+          role: "radio",
+          "aria-checked": String(m.id === chosen),
+          "data-model": m.id,
+          onclick: () => {
+            picked.set(ask.build, m.id);
+            refreshAsk(ask, true, failed, done);
+          },
+        },
+        m.name,
+      ),
+    ),
+  );
 }

@@ -22,6 +22,11 @@
 // path, one of the few read-only ones daemon/tmdb-api.ts lets through. It
 // logs the path, never what it asked for.
 //
+// The cli service also says how much of the plan is used (ADR-103): POST
+// /usage with the provider, answered with the windows of its limits and
+// nothing else, from Omarchy's own usage check run as the builder
+// (daemon/plan-usage.ts). It logs how many windows came back, never more.
+//
 // And the provider's own voice for the TV's answers (stage 8, Q152): POST
 // /speak with the provider and a line, for the providers that have one
 // (daemon/providers/speech.ts), answered as WAV. It logs how long it took,
@@ -29,6 +34,7 @@
 //
 // Usage: node router-serve.ts api|cli
 
+import { execFile } from "node:child_process";
 import { chmodSync, chownSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { join, resolve } from "node:path";
@@ -44,6 +50,8 @@ import { PLAN_HOSTS } from "../builder/sandbox/net.ts";
 import { keyFrom } from "../builder/sandbox/relay.ts";
 import { askTmdb, tmdbKeyFrom, tmdbPath, type TmdbAnswer } from "./tmdb-api.ts";
 import { speak, SPEECH_MAX, type Speech } from "./providers/speech.ts";
+import { offered } from "../builder/models.ts";
+import { hasUsage, usageCommand, usageWindows, type UsageProvider, type UsageWindow } from "./plan-usage.ts";
 
 const PROVIDERS: Provider[] = ["claude", "chatgpt", "gemini", "grok", "muse"];
 
@@ -55,24 +63,33 @@ export const PER_MINUTE = 30;
 export const TMDB_PER_MINUTE = 240;
 // And this many lines spoken: one an answer.
 export const SPEAK_PER_MINUTE = 30;
+// And this many asks of a plan's usage: Settings asks every few minutes.
+export const USAGE_PER_MINUTE = 10;
 
 export interface RouteRequest {
   provider: Provider;
   sentence: string;
   apps: RouterApp[];
+  // The household's model for asking (ADR-103), from the provider's list
+  // for this service's way in; none, and the service's own.
+  model?: string;
 }
 
 const text = (value: unknown, max: number) => (typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, max) : "");
 
-// A request as the services take it, within bounds, or why not.
-export function routeRequest(body: unknown): RouteRequest | string {
+// A request as the services take it, within bounds, or why not. A model
+// only from the provider's list for the service's way in: a key's for the
+// api, a plan's for the cli.
+export function routeRequest(body: unknown, path: "plan" | "key" = "key"): RouteRequest | string {
   const b = (typeof body === "object" && body !== null ? body : {}) as Record<string, unknown>;
   if (!PROVIDERS.includes(b.provider as Provider)) return "which provider";
   if (typeof b.sentence !== "string") return "which sentence";
+  if (b.model !== undefined && !offered(b.provider as Provider, path, b.model)) return "a model on the provider's list";
   const apps = Array.isArray(b.apps) ? b.apps.slice(0, 100) : [];
   return {
     provider: b.provider as Provider,
     sentence: b.sentence.slice(0, 300),
+    ...(typeof b.model === "string" ? { model: b.model } : {}),
     apps: apps.flatMap((a) => {
       const app = (typeof a === "object" && a !== null ? a : {}) as Record<string, unknown>;
       const id = text(app.id, 80);
@@ -99,10 +116,14 @@ async function body(request: IncomingMessage): Promise<unknown> {
 
 export interface ServeOptions {
   route: (request: RouteRequest) => Promise<Routed>;
+  // The way in this service is for: the api's a key, the cli's a plan.
+  path?: "plan" | "key";
   // TMDB with the household's key (stage 8), on the api service only.
   tmdb?: (path: unknown) => Promise<TmdbAnswer>;
   // The provider's own voice (stage 8), on the api service only.
   speak?: (provider: Provider, text: string) => Promise<Speech>;
+  // How much of the plan is used (ADR-103), on the cli service only.
+  usage?: (provider: UsageProvider) => Promise<UsageWindow[] | null>;
   log?: (line: string) => void;
   now?: () => number;
 }
@@ -113,6 +134,7 @@ export function routeServer(o: ServeOptions): Server {
   let recent: number[] = [];
   let tmdbAsks: number[] = [];
   let spoken: number[] = [];
+  let usageAsks: number[] = [];
   return createServer(async (request, response) => {
     const answer = (status: number, data: object) => {
       response.writeHead(status, { "Content-Type": "application/json" });
@@ -141,8 +163,19 @@ export function routeServer(o: ServeOptions): Server {
       o.log?.(`speech ${b.provider} ${said.model ?? ""}: ${said.ok ? `${said.wav!.length} bytes` : said.error} in ${now() - started} ms`);
       return answer(200, said.ok ? { ok: true, wav: said.wav!.toString("base64"), model: said.model, voice: said.voice } : { ok: false, error: said.error });
     }
-    if (request.method !== "POST" || request.url !== "/route") return answer(404, { ok: false, error: o.tmdb ? "only POST /route, /tmdb and /speak" : "only POST /route" });
-    const asked = routeRequest(await body(request));
+    if (request.method === "POST" && request.url === "/usage" && o.usage) {
+      const provider = ((await body(request)) as { provider?: unknown } | null)?.provider;
+      if (!hasUsage(provider as Provider)) return answer(400, { ok: false, error: "which plan" });
+      usageAsks = usageAsks.filter((at) => now() - at < 60_000);
+      if (usageAsks.length >= USAGE_PER_MINUTE) return answer(429, { ok: false, error: TOO_MANY });
+      usageAsks.push(now());
+      const started = now();
+      const windows = await o.usage(provider as UsageProvider).catch(() => null);
+      o.log?.(`usage ${provider}: ${windows ? `${windows.length} window${windows.length === 1 ? "" : "s"}` : "no answer"} in ${now() - started} ms`);
+      return answer(200, windows ? { ok: true, windows } : { ok: false, error: "no usage to say" });
+    }
+    if (request.method !== "POST" || request.url !== "/route") return answer(404, { ok: false, error: o.tmdb ? "only POST /route, /tmdb and /speak" : o.usage ? "only POST /route and /usage" : "only POST /route" });
+    const asked = routeRequest(await body(request), o.path ?? "key");
     if (typeof asked === "string") return answer(400, { ok: false, error: asked });
     recent = recent.filter((at) => now() - at < 60_000);
     if (recent.length >= PER_MINUTE) return answer(429, { ok: false, error: TOO_MANY });
@@ -223,12 +256,13 @@ async function main(): Promise<void> {
         if (!found) return { ok: false, error: "there's no key for this provider on the box" };
         return speak(provider, found, words, process.env.ORIGAITV_SPEECH_UPSTREAM ? { base: process.env.ORIGAITV_SPEECH_UPSTREAM } : {});
       },
-      route: async ({ provider, sentence, apps }) => {
+      path: "key",
+      route: async ({ provider, sentence, apps, model }) => {
         const found = key(provider);
         // A stand-in for the provider's API, for the image checks, which
         // only a drop-in of root's can set.
         const base = process.env.ORIGAITV_ROUTER_UPSTREAM || undefined;
-        const backend = apiBackend(provider, { key: found ?? "", ...(base ? { base } : {}) });
+        const backend = apiBackend(provider, { key: found ?? "", ...(base ? { base } : {}), ...(model ? { model } : {}) });
         if (!found) {
           return { sentence, route: { ...NONE }, none: "failed", error: "there's no key for this provider on the box", provider, via: "api", model: backend.model, ms: 0 };
         }
@@ -246,11 +280,20 @@ async function main(): Promise<void> {
     const proxy = `http://127.0.0.1:${PROXY_PORT}`;
     const server = routeServer({
       log,
-      route: async ({ provider, sentence, apps }) => {
+      path: "plan",
+      // Omarchy's own usage check, as the builder, with the builder's home
+      // and this service's one way out. Only its windows leave here.
+      usage: (provider) => {
+        const run = usageCommand(provider, { home, proxy });
+        return new Promise((resolve) => {
+          execFile(run.command, run.args, { env: run.env, cwd: home, timeout: 40_000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => resolve(error && !stdout ? null : usageWindows(String(stdout))));
+        });
+      },
+      route: async ({ provider, sentence, apps, model }) => {
         if (!isCliProvider(provider)) {
           return { sentence, route: { ...NONE }, none: "failed", error: "that plan can't take requests yet", provider, via: "cli", model: null, ms: 0 };
         }
-        return new Router(logged(cliBackend(provider, { home, proxy }), log)).route(sentence, apps);
+        return new Router(logged(cliBackend(provider, { home, proxy, ...(model ? { model } : {}) }), log)).route(sentence, apps);
       },
     });
     await listen(server, join(run, "route.sock"));

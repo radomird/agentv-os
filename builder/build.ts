@@ -37,6 +37,9 @@ export interface BuildRequest {
   from?: string; // the build of the version this one starts from
   provider: Provider;
   path: "plan" | "key";
+  // The model it runs on, from the provider's list (builder/models.ts), or
+  // the CLI's own when none was picked (ADR-103).
+  model?: string;
   // With a key: what this build may spend, in dollars (ADR-045).
   budget?: { build: number; month: number; spentMonth: number };
   safeguards: boolean; // npm's guards (ADR-044)

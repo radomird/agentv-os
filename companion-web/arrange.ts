@@ -3,8 +3,13 @@
 // show while it's picked, and apps not on home can be pinned. Each change is
 // kept by the box at once, and the TV follows within a second. The grid's
 // rules are the TV's own, from the launcher's layout.ts.
+//
+// With the TV in Glass or Cinema, home is rows with no tile limit (ADR-103),
+// and so is this: the apps in rows of six, then the games, as the TV draws
+// them. Tap an app, then the place it goes, and the others move up one. In
+// Terminal, the grid shows its 4 × 3, and says how many more are in Apps.
 
-import { choices, COLUMNS, move, pin, ROWS, span, unpin, resize, type Placed, type Size } from "../launcher/layout.ts";
+import { choices, COLUMNS, GRID, HOME, inside, move, pin, reading, reorder, ROWS, span, unpin, resize, type Placed, type Size } from "../launcher/layout.ts";
 import { glyph } from "../launcher/glyphs.ts";
 import { api, h, prompt, toast, type Viewer } from "./lib.ts";
 import { withPin } from "./pad.ts";
@@ -12,9 +17,14 @@ import { withPin } from "./pad.ts";
 interface Home {
   viewer: Viewer;
   appsTile: string;
-  apps: { id: string; name: string; sizes: { size: Size; label: string }[] }[];
+  apps: { id: string; name: string; category?: string; sizes: { size: Size; label: string }[] }[];
   layout: Placed[];
+  // The TV's look, or null with the looks off.
+  look?: string | null;
 }
+
+// Glass's rows, which the phone draws Cinema's apps in too.
+const PER_ROW = 6;
 
 export async function arrange(root: HTMLElement): Promise<void> {
   let home: Home;
@@ -26,6 +36,11 @@ export async function arrange(root: HTMLElement): Promise<void> {
   }
   let picked: string | null = null;
   const name = (id: string) => id === home.appsTile ? "All apps" : (home.apps.find((app) => app.id === id)?.name ?? id);
+  // Glass and Cinema draw home as rows. With the looks on, home has no tile
+  // limit, in any look.
+  const rows = () => home.look === "glass" || home.look === "cinema";
+  const keptOn = () => (home.look ? HOME : GRID);
+  const isGame = (id: string) => home.apps.find((app) => app.id === id)?.category === "games";
 
   const save = async (next: Placed[] | null) => {
     if (!next) {
@@ -54,10 +69,36 @@ export async function arrange(root: HTMLElement): Promise<void> {
     draw();
   };
 
+  // In the row looks: a tap picks an app up, and a tap on another in its
+  // shelf puts it there, the others moving up one.
+  const tapRow = (id: string) => {
+    if (picked === id) picked = null;
+    else if (picked && isGame(picked) === isGame(id)) {
+      const order = reading(home.layout).map((tile) => tile.id);
+      const shelf = order.filter((one) => isGame(one) === isGame(id) && one !== home.appsTile);
+      const moved = shelf.filter((one) => one !== picked);
+      moved.splice(shelf.indexOf(id), 0, picked);
+      let next = 0;
+      picked = null;
+      void save(reorder(home.layout, order.map((one) => (shelf.includes(one) ? moved[next++] : one)), keptOn()));
+    } else picked = id;
+    draw();
+  };
+
+  const rowsOf = (ids: string[]) => {
+    const box = h("div", { class: "mini-rows" });
+    for (const id of ids) box.append(h("button", { type: "button", class: `mini-tile${id === picked ? " picked" : ""}`, "data-id": id, onclick: () => tapRow(id) }, name(id)));
+    return box;
+  };
+
   const draw = () => {
+    if (rows()) return drawRows();
     const grid = h("div", { class: "mini-grid" });
     const covered = new Set<string>();
-    for (const tile of home.layout) {
+    // The grid shows the tiles that fit it; with the looks on, home can go
+    // on past it, and those are in Apps on the TV.
+    const past = home.layout.filter((tile) => !inside(tile, GRID) && tile.id !== home.appsTile).length;
+    for (const tile of home.layout.filter((one) => inside(one, GRID))) {
       const { w, h: rows } = span(tile.size);
       for (let dx = 0; dx < w; dx++) for (let dy = 0; dy < rows; dy++) covered.add(`${tile.x + dx},${tile.y + dy}`);
       const el = h(
@@ -100,16 +141,54 @@ export async function arrange(root: HTMLElement): Promise<void> {
               : null,
           )
         : null;
-    const off = home.apps.filter((a) => !home.layout.some((t) => t.id === a.id));
     const parts: (HTMLElement | null)[] = [
       prompt("tv home --edit"),
       h("h1", {}, "Edit home"),
       h("p", { class: "note" }, `For ${home.viewer.name}`),
       grid,
+      past ? h("p", { class: "note", "data-past": String(past) }, `${past} more on home, in Apps on the TV`) : null,
       sizes,
       h("p", { class: "note" }, picked ? "Now tap where it goes" : "Tap a tile, then tap where it goes"),
+      ...notOnHome(),
+    ];
+    root.replaceChildren(...parts.filter((part): part is HTMLElement => part !== null));
+  };
+
+  // The apps not on home, each with Add.
+  const notOnHome = () => {
+    const off = home.apps.filter((a) => !home.layout.some((t) => t.id === a.id));
+    return [
       off.length ? h("p", { class: "label" }, "# Not on home") : null,
-      ...off.map((a) => h("div", { class: "off" }, h("span", {}, a.name), h("button", { type: "button", class: "chip", "data-pin": a.id, onclick: () => void save(pin(home.layout, a.id)) }, glyph("plus", 14), h("span", {}, "Add")))),
+      ...off.map((a) => h("div", { class: "off" }, h("span", {}, a.name), h("button", { type: "button", class: "chip", "data-pin": a.id, onclick: () => void save(pin(home.layout, a.id, "s", keptOn())) }, glyph("plus", 14), h("span", {}, "Add")))),
+    ];
+  };
+
+  // Glass and Cinema: the apps in rows of six, then the games, in the
+  // order the TV draws them. Neither draws an app bigger, so there are no
+  // sizes here, only Remove.
+  const drawRows = () => {
+    const order = reading(home.layout)
+      .map((tile) => tile.id)
+      .filter((id) => id !== home.appsTile && home.apps.some((app) => app.id === id));
+    const apps = order.filter((id) => !isGame(id));
+    const games = order.filter(isGame);
+    const shelves = h("div", { class: "mini-shelves" }, rowsOf(apps), ...(games.length ? [h("p", { class: "label" }, "# Games"), rowsOf(games)] : []));
+    const remove = picked
+      ? h(
+          "div",
+          { class: "sizes" },
+          h("p", { class: "label" }, name(picked)),
+          h("button", { type: "button", class: "chip", "data-action": "unpin", onclick: () => { const id = picked!; picked = null; void save(unpin(home.layout, id)); } }, glyph("minus", 14), h("span", {}, "Remove")),
+        )
+      : null;
+    const parts: (HTMLElement | null)[] = [
+      prompt("tv home --edit"),
+      h("h1", {}, "Edit home"),
+      h("p", { class: "note" }, `For ${home.viewer.name}`),
+      shelves,
+      remove,
+      h("p", { class: "note" }, picked ? "Now tap where it goes" : "Tap an app, then tap where it goes"),
+      ...notOnHome(),
     ];
     root.replaceChildren(...parts.filter((part): part is HTMLElement => part !== null));
   };

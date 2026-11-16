@@ -25,6 +25,7 @@ export interface StepRun {
   proxy?: string; // the sandbox's way out, http://127.0.0.1:8080
   relay?: string; // the key relay, http://127.0.0.1:8081, with a key
   path: "plan" | "key";
+  model?: string; // the build's model, from builder/models.ts; the CLI's own without
   standIn?: string; // a recorded build to replay instead of a provider
   step: string;
 }
@@ -128,7 +129,7 @@ export function command(provider: Provider, run: StepRun): Command {
     return {
       command: process.execPath,
       args: ["--disable-warning=ExperimentalWarning", join(import.meta.dirname, "stand-in.ts"), run.standIn, run.step, JSON.stringify(run.harness)],
-      env: { ...baseEnv(run), ORIGAITV_STAND_IN_BUDGET: String(run.budget ?? "") },
+      env: { ...baseEnv(run), ORIGAITV_STAND_IN_BUDGET: String(run.budget ?? ""), ORIGAITV_STAND_IN_MODEL: run.model ?? "" },
     };
   }
   const cli = join(run.home, ".local/bin", CLIS[provider]);
@@ -178,6 +179,7 @@ export function command(provider: Provider, run: StepRun): Command {
       "--no-session-persistence",
     ];
     if (run.path === "key" && run.budget !== undefined) args.push("--max-budget-usd", run.budget.toFixed(2));
+    if (run.model) args.push("--model", run.model);
     return { command: cli, args, env };
   }
 
@@ -208,6 +210,7 @@ export function command(provider: Provider, run: StepRun): Command {
       // A provider of OrigaiTV's that sends no key: the relay adds it.
       args.push("-c", 'model_provider="origaitv"', "-c", `model_providers.origaitv={name="OrigaiTV",base_url=${toml(`${run.relay}/v1`)},wire_api="responses"}`);
     }
+    if (run.model) args.push("-m", run.model);
     args.push(`${run.brief}\n\n${run.prompt}`);
     return { command: cli, args, env: { ...env, CODEX_HOME: join(run.home, ".codex") } };
   }
@@ -233,7 +236,7 @@ export function command(provider: Provider, run: StepRun): Command {
     if (run.path === "key" && run.relay) {
       // A model of OrigaiTV's that names a key no one has, so grok sends none
       // and the relay adds it.
-      config.push("", "[model.origaitv]", `model = ${toml(GROK_MODEL)}`, `base_url = ${toml(`${run.relay}/v1`)}`, 'api_backend = "responses"', 'env_key = "ORIGAITV_NO_KEY"', "context_window = 500000");
+      config.push("", "[model.origaitv]", `model = ${toml(run.model ?? GROK_MODEL)}`, `base_url = ${toml(`${run.relay}/v1`)}`, 'api_backend = "responses"', 'env_key = "ORIGAITV_NO_KEY"', "context_window = 500000");
       config.push("", "[models]", 'default = "origaitv"');
       env.XAI_API_KEY = "origaitv-relay";
     }
@@ -282,6 +285,9 @@ export function command(provider: Provider, run: StepRun): Command {
         "MCPTool(origaitv__*)",
         "--rules",
         run.brief,
+        // With a key, the model is the relay's in the settings above; with
+        // a plan, the flag.
+        ...(run.model && run.path === "plan" ? ["--model", run.model] : []),
       ],
       env,
       files: { [join(grokHome, "config.toml")]: `${config.join("\n")}\n` },
@@ -321,6 +327,7 @@ export function command(provider: Provider, run: StepRun): Command {
       "--contributor-mode",
       "off",
     ];
+    if (run.model) args.push("--model", run.model);
     // Off Meta's own address, muse sends no key; the relay adds it.
     if (run.path === "key" && run.relay) {
       args.push("--base-url", `${run.relay}/v1`);
@@ -341,7 +348,7 @@ export function command(provider: Provider, run: StepRun): Command {
   if (run.path === "key" && run.relay) env.GOOGLE_GEMINI_BASE_URL = run.relay;
   return {
     command: cli,
-    args: ["-p", `${run.brief}\n\n${run.prompt}`, "-o", "stream-json", "--approval-mode=yolo", "--skip-trust"],
+    args: ["-p", `${run.brief}\n\n${run.prompt}`, "-o", "stream-json", "--approval-mode=yolo", "--skip-trust", ...(run.model ? ["-m", run.model] : [])],
     env: { ...env, GEMINI_CLI_HOME: geminiHome, GEMINI_CLI_TRUST_WORKSPACE: "true" },
     files: { [join(geminiHome, ".gemini", "settings.json")]: JSON.stringify(settings, null, 2) },
   };
