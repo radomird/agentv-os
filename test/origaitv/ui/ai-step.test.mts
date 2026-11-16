@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
+import { typeIn } from "../../../daemon/remote-text.ts";
 import type { Daemon } from "../../../daemon/server.ts";
 import { startBox } from "./box.mts";
 import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
@@ -102,11 +103,27 @@ async function tv(): Promise<Page> {
 }
 
 // An adult on a paired phone accepts the terms the TV shows.
-async function acceptOnPhone(provider: string, way: string): Promise<void> {
+async function acceptOnPhone(provider: string, way: string): Promise<TestPhone> {
   const code = (await (await fetch(`${url}/api/phones/pair`, { method: "POST" })).json()).pairing.code;
   const paired = await pairPhone(lan, code, "pixel");
   const accepted = await paired.fetch(`/api/phone/terms`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, path: way }) });
   assert.equal(accepted.status, 200);
+  return paired;
+}
+
+// The code, from the remote alone (ADR-103): the field took the focus by
+// itself, so the phone's keyboard opened, and what's typed or pasted there
+// goes into whatever has the focus on the TV's page, as the TV session
+// types it. Nothing reaches a field without the focus, so a field that
+// needed a mouse to take it fails here. The remote's OK then sends it.
+async function codeFromRemote(page: Page, code: string, phone?: TestPhone): Promise<void> {
+  await page.waitForSelector('[data-action="sign-in-code"].focused');
+  if (phone) {
+    for (let i = 0; i < 50 && (await (await phone.fetch("/api/phone/state")).json()).tv.view !== "keyboard"; i++) await page.waitForTimeout(100);
+    assert.equal((await (await phone.fetch("/api/phone/state")).json()).tv.view, "keyboard", "the phone's keyboard opened by itself");
+  }
+  assert.deepEqual(await page.evaluate(typeIn(code, code.length)), { ok: true, by: "page" });
+  await page.keyboard.press("Enter");
 }
 
 // Root's hand-over and the CLI's sign-in, as they'd write their status.
@@ -169,6 +186,7 @@ test("the AI step's last card, Later, moves setup on with no AI picked", async (
 test("ADR-070 the plan's sign-in starts right at the AI step: terms on the phone, the link as a QR code, the code, and on", async () => {
   atAi();
   const page = await tv();
+  let phone: TestPhone | undefined;
   try {
     await page.waitForSelector(".ai-cards");
     await page.keyboard.press("Enter");
@@ -181,7 +199,7 @@ test("ADR-070 the plan's sign-in starts right at the AI step: terms on the phone
     // The terms come first, accepted on the phone. Nothing signs in before.
     await page.waitForSelector(".terms-list");
     assert.equal(existsSync(join(state, "build-drop", "sign-in.json")), false);
-    await acceptOnPhone("claude", "plan");
+    phone = await acceptOnPhone("claude", "plan");
     // Back on the ways in, the sign-in starts by itself, without a build.
     await page.waitForSelector(".ai-options");
     for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in.json")); i++) await page.waitForTimeout(100);
@@ -191,8 +209,7 @@ test("ADR-070 the plan's sign-in starts right at the AI step: terms on the phone
     signInSays({ state: "waiting", url: "https://claude.ai/oauth/authorize?code=true&state=s7Q", pastes: true });
     await page.waitForSelector(".ai-qr:not(.hidden) .qr[src]");
     assert.equal(await page.locator('[data-line="sign-in"]').textContent(), "Scan to sign in, then paste the code it gives you");
-    await page.fill('[data-action="sign-in-code"]', "good-code#s7Q");
-    await page.locator('[data-action="send-code"]').click();
+    await codeFromRemote(page, "good-code#s7Q", phone);
     for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in-code.json")); i++) await page.waitForTimeout(100);
     assert.deepEqual(JSON.parse(readFileSync(join(state, "build-drop", "sign-in-code.json"), "utf8")), { code: "good-code#s7Q" });
     // Signed in: on to who watches, with the plan kept for voice.
@@ -202,6 +219,56 @@ test("ADR-070 the plan's sign-in starts right at the AI step: terms on the phone
     assert.deepEqual([ai.provider, ai.path], ["claude", "plan"]);
     assert.equal((await (await fetch(`${url}/api/ai/sign-in`)).json()).signIn.signedIn, true);
   } finally {
+    await page.close();
+  }
+});
+
+test("ADR-103 the phone gets a sign-in page of its own: the provider's page to open, and a field whose code reaches the TV's sign-in", async () => {
+  atAi();
+  writeFileSync(join(state, "ai.json"), JSON.stringify({ provider: "claude", path: "plan" }));
+  const paired = await acceptOnPhone("claude", "plan");
+  const page = await tv();
+  const hand = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  hand.on("pageerror", (error) => errors.push(error.message));
+  const sent = join(state, "build-drop", "sign-in-code.json");
+  try {
+    await page.waitForSelector(".ai-options");
+    for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in.json")); i++) await page.waitForTimeout(100);
+    // Nothing to sign in to yet: no page on the phone.
+    assert.equal((await (await paired.fetch("/api/phone/state")).json()).ai, null);
+    const link = "https://claude.ai/oauth/authorize?code=true&state=s7Q";
+    signInSays({ state: "waiting", url: link, pastes: true });
+    await page.waitForSelector(".ai-paste:not(.hidden)");
+    const ask = (await (await paired.fetch("/api/phone/state")).json()).ai;
+    assert.deepEqual([ask.ask, ask.signIn], ["sign-in", { url: link, pastes: true }]);
+
+    // The phone's page: its link opens the provider's page, and the code
+    // pasted into its own field goes to the TV's sign-in.
+    await fetch(`${url}/api/phones/pair`, { method: "POST" });
+    await hand.goto(`${lan}/#pair=${daemon.phones.secret()}`);
+    await hand.waitForSelector("#tv-ask");
+    assert.equal(await hand.locator("#tv-ask h1").innerText(), "Sign in to Claude");
+    assert.equal(await hand.locator('#tv-ask [data-action="open-sign-in"]').getAttribute("href"), link);
+    await hand.locator('#tv-ask input[name="code"]').tap();
+    await hand.keyboard.type("good-code#s7Q");
+    await hand.locator('#tv-ask [data-action="send-code"]').tap();
+    for (let i = 0; i < 50 && !existsSync(sent); i++) await page.waitForTimeout(100);
+    assert.deepEqual(JSON.parse(readFileSync(sent, "utf8")), { code: "good-code#s7Q" });
+    await hand.waitForFunction(() => document.getElementById("toast")?.textContent === "Signing in on your TV…");
+
+    // A provider whose page asks for a code the TV shows: the phone shows
+    // it too, with nothing to paste.
+    signInSays({ state: "waiting", url: "https://example.invalid/device", code: "ABCD-EFGH", pastes: false });
+    await hand.waitForFunction(() => document.querySelector("#tv-ask .plan-code")?.textContent === "ABCD-EFGH", null, { timeout: 10_000 });
+    assert.equal(await hand.locator('#tv-ask input[name="code"]').count(), 0);
+    // Not now puts it away, and signed in, it's gone for good.
+    await hand.locator('#tv-ask [data-action="not-now"]').tap();
+    assert.equal(await hand.locator("#tv-ask").count(), 0);
+    signInSays({ state: "done" });
+    await page.waitForFunction(() => document.querySelector(".bar .bar-step")?.textContent === "7 of 12 · who's watching");
+    assert.equal((await (await paired.fetch("/api/phone/state")).json()).ai, null);
+  } finally {
+    await hand.close();
     await page.close();
   }
 });
@@ -382,8 +449,7 @@ test("a PIN the TV stopped honouring is asked for again at the plan's sign-in co
     // The TV drops the PIN it was given. The code used to be cleared and
     // refused, with no pad.
     await endGrants();
-    await page.fill('[data-action="sign-in-code"]', "good-code#s7Q");
-    await page.locator('[data-action="send-code"]').click();
+    await codeFromRemote(page, "good-code#s7Q");
     await page.waitForSelector(".pin-pad", { timeout: 5000 });
     assert.equal(await page.locator('[data-action="sign-in-code"]').inputValue(), "good-code#s7Q");
 
@@ -395,7 +461,9 @@ test("a PIN the TV stopped honouring is asked for again at the plan's sign-in co
     assert.equal(await page.locator(".toast.fail").count(), 0);
 
     // A wrong PIN, then the right one: the code goes, and the field empties.
-    await page.locator('[data-action="send-code"]').click();
+    // The focus is back in the field, and the remote's OK sends it again.
+    await page.waitForSelector('[data-action="sign-in-code"].focused');
+    await page.keyboard.press("Enter");
     await page.waitForSelector(".pin-pad");
     await page.keyboard.type("1111");
     await page.waitForSelector(".pin-pad .pin-message.bad");
@@ -443,7 +511,7 @@ test("ADR-070 a plan left for later in setup signs in from Settings → AI, and 
   rmSync(join(state, "plan-sign-in.json"), { force: true });
   rmSync(join(state, "build-drop"), { recursive: true, force: true });
   rmSync(run, { recursive: true, force: true });
-  await acceptOnPhone("claude", "plan");
+  const phone = await acceptOnPhone("claude", "plan");
   const go = (page: Page, route: string) => page.evaluate((r) => (window as unknown as { origaitvLauncher: { go(route: string): void } }).origaitvLauncher.go(r), route);
   for (const on of [false, true]) {
     writeFileSync(join(state, "features.json"), JSON.stringify({ setup2: on }));
@@ -464,8 +532,7 @@ test("ADR-070 a plan left for later in setup signs in from Settings → AI, and 
       assert.deepEqual(JSON.parse(readFileSync(join(state, "build-drop", "sign-in.json"), "utf8")), { build: null, provider: "claude" });
       signInSays({ state: "waiting", url: "https://claude.ai/oauth/authorize?code=true&state=s7Q", pastes: true });
       await page.waitForSelector(".build-qr:not(.hidden) img[src]");
-      await page.fill('[data-action="sign-in-code"]', "good-code#s7Q");
-      await page.locator('[data-action="send-code"]').click();
+      await codeFromRemote(page, "good-code#s7Q", phone);
       for (let i = 0; i < 50 && !existsSync(join(state, "build-drop", "sign-in-code.json")); i++) await page.waitForTimeout(100);
       assert.deepEqual(JSON.parse(readFileSync(join(state, "build-drop", "sign-in-code.json"), "utf8")), { code: "good-code#s7Q" });
       signInSays({ state: "done" });
