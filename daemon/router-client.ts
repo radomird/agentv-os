@@ -11,6 +11,7 @@ import { AI_NAMES } from "../builder/reasons.ts";
 import { isCliProvider } from "./providers/cli.ts";
 import { CANT_ANSWER, GETTING_READY, TOOK_TOO_LONG } from "./providers/no-answer.ts";
 import { NONE, type Routed, type RouterApp } from "./router.ts";
+import type { UsageProvider, UsageWindow } from "./plan-usage.ts";
 
 export const ROUTER_SOCKETS = { api: "/run/origaitv-router/router.sock", cli: "/run/origaitv-router-cli/route.sock" };
 
@@ -44,6 +45,32 @@ export function viaSocket(path: string, body: { provider: Provider; sentence: st
     });
     asked.on("error", (error: NodeJS.ErrnoException) => failed(error.code === "ENOENT" || error.code === "ECONNREFUSED" ? CANT_ANSWER : error.message));
     asked.end(JSON.stringify(body));
+  });
+}
+
+// How much of a plan is used (ADR-103), from the plan's service: the
+// windows, or null when it can't say.
+export function usageViaSocket(path: string, provider: UsageProvider, timeoutMs = 50_000): Promise<UsageWindow[] | null> {
+  return new Promise((resolve) => {
+    const asked = request({ socketPath: path, path: "/usage", method: "POST", headers: { "Content-Type": "application/json" }, timeout: timeoutMs }, (response) => {
+      let text = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk: string) => (text += chunk));
+      response.on("end", () => {
+        try {
+          const answer = JSON.parse(text);
+          resolve(answer.ok && Array.isArray(answer.windows) ? (answer.windows as UsageWindow[]) : null);
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+    asked.on("timeout", () => {
+      asked.destroy();
+      resolve(null);
+    });
+    asked.on("error", () => resolve(null));
+    asked.end(JSON.stringify({ provider }));
   });
 }
 

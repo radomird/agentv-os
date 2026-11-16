@@ -167,6 +167,11 @@ export interface TileEntry {
 }
 
 // Settings → AI: which provider has a key.
+export interface PlanUsageState {
+  plan: boolean;
+  usage: { provider: string; windows: { window: "hours" | "week" | "month"; hours?: number; percent: number; resets?: string }[]; at: string } | null;
+}
+
 export interface KeyState {
   set: boolean;
   provider: string | null;
@@ -485,6 +490,9 @@ export const daemon = {
   removeViewer: (id: string, grant?: string) => call<{ viewers: Viewer[] }>("DELETE", `/api/viewers/${id}`, undefined, grant),
   // The provider key (S4.6): which provider has one, never the key.
   key: () => call<KeyState>("GET", "/api/key"),
+  // How much of the household's plan is used (ADR-103): its windows, or
+  // null where the TV can't see them. Never a dollar amount.
+  planUsage: (fresh = false) => call<PlanUsageState>("GET", `/api/ai/usage${fresh ? "?fresh" : ""}`),
   // The household's model for asking or building (ADR-103), past the PIN.
   setModel: (use: "ask" | "build", model: string, grant?: string) => call<{ models?: NonNullable<KeyState["ai"]>["models"] }>("PUT", "/api/ai/models", { use, model }, grant),
   // The key kept, or the terms it waits for.

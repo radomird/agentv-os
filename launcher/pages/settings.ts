@@ -27,7 +27,7 @@ import { loadPhones, phoneRows, phones } from "./phones.ts";
 import { loadNetwork, networkPanel, networkRows, watchNetwork } from "./wifi.ts";
 import { profileRows } from "./profiles.ts";
 import { notesPanel, updatesPanel, updatesStart, updatesValue } from "./updates.ts";
-import { BUILD_CAPS, changeBuilder, MONTH_CAPS, stepCap, usagePanel, usageRows } from "./usage.ts";
+import { BUILD_CAPS, changeBuilder, loadPlanUsage, MONTH_CAPS, planUsageState, stepCap, usagePanel, usageRows } from "./usage.ts";
 import { modelRows, modelUse, stepModel } from "./models.ts";
 import { buildsState, loadBuilds } from "./build.ts";
 import { countryValue, loadCountry } from "./country.ts";
@@ -708,6 +708,8 @@ export function settings(ctx: Ctx, open?: string): View {
   follow(() => controllerRows().map((one) => one.textContent), loadControllers(), "phones");
   follow(() => keyState, daemon.key().then((found) => setKeyState({ set: found.set, provider: found.provider, plans: found.plans, ai: found.ai })), "ai", "your-ai");
   follow(() => buildsState(), loadBuilds(ctx), "ai", "usage", "theme");
+  // How much of a plan is used (ADR-103).
+  if (adult) follow(() => planUsageState(), loadPlanUsage(), "ai", "usage");
   // How the TV is online, now and when the daemon has news of it.
   follow(() => networkRows(() => {}).map((one) => one.textContent), loadNetwork(), "network");
   watchNetwork(() => refresh("network"));

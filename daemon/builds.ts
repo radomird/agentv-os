@@ -335,7 +335,9 @@ export class Builds {
         // had one, or its id as words.
         steps: (mine?.steps ?? []).map((step) => ({ ...step, label: step.label ?? recipe?.steps.find((s) => s.id === step.id)?.label ?? stepLabel(step) })),
         ...(raw ? { reason: plainReason(raw, told) } : {}),
-        spent: this.spentBy(asked.build) ?? mine?.spent,
+        // What it spent with a key. On a plan the CLI's own dollar estimate
+        // isn't a cost anyone pays, so no screen gets it (ADR-103).
+        spent: asked.path === "key" ? (this.spentBy(asked.build) ?? mine?.spent) : undefined,
         understood: mine?.understood,
         plan: mine?.plan,
         cost: mine?.plan?.cost ?? recipe?.cost,
