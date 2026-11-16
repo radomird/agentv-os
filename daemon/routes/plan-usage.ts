@@ -1,6 +1,7 @@
 // How much of the household's plan is used (ADR-103, Q313):
 // - GET /api/ai/usage: { ok, plan, usage }. plan is whether a plan is in
-//   use, its terms accepted; usage its windows (daemon/plan-usage.ts), or
+//   use, its terms accepted; usage its windows (daemon/plan-usage.ts), with
+//   asOf when they're the numbers kept while the plan's limits are paused, or
 //   no windows and signIn where the plan's sign-in ran out or was never
 //   done, and then the TV offers signing in. usage is null where the check
 //   can't answer with today's numbers, and then the TV says it's using the

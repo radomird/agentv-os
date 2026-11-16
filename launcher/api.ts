@@ -172,8 +172,9 @@ export interface TileEntry {
 export interface PlanUsageState {
   plan: boolean;
   // With no windows and signIn, the plan's sign-in ran out ("expired") or
-  // was never done ("none").
-  usage: { provider: string; windows: { window: "hours" | "week" | "month"; hours?: number; percent: number; resets?: string }[]; signIn?: "expired" | "none"; at: string } | null;
+  // was never done ("none"). asOf is when kept windows were read, while the
+  // plan's limits are paused.
+  usage: { provider: string; windows: { window: "hours" | "week" | "month"; hours?: number; percent: number; resets?: string }[]; signIn?: "expired" | "none"; asOf?: string; at: string } | null;
 }
 
 export interface KeyState {

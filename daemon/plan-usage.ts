@@ -10,11 +10,15 @@
 // counts of what was asked.
 //
 // The daemon asks the service now and then, and keeps the answer a little
-// while, as Omarchy's own panel does. Only numbers the check measured just
-// now count. One whose sign-in has lapsed, or that couldn't ask, prints the
-// last numbers it kept, marked stale, and those aren't shown as today's:
-// the TV says it's using the plan, and no number. Where the plan's sign-in
-// ran out, or was never done, the TV says so and offers signing in.
+// while, as Omarchy's own panel does. Numbers the check measured just now
+// are shown as they are. One that couldn't ask prints the last numbers it
+// kept, marked stale. Where it says why is only its token lapsing ("Limits
+// paused", which Claude Code's own next run puts right), the TV shows those
+// with when they were read ("As of 8 hours ago", Q341). The check keeps them
+// in its own cache in the builder's home, with when it read them, and
+// nothing of the sign-in goes with them. Other old numbers aren't shown:
+// the TV says it's using the plan. Where the plan's sign-in ran out, or was
+// never done, the TV says so and offers signing in.
 
 import type { Provider } from "./ai.ts";
 
@@ -45,12 +49,16 @@ export interface PlanUsage {
   windows: UsageWindow[];
   // With no windows: the plan's sign-in is what's missing.
   signIn?: UsageSignIn;
+  // When the windows were read, for numbers kept while the limits are
+  // paused (ISO 8601).
+  asOf?: string;
   at: string;
 }
 
-// What the plan's service answers the daemon: the windows, or that the
-// plan's sign-in has to be done. Anything else is no answer.
-export type UsageReply = { windows: UsageWindow[] } | { signIn: UsageSignIn };
+// What the plan's service answers the daemon: the windows (with when they
+// were read, when they're kept ones), or that the plan's sign-in has to be
+// done. Anything else is no answer.
+export type UsageReply = { windows: UsageWindow[]; asOf?: string } | { signIn: UsageSignIn };
 
 // What a check printed comes to, for the service: its reply, and what kind
 // of answer it was for the service's log, never a number.
@@ -110,8 +118,14 @@ export function usageAnswer(printed: string): UsageAnswer {
   const status = typeof record.usageStatusText === "string" ? record.usageStatusText : "";
   const signIn = SIGNED_OUT.get(status);
   if (signIn) return { reply: { signIn }, said: signIn === "expired" ? "sign-in expired" : "not signed in" };
+  // Only the token lapsed: the numbers it kept, with when it read them.
+  if (status === "Limits paused") {
+    const kept = windowsOf(record.limits);
+    const read = typeof record.limitsFetchedAt === "number" && record.limitsFetchedAt > 0 ? new Date(record.limitsFetchedAt) : null;
+    return kept && read && !Number.isNaN(read.getTime()) ? { reply: { windows: kept, asOf: read.toISOString() }, said: "kept numbers, limits paused" } : { reply: null, said: "limits paused" };
+  }
   if (record.limitsStale === true || record.live === false) return { reply: null, said: "old numbers" };
-  if (status) return { reply: null, said: status === "Limits paused" ? "limits paused" : "no numbers" };
+  if (status) return { reply: null, said: "no numbers" };
   const windows = windowsOf(record.limits);
   return windows ? { reply: { windows }, said: `${windows.length} window${windows.length === 1 ? "" : "s"}` } : { reply: null, said: "no windows" };
 }
@@ -169,9 +183,9 @@ export class PlanUsages {
   async get(provider: Provider | null, fresh = false): Promise<PlanUsage | null> {
     if (!hasUsage(provider)) return null;
     const kept = this.kept.get(provider);
-    // Numbers are kept a while. No answer, and a sign-in to do, are asked
-    // again sooner, so a sign-in just done shows its numbers.
-    const keep = kept?.usage?.windows.length ? (this.o.keepMs ?? 120_000) : (this.o.failedMs ?? 30_000);
+    // Today's numbers are kept a while. Kept ones, no answer, and a sign-in
+    // to do are asked again sooner, so fresh numbers show soon.
+    const keep = kept?.usage?.windows.length && !kept.usage.asOf ? (this.o.keepMs ?? 120_000) : (this.o.failedMs ?? 30_000);
     if (kept && !fresh && this.now() - kept.at < keep) return kept.usage;
     let asking = this.asking.get(provider);
     if (!asking) {
@@ -181,7 +195,11 @@ export class PlanUsages {
         .then((reply) => {
           const at = new Date(this.now()).toISOString();
           const usage: PlanUsage | null =
-            reply && "windows" in reply && reply.windows.length ? { provider, windows: reply.windows, at } : reply && "signIn" in reply ? { provider, windows: [], signIn: reply.signIn, at } : null;
+            reply && "windows" in reply && reply.windows.length
+              ? { provider, windows: reply.windows, ...(reply.asOf ? { asOf: reply.asOf } : {}), at }
+              : reply && "signIn" in reply
+                ? { provider, windows: [], signIn: reply.signIn, at }
+                : null;
           this.kept.set(provider, { at: this.now(), usage });
           return usage;
         })

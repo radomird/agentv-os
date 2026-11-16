@@ -89,8 +89,8 @@ test("T19.1 root takes a build's model only from its provider's list, and with a
   assert.equal(checkRequest(asked({ model: "claude-sonnet-5-5" })).request!.model, "claude-sonnet-5-5");
   assert.equal(checkRequest(asked({ model: "claude-haiku-5-5", path: "plan", cap: undefined })).request!.model, "claude-haiku-5-5");
   assert.match(checkRequest(asked({ model: "claude-opus-9" })).error!, /model on the provider's list/);
-  assert.match(checkRequest(asked({ provider: "chatgpt", model: "gpt-5.6-terra" })).error!, /relay prices/, "one the relay prices that isn't on the list");
-  assert.match(checkRequest(asked({ provider: "chatgpt", path: "plan", cap: undefined, model: "gpt-5.6-terra" })).error!, /model on the provider's list/, "a key's own model, on a plan");
+  assert.match(checkRequest(asked({ provider: "chatgpt", model: "gpt-5.5" })).error!, /relay prices/, "one the relay prices that isn't on the list");
+  assert.match(checkRequest(asked({ provider: "chatgpt", path: "plan", cap: undefined, model: "gpt-5.6-luna" })).error!, /model on the provider's list/, "a key's own model, on a plan");
   assert.match(checkRequest(asked({ model: "gpt-5.6-sol" })).error!, /model on the provider's list/, "another provider's model");
   assert.match(checkRequest(asked({ model: "--dangerously-skip-permissions" })).error!, /model/, "nothing that reads as a flag");
   assert.match(checkRequest(asked({ model: 5 })).error!, /model/);

@@ -60,7 +60,7 @@ export function usageViaSocket(path: string, provider: UsageProvider, timeoutMs 
       response.on("end", () => {
         try {
           const answer = JSON.parse(text);
-          if (answer.ok && Array.isArray(answer.windows)) resolve({ windows: answer.windows });
+          if (answer.ok && Array.isArray(answer.windows)) resolve({ windows: answer.windows, ...(typeof answer.asOf === "string" && !Number.isNaN(Date.parse(answer.asOf)) ? { asOf: answer.asOf } : {}) });
           else if (answer.ok && (answer.signIn === "expired" || answer.signIn === "none")) resolve({ signIn: answer.signIn });
           else resolve(null);
         } catch {
