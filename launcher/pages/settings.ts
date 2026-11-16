@@ -27,7 +27,7 @@ import { gamesPanel, gamesValue, loadDriver, loadGames, xboxRow } from "./games.
 import { loadPhones, phoneRows, phones } from "./phones.ts";
 import { loadNetwork, networkPanel, networkRows, watchNetwork } from "./wifi.ts";
 import { profileRows } from "./profiles.ts";
-import { notesPanel, updatesPanel, updatesStart, updatesValue } from "./updates.ts";
+import { goBackPanel, notesPanel, updatesPanel, updatesStart, updatesValue } from "./updates.ts";
 import { BUILD_CAPS, changeBuilder, MONTH_CAPS, stepCap, usagePanel, usageRows } from "./usage.ts";
 import { buildsState, loadBuilds } from "./build.ts";
 import { countryValue, loadCountry } from "./country.ts";
@@ -596,6 +596,8 @@ export function settings(ctx: Ctx, open?: string): View {
     { key: "updates", in: "tv", panel: () => updatesPanel(ctx, (key) => openPage(key)), start: () => updatesStart(ctx) },
     // What's new, a level under Updates (ADR-094).
     { key: "whats-new", in: "tv", under: "updates", panel: () => notesPanel(ctx), start: () => updatesStart(ctx) },
+    // Go back asks first, naming the version, a level under Updates too.
+    { key: "go-back", in: "tv", under: "updates", panel: () => goBackPanel(ctx) },
     { key: "desktop", in: "tv", panel: desktopPanel },
     { key: "about", in: "tv", panel: aboutPanel },
   ];
