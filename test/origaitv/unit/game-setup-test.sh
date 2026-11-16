@@ -89,17 +89,26 @@ touch "$SCRATCH/setup-installs"
 rm -f "$calls"
 "$ROOT/bin/origaitv-battlenet" >"$SCRATCH/out" 2>&1 || fail "a later open" "$(cat "$SCRATCH/out")"
 [[ $(cat "$calls") == "omarchy-launch-battlenet" ]] || fail "opens Battle.net straight away" "$(cat "$calls")"
-# A setup closed halfway: its prefix is set aside, never deleted.
+[[ ! -e $HOME/.cache/origaitv/battlenet-setup.unfinished ]] || fail "a setup that finished leaves no marker"
+# A prefix without Battle.net where the setup puts it, and no unfinished
+# setup of ours: it's left as it is, and the setup runs in it.
 rm -rf "$HOME/Games/battlenet"
-mkdir -p "$HOME/Games/battlenet/drive_c"
+mkdir -p "$HOME/Games/battlenet/drive_c/elsewhere"
 rm "$SCRATCH/setup-installs"
 rm -f "$calls"
 if "$ROOT/bin/origaitv-battlenet" >"$SCRATCH/out" 2>&1; then
   fail "a setup that ends with no Battle.net fails"
 fi
+[[ -d $HOME/Games/battlenet/drive_c/elsewhere ]] || fail "a prefix it didn't leave half-made stays where it is" "$(ls "$HOME/Games")"
+! compgen -G "$HOME/Games/battlenet.unfinished-*" >/dev/null || fail "and nothing is set aside" "$(ls "$HOME/Games")"
+[[ -e $HOME/.cache/origaitv/battlenet-setup.unfinished ]] || fail "a setup that ended before Battle.net was in is marked"
+# The next open, after that setup was closed halfway: its prefix is set
+# aside, never deleted, and the setup runs again.
+rm -f "$calls"
+"$ROOT/bin/origaitv-battlenet" >"$SCRATCH/out" 2>&1 && fail "a setup that ends with no Battle.net fails again"
 compgen -G "$HOME/Games/battlenet.unfinished-*/drive_c" >/dev/null || fail "the half-made prefix is set aside" "$(ls "$HOME/Games")"
 grep -q "^umu-run " "$calls" || fail "and the setup runs again" "$(cat "$calls")"
-pass "ADR-103 Battle.net's tile runs its setup the first time, then Battle.net, and never deletes a half-made prefix"
+pass "ADR-103 Battle.net's tile runs its setup the first time, then Battle.net, sets aside only a prefix its own setup left half-made, and never deletes one"
 
 # --- The Xbox controller driver --------------------------------------------------
 
