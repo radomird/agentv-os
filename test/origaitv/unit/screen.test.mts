@@ -1004,10 +1004,10 @@ test("T22.1 with Fit to screen's margin, a service's window is maximized inside 
 test("T22.1 with Fit to screen's margin, Steam's gamescope is maximized inside it too", async () => {
   const { hypr, launcher, screen } = await tv({ fitted: () => true });
   await screen.handle({ cmd: "open", app: "steam" });
-  launcher.parents.set(700, launcher.last("steam").pid);
+  launcher.parents.set(700, launcher.last("game").pid);
   hypr.open("0xf", 700, "gamescope");
   await screen.idle();
-  assert.equal(screen.front()?.role, "steam");
+  assert.equal(screen.front()?.role, "game");
   assert.equal(hypr.get("0xf").fullscreen, 1);
 });
 
