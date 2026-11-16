@@ -57,6 +57,8 @@ import { Box, type BoxOptions } from "./box.ts";
 import { boxRoute, phoneBoxRoute, type BoxRoutes } from "./routes/box.ts";
 import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
 import { aiModelRoutes } from "./routes/ai-models.ts";
+import { planUsageRoutes } from "./routes/plan-usage.ts";
+import { PlanUsages, type UsageProvider, type UsageWindow } from "./plan-usage.ts";
 import { backgroundVideoRoutes } from "./routes/backgrounds.ts";
 import { askRoutes, askView, type AskRoutes } from "./routes/ask.ts";
 import { NO_AI } from "./executors/index.ts";
@@ -79,7 +81,7 @@ import { DesktopPassword } from "./desktop-password.ts";
 import { Updates } from "./updates.ts";
 import { NONE, type Route, type Routed, type RouterApp } from "./router.ts";
 import { newItem } from "./executors/whatsNew.ts";
-import { boxRouter } from "./router-client.ts";
+import { boxRouter, ROUTER_SOCKETS, usageViaSocket } from "./router-client.ts";
 import { cleanSayAnswer, Say, type SayAnswer, type SayAsk } from "./say.ts";
 import { Listening } from "./listening.ts";
 import { cleanField, type Field } from "./remote-text.ts";
@@ -172,6 +174,9 @@ export interface DaemonOptions {
   // The router (ADR-013, ADR-023): one sentence and the apps who's watching
   // can open, into a route, through the provider's API or a plan's CLI.
   router?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
+  // How much of a plan is used (ADR-103), from the plan router's service,
+  // unless a test stands it in.
+  planUsage?: (provider: UsageProvider) => Promise<UsageWindow[] | null>;
   // Where each AI provider's icon is fetched from: their own sites, unless a
   // test stands them in.
   aiSites?: Partial<typeof PROVIDER_SITES>;
@@ -346,6 +351,8 @@ export class Daemon {
   // (ADR-070).
   readonly aiIcons: AiIcons;
   readonly planSignIn: PlanSignIn;
+  // How much of the plan is used, kept a little while (ADR-103).
+  readonly planUsages: PlanUsages;
   readonly ai: Ai;
   readonly setupApps: SetupApps;
   readonly backgrounds: Backgrounds;
@@ -573,6 +580,7 @@ export class Daemon {
     this.ai = new Ai({ state: options.state, channel: () => this.channel() });
     this.aiIcons = new AiIcons({ state: options.state, userAgent: userAgent(options.root), sites: options.aiSites, log: this.log });
     this.planSignIn = new PlanSignIn({ state: options.state, drop: join(options.state, "build-drop"), run: options.buildRun ?? "/run/origaitv-build" });
+    this.planUsages = new PlanUsages({ ask: options.planUsage ?? ((provider) => usageViaSocket(ROUTER_SOCKETS.cli, provider)) });
     this.buildAwake = options.inhibitor?.("building an app") ?? { set: () => {} };
     this.builds = new Builds({ state: options.state, drop: join(options.state, "build-drop"), builds: options.builds, run: options.buildRun, spend: options.spend, warnings: options.npmWarnings });
     this.backgrounds = new Backgrounds({ dir: options.backgrounds ?? "/var/lib/origaitv/backgrounds" });
@@ -3060,6 +3068,9 @@ export class Daemon {
       this.json(response, 200, { ok: true, ...(await this.ai.read()), offers: await this.ai.offers(), channel: await this.channel(), read: TERMS_READ, key: { set, provider } });
       return;
     }
+
+    // How much of the plan is used, in % (ADR-103).
+    if (await planUsageRoutes({ ai: () => this.ai.read(), usages: this.planUsages, adult: async () => (await this.profiles.active()).role === "adult", json: (s, status, data) => this.json(s, status, data) }, request, response, url)) return;
 
     // The household's models for asking and building (ADR-103).
     if (await aiModelRoutes({ ai: this.ai, adult: async (q, s, what) => this.guarded(q, s, what) && (await this.adult(q, s, what)), body: (q) => this.body(q), json: (s, status, data) => this.json(s, status, data), changed: (state) => this.broadcast("ai", state), log: this.log }, request, response, path)) return;

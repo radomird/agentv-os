@@ -2,17 +2,74 @@
 // month with a key, as a row with a bar that fills toward the month's limit,
 // then the limit for one app, the limit for the month, and npm's safeguards
 // for the packages an app adds. Every change is an adult's, past the PIN once
-// there is one. A plan has its own limits, which aren't counted here. The
-// spending row opens a page with that line and the nightly package check's
-// warnings.
+// there is one. The spending row opens a page with that line and the nightly
+// package check's warnings.
+//
+// A plan has its own limits, and shows how much of them is used instead
+// (ADR-103, Q313): a row with a bar for each window the provider says, the
+// 5 hours and the week, and never a dollar amount. Where the TV can't see
+// them, the row says it's using the plan. The caps are a key's only.
 
-import { daemon, type BuilderSettings } from "../api.ts";
+import { daemon, type BuilderSettings, type PlanUsageState } from "../api.ts";
 import { h } from "../dom.ts";
 import { loadingMark } from "../loading.ts";
 import type { Ctx } from "../main.ts";
 import { buildsState, loadBuilds } from "./build.ts";
-import { keyState } from "./key.ts";
+import { keyState, providerName } from "./key.ts";
 import { pinAsked } from "./pin.ts";
+
+// How much of the plan is used, asked for when Settings, AI opens.
+let planState: PlanUsageState | null = null;
+
+// What a plan's rows show, or null when no plan is in use: Settings draws
+// AI again only when this changes, so a key's rows aren't drawn again under
+// the viewer for nothing.
+export function planUsageShown(): PlanUsageState | null {
+  return onPlan() ? planState : null;
+}
+
+export async function loadPlanUsage(): Promise<void> {
+  try {
+    planState = await daemon.planUsage();
+  } catch {}
+}
+
+function onPlan(): boolean {
+  return keyState?.ai?.path === "plan" && keyState.ai.accepted === true;
+}
+
+type Window = NonNullable<PlanUsageState["usage"]>["windows"][number];
+
+const windowName = (w: Window) => (w.window === "hours" ? `${w.hours ?? 5}-hour limit` : w.window === "week" ? "Weekly limit" : "Monthly limit");
+
+// A bar for how much of a window is used.
+function bar(percent: number): HTMLElement {
+  const fill = h("span", {});
+  fill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  return h("span", { class: "button-value meter", role: "img", "aria-label": `${percent} percent used` }, fill);
+}
+
+// When a window starts over: a time today, or the day and time.
+export function startsOver(iso: string | undefined, now = new Date()): string | null {
+  if (!iso) return null;
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return null;
+  const time = at.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  if (at.toDateString() === now.toDateString()) return `Starts over at ${time}`;
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  if (at.toDateString() === tomorrow.toDateString()) return `Starts over tomorrow at ${time}`;
+  return `Starts over ${at.toLocaleDateString("en-GB", { weekday: "long" })} at ${time}`;
+}
+
+// A plan's rows: a bar for each window, or one line when there are none to show.
+function planRows(open: () => void): HTMLElement[] {
+  const windows = planState?.usage?.windows ?? [];
+  if (!windows.length) {
+    return [h("button", { class: "button", "data-focus": true, "data-action": "usage", onclick: open }, h("span", {}, "Limits"), h("span", { class: "button-value" }, planState ? "Using your plan" : loadingMark()))];
+  }
+  return windows.map((w) => h("button", { class: "button metered", "data-focus": true, "data-action": `plan-${w.window}`, onclick: open }, h("span", {}, windowName(w)), h("span", { class: "button-value" }, `${w.percent}%`), bar(w.percent)));
+}
 
 // The caps left and right step through, in dollars.
 export const BUILD_CAPS = [1, 2, 5, 10, 20, 50];
@@ -67,6 +124,13 @@ export function usageRows(ctx: Ctx, open: () => void): HTMLElement[] {
   const state = buildsState();
   if (!state) return [];
   const { settings } = state;
+  const safeguards = h(
+    "button",
+    { class: "button", "data-focus": true, "data-action": "safeguards", onclick: () => void changeBuilder(ctx, { safeguards: !settings.safeguards }, "safeguards") },
+    h("span", {}, "Extra safety checks"),
+    h("span", { class: "button-value" }, settings.safeguards ? "On" : "Off"),
+  );
+  if (onPlan()) return [...planRows(open), safeguards];
   const limit = (label: string, value: number, adjust: string) =>
     h(
       "button",
@@ -78,12 +142,7 @@ export function usageRows(ctx: Ctx, open: () => void): HTMLElement[] {
     h("button", { class: "button metered", "data-focus": true, "data-action": "usage", onclick: open }, h("span", {}, "Spent this month"), h("span", { class: "button-value" }, usageValue()), meter()),
     limit("Limit per app", settings.cap.build, "cap-build"),
     limit("Limit per month", settings.cap.month, "cap-month"),
-    h(
-      "button",
-      { class: "button", "data-focus": true, "data-action": "safeguards", onclick: () => void changeBuilder(ctx, { safeguards: !settings.safeguards }, "safeguards") },
-      h("span", {}, "Extra safety checks"),
-      h("span", { class: "button-value" }, settings.safeguards ? "On" : "Off"),
-    ),
+    safeguards,
   ];
 }
 
@@ -95,12 +154,26 @@ export function usagePanel(ctx: Ctx): HTMLElement[] {
   if (ctx.state.viewer.role !== "adult") return [note("Only an adult can see spending")];
   if (!state) return [h("div", { class: "panel-big" }, loadingMark())];
   const { settings, warnings } = state;
-  const onPlan = keyState?.ai?.path === "plan" && keyState.ai.accepted === true;
+  // A plan: how much of each window is used, and when it starts over.
+  const windows = planState?.usage?.windows ?? [];
+  const plan = onPlan()
+    ? [
+        h("div", { class: "panel-title" }, `Your ${providerName(keyState?.ai?.provider)} plan`),
+        ...(windows.length
+          ? windows.flatMap((w) => {
+              const over = startsOver(w.resets);
+              return [h("div", { class: "panel-note plan-window" }, windowName(w)), h("div", { class: "panel-big" }, `${w.percent}% used`), h("div", { class: "metered" }, bar(w.percent)), ...(over ? [note(over)] : [])];
+            })
+          : [h("div", { class: "panel-big" }, planState ? "Using your plan" : loadingMark()), note("A plan has its own limits")]),
+      ]
+    : [
+        h("div", { class: "panel-title" }, "Spent this month"),
+        h("div", { class: "panel-big" }, usageValue()),
+        h("div", { class: "metered" }, meter()),
+        note(settings.safeguards ? "Making an app stops at its limit" : "Safety checks are off. Known malware is still blocked."),
+      ];
   return [
-    h("div", { class: "panel-title" }, "Spent this month"),
-    h("div", { class: "panel-big" }, usageValue()),
-    h("div", { class: "metered" }, meter()),
-    note(onPlan ? "A plan has its own limits, not counted here" : settings.safeguards ? "Making an app stops at its limit" : "Safety checks are off. Known malware is still blocked."),
+    ...plan,
     ...(warnings.length
       ? [
           h("div", { class: "panel-title security" }, "Problems found"),
