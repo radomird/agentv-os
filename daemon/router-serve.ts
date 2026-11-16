@@ -25,7 +25,9 @@
 // The cli service also says how much of the plan is used (ADR-103): POST
 // /usage with the provider, answered with the windows of its limits and
 // nothing else, from Omarchy's own usage check run as the builder
-// (daemon/plan-usage.ts). It logs how many windows came back, never more.
+// (daemon/plan-usage.ts), or that the plan's sign-in has to be done. Old
+// numbers the check kept are no answer. It logs what kind of answer came
+// back, never a number.
 //
 // And the provider's own voice for the TV's answers (stage 8, Q152): POST
 // /speak with the provider and a line, for the providers that have one
@@ -51,7 +53,7 @@ import { keyFrom } from "../builder/sandbox/relay.ts";
 import { askTmdb, tmdbKeyFrom, tmdbPath, type TmdbAnswer } from "./tmdb-api.ts";
 import { speak, SPEECH_MAX, type Speech } from "./providers/speech.ts";
 import { offered } from "../builder/models.ts";
-import { hasUsage, usageCommand, usageWindows, type UsageProvider, type UsageWindow } from "./plan-usage.ts";
+import { hasUsage, usageAnswer, usageCommand, type UsageAnswer, type UsageProvider } from "./plan-usage.ts";
 
 const PROVIDERS: Provider[] = ["claude", "chatgpt", "gemini", "grok", "muse"];
 
@@ -123,7 +125,7 @@ export interface ServeOptions {
   // The provider's own voice (stage 8), on the api service only.
   speak?: (provider: Provider, text: string) => Promise<Speech>;
   // How much of the plan is used (ADR-103), on the cli service only.
-  usage?: (provider: UsageProvider) => Promise<UsageWindow[] | null>;
+  usage?: (provider: UsageProvider) => Promise<UsageAnswer>;
   log?: (line: string) => void;
   now?: () => number;
 }
@@ -170,9 +172,9 @@ export function routeServer(o: ServeOptions): Server {
       if (usageAsks.length >= USAGE_PER_MINUTE) return answer(429, { ok: false, error: TOO_MANY });
       usageAsks.push(now());
       const started = now();
-      const windows = await o.usage(provider as UsageProvider).catch(() => null);
-      o.log?.(`usage ${provider}: ${windows ? `${windows.length} window${windows.length === 1 ? "" : "s"}` : "no answer"} in ${now() - started} ms`);
-      return answer(200, windows ? { ok: true, windows } : { ok: false, error: "no usage to say" });
+      const said = await o.usage(provider as UsageProvider).catch((): UsageAnswer => ({ reply: null, said: "the check didn't run" }));
+      o.log?.(`usage ${provider}: ${said.said} in ${now() - started} ms`);
+      return answer(200, said.reply ? { ok: true, ...said.reply } : { ok: false, error: "no usage to say" });
     }
     if (request.method !== "POST" || request.url !== "/route") return answer(404, { ok: false, error: o.tmdb ? "only POST /route, /tmdb and /speak" : o.usage ? "only POST /route and /usage" : "only POST /route" });
     const asked = routeRequest(await body(request), o.path ?? "key");
@@ -282,11 +284,14 @@ async function main(): Promise<void> {
       log,
       path: "plan",
       // Omarchy's own usage check, as the builder, with the builder's home
-      // and this service's one way out. Only its windows leave here.
+      // and this service's one way out. Only its windows leave here, or
+      // that the plan's sign-in has to be done.
       usage: (provider) => {
         const run = usageCommand(provider, { home, proxy });
         return new Promise((resolve) => {
-          execFile(run.command, run.args, { env: run.env, cwd: home, timeout: 40_000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => resolve(error && !stdout ? null : usageWindows(String(stdout))));
+          execFile(run.command, run.args, { env: run.env, cwd: home, timeout: 40_000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) =>
+            resolve(error && !stdout ? { reply: null, said: `the check failed${error.code ? ` (${error.code})` : ""}` } : usageAnswer(String(stdout))),
+          );
         });
       },
       route: async ({ provider, sentence, apps, model }) => {

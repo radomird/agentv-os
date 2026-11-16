@@ -3,7 +3,8 @@
 // app starts on, which "Make X?" can change for one app. Each goes through
 // the provider's short list, strongest first: left and right step along it,
 // and OK goes on to the next, round to the first. An adult's, past the PIN,
-// like the rest of AI.
+// like the rest of AI. A model that can cost extra on a plan says so on its
+// row (Q324).
 
 import { daemon } from "../api.ts";
 import { h } from "../dom.ts";
@@ -12,6 +13,15 @@ import { keyState, setKeyState } from "./key.ts";
 import { pinAsked } from "./pin.ts";
 
 export type ModelUse = "ask" | "build";
+
+// What a model that can cost extra on a plan says, on its row here and on
+// "Make X?".
+export const COSTS_EXTRA = "Can cost extra on your plan";
+
+// Whether a model says so: one that costs extra on a plan, picked on one.
+export function costsExtra(model: { costsExtra?: "plan" } | undefined, path: string | null | undefined): boolean {
+  return model?.costsExtra === "plan" && path === "plan";
+}
 
 const ROWS: { use: ModelUse; action: string; label: string }[] = [
   { use: "ask", action: "ask-model", label: "For asking" },
@@ -27,14 +37,17 @@ export function modelUse(adjust: string | undefined): ModelUse | null {
 export function modelRows(ctx: Ctx): HTMLElement[] {
   const models = keyState?.ai?.accepted ? keyState.ai.models : null;
   if (!models || models.list.length < 2) return [];
-  return ROWS.map(({ use, action, label }) =>
-    h(
+  return ROWS.map(({ use, action, label }) => {
+    const model = models.list.find((m) => m.id === models[use]);
+    const extra = costsExtra(model, keyState?.ai?.path);
+    return h(
       "button",
-      { class: "button", "data-focus": true, "data-action": action, "data-adjust": action, onclick: () => void stepModel(ctx, use, 1, true) },
+      { class: `button${extra ? " noted" : ""}`, "data-focus": true, "data-action": action, "data-adjust": action, onclick: () => void stepModel(ctx, use, 1, true) },
       h("span", {}, label),
-      h("span", { class: "button-value" }, models.list.find((m) => m.id === models[use])?.name ?? models[use]),
-    ),
-  );
+      h("span", { class: "button-value" }, model?.name ?? models[use]),
+      ...(extra ? [h("span", { class: "button-note" }, COSTS_EXTRA)] : []),
+    );
+  });
 }
 
 // One model over: right is the next down the list, left the one above. OK
