@@ -299,17 +299,24 @@ if (( status != 0 )); then
   exit 1
 fi
 
-# Go back returns to the first snapshot the update took.
-snapshot=$(snapshots | awk -v before="${snapshot_before:-0}" '$1 > before { print; exit }')
-if [[ -n $snapshot ]]; then
-  jq -n --argjson snapshot "$snapshot" --argjson widevine "$had_widevine" \
-    --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg from "$from_origaitv" --arg omarchy "$from_omarchy" \
-    --arg to "$(pacman -Q origaitv 2>/dev/null | cut -d' ' -f2)" --arg to_omarchy "$(pacman -Q omarchy 2>/dev/null | cut -d' ' -f2)" \
-    '{snapshot: $snapshot, widevine: $widevine, at: $at, from: {origaitv: $from, omarchy: $omarchy}, to: {origaitv: $to, omarchy: $to_omarchy}}' \
-    >"$STATE/go-back.json"
-  chmod 644 "$STATE/go-back.json"
-else
-  rm -f "$STATE/go-back.json"
+# Go back returns to the first snapshot the update took, and only when
+# OrigaiTV's own version changed. After an update of Omarchy's or the
+# system's packages alone there's no other OrigaiTV to go back to, so
+# nothing is written, and Go back from an earlier update, to the version
+# before the one the box still has, stays as it was.
+now_origaitv=$(pacman -Q origaitv 2>/dev/null | cut -d' ' -f2)
+if [[ $now_origaitv != "$from_origaitv" ]]; then
+  snapshot=$(snapshots | awk -v before="${snapshot_before:-0}" '$1 > before { print; exit }')
+  if [[ -n $snapshot ]]; then
+    jq -n --argjson snapshot "$snapshot" --argjson widevine "$had_widevine" \
+      --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg from "$from_origaitv" --arg omarchy "$from_omarchy" \
+      --arg to "$now_origaitv" --arg to_omarchy "$(pacman -Q omarchy 2>/dev/null | cut -d' ' -f2)" \
+      '{snapshot: $snapshot, widevine: $widevine, at: $at, from: {origaitv: $from, omarchy: $omarchy}, to: {origaitv: $to, omarchy: $to_omarchy}}' \
+      >"$STATE/go-back.json"
+    chmod 644 "$STATE/go-back.json"
+  else
+    rm -f "$STATE/go-back.json"
+  fi
 fi
 rm -f "$STATE/after.json"
 

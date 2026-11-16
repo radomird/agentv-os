@@ -45,6 +45,8 @@ export type Listener = "tv" | "phone" | "captive";
 
 export class SetupRoutes {
   private host: SetupHost;
+  // How the plan's sign-in stood when the TV last asked.
+  private signInSeen = "null";
 
   constructor(host: SetupHost) {
     this.host = host;
@@ -95,7 +97,15 @@ export class SetupRoutes {
     // the provider's page gave, and its link as a QR code.
     const signIn = on === "phone" ? "/api/phone/ai/sign-in" : "/api/ai/sign-in";
     if (method === "GET" && path === signIn) {
-      this.host.json(response, 200, { ok: true, signIn: await this.signInState() });
+      const now = await this.signInState();
+      // The TV asks every second while it shows the sign-in. A change wakes
+      // the phones, whose sign-in page follows it (ADR-103).
+      const seen = JSON.stringify(now);
+      if (seen !== this.signInSeen) {
+        this.signInSeen = seen;
+        this.host.broadcast("plan-sign-in", {});
+      }
+      this.host.json(response, 200, { ok: true, signIn: now });
       return true;
     }
     if (method === "POST" && on === "tv" && path === signIn) {

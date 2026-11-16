@@ -106,7 +106,14 @@ export function ways(ctx: Ctx, provider: Provider): View {
       shown = url;
       qr.src = `/api/ai/sign-in/qr?at=${Date.now()}`;
     }
-    paste.classList.toggle("hidden", !(now?.now?.state === "waiting" && now.now.pastes && !now.now.code));
+    const pastes = Boolean(now?.now?.state === "waiting" && now.now.pastes && !now.now.code);
+    const appears = pastes && paste.classList.contains("hidden");
+    paste.classList.toggle("hidden", !pastes);
+    // The field takes the focus as it shows, so the phone's keyboard opens
+    // by itself and its paste goes straight in: no mouse needed (ADR-103).
+    // Not from under the PIN's pad, which has the keys while it's up.
+    const on = ctx.focus.get();
+    if (appears && field.isConnected && (!on || paste.parentElement?.contains(on))) ctx.focus.set(field);
   };
 
   const look = async () => {

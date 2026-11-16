@@ -53,11 +53,13 @@ function nearest(from: number, to: number, clipFrom: number, clipTo: number): nu
   return before === fits ? from - clipFrom : to - clipTo;
 }
 
-// scrollIntoView for a page inside a frame, such as a look's preview in
-// Settings: it scrolls the lists that hold the element (data-scroll), with
-// its scroll-margin, and stops at the page's own edge. scrollIntoView itself
-// goes on up through the frames, so a preview that loads would scroll
-// Settings to where the preview is.
+// Brings an element into sight the way scrollIntoView's "nearest" does, but
+// only by scrolling the lists that hold it (data-scroll), with its
+// scroll-margin. Nothing else moves: scrollIntoView would scroll the page
+// itself, and a row whose posters run past the screen's edge would slide
+// the whole page sideways. It goes no further than the page's own edge
+// either, so a look's preview in Settings, a page inside a frame, never
+// scrolls Settings to where the preview is.
 function reveal(el: HTMLElement): void {
   const z = zoom();
   const style = getComputedStyle(el);
@@ -199,10 +201,7 @@ export class Focus {
     // A list longer than its box, marked data-scroll, such as every theme
     // in Look (ADR-048), scrolls the element into view first, at once, so
     // the ring lands where it is.
-    if (el.parentElement?.closest("[data-scroll]")) {
-      if (window.parent === window) el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
-      else reveal(el);
-    }
+    if (el.parentElement?.closest("[data-scroll]")) reveal(el);
     this.place(el, from !== undefined, from);
     // The page can still move under it: the ring goes along, at once.
     this.watching?.stop();
