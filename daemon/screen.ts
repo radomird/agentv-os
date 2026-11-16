@@ -408,6 +408,9 @@ interface Options {
   // The origaitv package this screen daemon runs: the one installed as it
   // starts.
   running?: string;
+  // Whether Fit to screen keeps a margin round the TV now (daemon/display.ts),
+  // so apps are maximized inside it. None unless it says.
+  fitted?: () => boolean;
 }
 
 // Omarchy's shell draws every layer it has under an omarchy- name: its bar,
@@ -501,6 +504,8 @@ export class Screen {
   private gameAt = -Infinity;
   private inputAt = -Infinity;
   private nightWatch: ReturnType<typeof setInterval> | null = null;
+  // Whether Fit to screen keeps a margin round the TV now.
+  private fitted: () => boolean;
 
   constructor(options: Options) {
     this.hypr = options.hyprland;
@@ -534,6 +539,7 @@ export class Screen {
     this.contextMs = options.contextMs ?? 1000;
     this.lastPlayed = this.now();
     this.runningPackage = options.running ?? installedPackage();
+    this.fitted = options.fitted ?? (() => false);
   }
 
   // Runs one step at a time, in the order things happened.
@@ -965,15 +971,40 @@ export class Screen {
     );
   }
 
-  // Full screen, except the app whose sign-in screen is up: maximized, so it
-  // stays above the overlay's sign-in bar, which keeps the bottom of the
-  // screen for itself (board 15).
+  // Maximized: the whole screen less the monitor's reserved area. Told it's
+  // maximized, as the app whose sign-in screen is up is.
+  private maximize(address: string): Promise<void> {
+    return this.hypr.dispatch(`hl.dsp.window.fullscreen_state({ window = ${lua(`address:${address}`)}, internal = 1, client = 0, action = "set" })`);
+  }
+
+  // Inside Fit to screen's margin: maximized, so it fills the reserved area,
+  // but told it's full screen, as it was before there was a margin. A page's
+  // own full screen, a player's, is then the page's alone, inside the window,
+  // and Escape leaves it as it always did: told it isn't full screen,
+  // Chromium asks the compositor, which the held window rule ignores, and a
+  // player's full screen never ends. Gamescope gets what it asks for too.
+  private fit(address: string): Promise<void> {
+    return this.hypr.dispatch(`hl.dsp.window.fullscreen_state({ window = ${lua(`address:${address}`)}, internal = 1, client = 2, action = "set" })`);
+  }
+
+  // Full screen, or maximized inside the monitor's reserved area: every app
+  // but home while Fit to screen keeps a margin (ADR-103), so a service's
+  // page and its player stay in view on a TV that crops its edges, and
+  // Steam's gamescope scales its picture into it; and the app whose sign-in
+  // screen is up, which stays above the overlay's sign-in bar, since that
+  // keeps the bottom of the screen for itself (board 15). Home stays full
+  // screen, its picture to the edges, and keeps its own words and tiles
+  // inside the margin (launcher/size.ts).
   private place(address: string): Promise<void> {
     const entry = this.opens.find((o) => o.address === address);
-    if (this.signingIn && entry?.id === this.signingIn.id) {
-      return this.hypr.dispatch(`hl.dsp.window.fullscreen_state({ window = ${lua(`address:${address}`)}, internal = 1, client = 0, action = "set" })`);
-    }
+    if (this.signingIn && entry?.id === this.signingIn.id) return this.maximize(address);
+    if (this.windows.get(address)?.role !== "home" && this.fitted()) return this.fit(address);
     return this.fullscreen(address);
+  }
+
+  // Fit to screen's margin came or went: the window in front is placed again.
+  refit(): Promise<void> {
+    return this.queue(() => this.keepFullscreen());
   }
 
   // --- The apps -------------------------------------------------------------
@@ -2092,7 +2123,8 @@ export class Screen {
     return { ok: true };
   }
 
-  // The bar goes, and the app goes back to full screen if it's in front.
+  // The bar goes, and the app goes back to full screen if it's in front, or
+  // stays maximized inside Fit to screen's margin.
   private async endSignIn(why: string): Promise<void> {
     const signing = this.signingIn;
     if (!signing) return;
@@ -2102,7 +2134,7 @@ export class Screen {
     await this.launcher.signInBar(null).catch((error: Error) => this.log(`the sign-in bar: ${error.message}`));
     await this.launcher.signingIn(null).catch(() => {});
     const entry = this.opens.find((o) => o.id === signing.id);
-    if (entry?.address && this.front()?.address === entry.address && !this.ending) await this.fullscreen(entry.address);
+    if (entry?.address && this.front()?.address === entry.address && !this.ending) await this.place(entry.address);
   }
 
   private async soundRequest(request: Record<string, unknown>): Promise<object> {
@@ -3257,8 +3289,11 @@ async function main(): Promise<void> {
   sound.start();
   const hyprland = connect();
   // The TV's mode and scale for the size picked (ADR-062), before home
-  // starts, so it draws at its canvas from the first frame.
-  const display = new DisplayWatch({ hyprland, url: HOME_URL, file: displayFile(process.env, homedir()) });
+  // starts, so it draws at its canvas from the first frame, with Fit to
+  // screen's margin (ADR-103). When the margin comes or goes, the app in
+  // front is placed again.
+  let refit = () => {};
+  const display = new DisplayWatch({ hyprland, url: HOME_URL, file: displayFile(process.env, homedir()), fitted: () => refit() });
   await display.start();
   // Sleep as a setting (ADR-072), off unless Settings → Power turns it on.
   // Once the box is awake again, the screen looks for the TV.
@@ -3278,7 +3313,9 @@ async function main(): Promise<void> {
     pageMedia: pageMedia(),
     signIn: signInWatch(),
     profiles: serviceProfiles(),
+    fitted: () => display.fitted(),
   });
+  refit = () => void screen.refit().catch((error: Error) => console.log(`placing the app in front again: ${error.message}`));
   woken = () => void screen.look("the box woke from sleep");
   sleep.start();
   // The paired phones' d-pad and keyboard, to the virtual input device, and

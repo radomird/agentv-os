@@ -1771,3 +1771,26 @@ body.counted .player-note {
 .tb-back-name:empty {
   display: none;
 }
+
+/* Fit to screen (ADR-103, setup/fit.ts): the corner marks over the whole
+   screen, the status bar too, and the picture's size under the tip. */
+.setup-fit .fit-marks {
+  position: fixed;
+  z-index: 5;
+}
+
+/* Below the marks' arms at any margin up to the most, and its headline on
+   one line beside them. */
+.setup-page.setup-fit {
+  padding: 240px 120px 220px;
+  gap: 32px;
+}
+
+.setup-page.setup-fit .setup-headline {
+  font-size: 88px;
+  min-height: 88px;
+}
+
+.setup-fit .fit-controls {
+  margin-top: 8px;
+}

@@ -492,6 +492,7 @@ async function tv(
     music?: Music;
     pictures?: Pictures;
     running?: string;
+    fitted?: () => boolean;
   } = {},
 ) {
   const { homeUp = true, ...rest } = options;
@@ -965,6 +966,65 @@ test("ADR-032 Home or the app closing ends the sign-in screen, and i'm signed in
   await t.screen.idle();
   assert.deepEqual(calls.stopped, ["origaitv.tube", "origaitv.tube"]);
   assert.deepEqual(t.launcher.bars, ["Tube", null, "Tube", null]);
+});
+
+// Fit to screen (ADR-103): with a margin round the TV, apps are maximized
+// inside the monitor's reserved area, and home stays full screen.
+test("T22.1 with Fit to screen's margin, a service's window is maximized inside it, and home stays full screen", async () => {
+  let fitted = true;
+  const t = await tv({ fitted: () => fitted });
+  assert.equal(t.hypr.get("0xa").fullscreen, 2, "home's picture goes to the edges");
+  await openApp(t, "origaitv.tube", "0xb");
+  assert.equal(t.hypr.get("0xb").fullscreen, 1, "maximized, inside the margin");
+  assert.ok(
+    t.hypr.dispatched.includes('hl.dsp.window.fullscreen_state({ window = "address:0xb", internal = 1, client = 2, action = "set" })'),
+    "but told it's full screen, as before, so a player's own full screen stays inside the window and Escape leaves it",
+  );
+  // A page asking for full screen gets nothing more: Hyprland says it left
+  // full screen, and it's placed inside the margin again.
+  t.hypr.get("0xb").fullscreen = 0;
+  t.hypr.emit("fullscreen", "0");
+  await t.screen.idle();
+  assert.equal(t.hypr.get("0xb").fullscreen, 1);
+  // The margin taken away in Settings: the app in front fills the screen,
+  // and comes back inside it when there's one again.
+  fitted = false;
+  await t.screen.refit();
+  assert.equal(t.hypr.get("0xb").fullscreen, 2);
+  fitted = true;
+  await t.screen.refit();
+  assert.equal(t.hypr.get("0xb").fullscreen, 1);
+  // Home in front again is full screen.
+  await t.screen.home();
+  await t.screen.idle();
+  assert.equal(t.screen.front()?.role, "home");
+  assert.equal(t.hypr.get("0xa").fullscreen, 2);
+});
+
+test("T22.1 with Fit to screen's margin, Steam's gamescope is maximized inside it too", async () => {
+  const { hypr, launcher, screen } = await tv({ fitted: () => true });
+  await screen.handle({ cmd: "open", app: "steam" });
+  launcher.parents.set(700, launcher.last("steam").pid);
+  hypr.open("0xf", 700, "gamescope");
+  await screen.idle();
+  assert.equal(screen.front()?.role, "steam");
+  assert.equal(hypr.get("0xf").fullscreen, 1);
+});
+
+test("T22.1 with no margin, an app is full screen as before, and a sign-in that ends with a margin stays inside it", async () => {
+  const t = await tv();
+  await openApp(t, "origaitv.player", "0xc");
+  assert.equal(t.hypr.get("0xc").fullscreen, 2);
+  const { signIn, calls } = fakeSignIn();
+  const fit = await tv({ signIn, fitted: () => true });
+  fit.launcher.targets.set("origaitv.tube", { runtime: "web", url: "https://tube.example/", name: "Tube" });
+  await fit.screen.fromHome({ cmd: "sign-in", app: "origaitv.tube" });
+  fit.hypr.open("0xd", fit.launcher.last("web").pid);
+  await fit.screen.idle();
+  assert.equal(fit.hypr.get("0xd").fullscreen, 1, "maximized above the bar, inside the margin");
+  calls.done!(true);
+  await fit.screen.idle();
+  assert.equal(fit.hypr.get("0xd").fullscreen, 1, "and still inside the margin once it's signed in");
 });
 
 test("ADR-032 an installed web app is asked once as it opens whether it's signed in, and only a web app with signIn signs in", async () => {
