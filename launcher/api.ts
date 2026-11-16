@@ -169,7 +169,9 @@ export interface TileEntry {
 // Settings → AI: which provider has a key.
 export interface PlanUsageState {
   plan: boolean;
-  usage: { provider: string; windows: { window: "hours" | "week" | "month"; hours?: number; percent: number; resets?: string }[]; at: string } | null;
+  // With no windows and signIn, the plan's sign-in ran out ("expired") or
+  // was never done ("none").
+  usage: { provider: string; windows: { window: "hours" | "week" | "month"; hours?: number; percent: number; resets?: string }[]; signIn?: "expired" | "none"; at: string } | null;
 }
 
 export interface KeyState {

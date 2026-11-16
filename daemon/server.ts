@@ -58,7 +58,7 @@ import { boxRoute, phoneBoxRoute, type BoxRoutes } from "./routes/box.ts";
 import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
 import { aiModelRoutes } from "./routes/ai-models.ts";
 import { planUsageRoutes } from "./routes/plan-usage.ts";
-import { PlanUsages, type UsageProvider, type UsageWindow } from "./plan-usage.ts";
+import { PlanUsages, type UsageProvider, type UsageReply } from "./plan-usage.ts";
 import { backgroundVideoRoutes } from "./routes/backgrounds.ts";
 import { askRoutes, askView, type AskRoutes } from "./routes/ask.ts";
 import { NO_AI } from "./executors/index.ts";
@@ -176,7 +176,7 @@ export interface DaemonOptions {
   router?: (sentence: string, apps: RouterApp[]) => Promise<Routed>;
   // How much of a plan is used (ADR-103), from the plan router's service,
   // unless a test stands it in.
-  planUsage?: (provider: UsageProvider) => Promise<UsageWindow[] | null>;
+  planUsage?: (provider: UsageProvider) => Promise<UsageReply | null>;
   // Where each AI provider's icon is fetched from: their own sites, unless a
   // test stands them in.
   aiSites?: Partial<typeof PROVIDER_SITES>;

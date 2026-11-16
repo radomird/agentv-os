@@ -2,16 +2,20 @@
 // usage check, as the plan router's service runs it as the builder
 // (daemon/plan-usage.ts, daemon/router-serve.ts), hands back only the
 // windows: the 5 hours, the week and, for a plan that counts by the month,
-// the month. The daemon asks for them now and then and keeps the answer a
-// little while. A build on a plan carries no dollar amount to any screen.
+// the month, and only ones it measured just now. Old numbers it kept past a
+// lapsed sign-in aren't today's, and a sign-in that ran out says so. The
+// daemon asks for them now and then and keeps the answer a little while. A
+// build on a plan carries no dollar amount to any screen.
 
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
-import { PlanUsages, usageCommand, usageWindows, type UsageWindow } from "../../../daemon/plan-usage.ts";
+import { PlanUsages, usageAnswer, usageCommand, usageWindows, type UsageReply, type UsageWindow } from "../../../daemon/plan-usage.ts";
 import { usageViaSocket } from "../../../daemon/router-client.ts";
 import { routeServer, USAGE_PER_MINUTE } from "../../../daemon/router-serve.ts";
 import { Builds } from "../../../daemon/builds.ts";
@@ -62,6 +66,61 @@ test("T19.1 only the windows leave the check: the 5 hours and the week, in whole
   assert.equal(usageWindows(JSON.stringify({ limits: [{ label: "Session (5-hour)", percent: "lots" }] })), null);
 });
 
+// Omarchy's own checks, as the plan's service runs them (usageCommand), on
+// homes made here: what they print is what the box gets.
+const OMARCHY = fileURLToPath(new URL("../../..", import.meta.url));
+function realCheck(provider: "claude" | "chatgpt", home: string): string {
+  const run = usageCommand(provider, { home, omarchy: OMARCHY });
+  return execFileSync(run.command, run.args, { env: run.env, cwd: home, encoding: "utf8", timeout: 60_000 });
+}
+function claudeHome(name: string, o: { access?: number; refresh?: number; keptAgo?: number }): string {
+  const home = join(scratch, name);
+  mkdirSync(join(home, ".claude"), { recursive: true });
+  writeFileSync(join(home, ".claude", "settings.json"), "{}");
+  const now = Date.now();
+  if (o.access !== undefined) {
+    writeFileSync(join(home, ".claude", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "sk-ant-oat01-stand-in", expiresAt: now + o.access, refreshTokenExpiresAt: now + (o.refresh ?? 86_400_000), subscriptionType: "max" } }));
+  }
+  if (o.keptAgo !== undefined) {
+    mkdirSync(join(home, ".cache", "omarchy", "agent-usage"), { recursive: true });
+    const limits = [
+      { label: "Session (5-hour)", percent: 0.23, resetsAt: "2030-01-01T10:00:00+00:00" },
+      { label: "Weekly (7-day)", percent: 0.41, resetsAt: "2030-01-04T10:00:00+00:00" },
+    ];
+    writeFileSync(join(home, ".cache", "omarchy", "agent-usage", "claude-limits.json"), JSON.stringify({ fetchedAtMs: now - o.keptAgo, limits }));
+  }
+  return home;
+}
+
+test("T19.1 Omarchy's own check: numbers measured just now are shown; old ones it kept past a lapsed sign-in aren't, and a sign-in that ran out or was never done says so", () => {
+  // Measured a moment ago, with a sign-in that's good: the check reuses
+  // them rather than ask again, and they're today's.
+  const fresh = realCheck("claude", claudeHome("fresh", { access: 3_600_000, keptAgo: 5_000 }));
+  assert.equal(JSON.parse(fresh).limitsStale, false);
+  assert.deepEqual(usageAnswer(fresh).reply, { windows: [{ window: "hours", hours: 5, percent: 23, resets: "2030-01-01T10:00:00.000Z" }, { window: "week", percent: 41, resets: "2030-01-04T10:00:00.000Z" }] });
+  // The token lapsed, the sign-in itself still good: the check prints the
+  // numbers it kept, marked stale, and "Limits paused". Not today's.
+  const paused = realCheck("claude", claudeHome("paused", { access: -3_600_000, keptAgo: 7_200_000 }));
+  assert.equal(JSON.parse(paused).limits.length, 2, "the old numbers are in what it printed");
+  assert.equal(JSON.parse(paused).usageStatusText, "Limits paused");
+  assert.deepEqual(usageAnswer(paused), { reply: null, said: "old numbers" });
+  assert.equal(usageWindows(paused), null);
+  // The sign-in ran out: the same old numbers, and the TV asks to sign in again.
+  const expired = realCheck("claude", claudeHome("expired", { access: -3_600_000, refresh: -60_000, keptAgo: 7_200_000 }));
+  assert.equal(JSON.parse(expired).limits.length, 2);
+  assert.deepEqual(usageAnswer(expired), { reply: { signIn: "expired" }, said: "sign-in expired" });
+  // Claude Code is set up, never signed in.
+  assert.deepEqual(usageAnswer(realCheck("claude", claudeHome("never", {}))), { reply: { signIn: "none" }, said: "not signed in" });
+  // A home that never ran it, and Codex with no sign-in and no Codex.
+  const empty = join(scratch, "empty");
+  mkdirSync(empty, { recursive: true });
+  assert.equal(usageAnswer(realCheck("claude", empty)).reply, null);
+  const codex = join(scratch, "codex");
+  mkdirSync(join(codex, ".codex"), { recursive: true });
+  assert.equal(usageAnswer(realCheck("chatgpt", codex)).reply, null);
+  assert.equal(usageAnswer(realCheck("chatgpt", empty)).reply, null);
+});
+
 test("T19.1 the check runs from the builder's home, with the CLI's own folders in it and the service's one way out", () => {
   const home = "/var/lib/origaitv/builder";
   const claude = usageCommand("claude", { home, proxy: "http://127.0.0.1:8080" });
@@ -81,13 +140,18 @@ test("T19.1 the plan's service answers POST /usage with the windows, for a plan 
   const asked: string[] = [];
   const windows: UsageWindow[] = [{ window: "hours", hours: 5, percent: 23 }];
   const path = join(scratch, "cli.sock");
-  const server = routeServer({ path: "plan", route: async () => { throw new Error("not asked"); }, usage: async (provider) => (asked.push(provider), provider === "grok" ? null : windows) });
+  const server = routeServer({
+    path: "plan",
+    route: async () => { throw new Error("not asked"); },
+    usage: async (provider) => (asked.push(provider), provider === "grok" ? { reply: null, said: "old numbers" } : provider === "chatgpt" ? { reply: { signIn: "expired" }, said: "sign-in expired" } : { reply: { windows }, said: "1 window" }),
+  });
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(path, () => resolve()));
-  assert.deepEqual(await usageViaSocket(path, "claude"), windows);
+  assert.deepEqual(await usageViaSocket(path, "claude"), { windows });
   assert.equal(await usageViaSocket(path, "grok"), null, "a check with nothing to say");
+  assert.deepEqual(await usageViaSocket(path, "chatgpt"), { signIn: "expired" }, "a sign-in that ran out");
   assert.equal(await usageViaSocket(path, "gemini" as "claude"), null, "Google's plan isn't offered");
-  assert.deepEqual(asked, ["claude", "grok"]);
+  assert.deepEqual(asked, ["claude", "grok", "chatgpt"]);
   for (let i = asked.length; i < USAGE_PER_MINUTE + 2; i++) await usageViaSocket(path, "claude");
   assert.equal(asked.length, USAGE_PER_MINUTE, "a stuck page can't run the check over and over");
   const api = join(scratch, "api.sock");
@@ -101,7 +165,7 @@ test("T19.1 the plan's service answers POST /usage with the windows, for a plan 
 test("T19.1 the daemon keeps an answer two minutes and a missing one half a minute, asks once for many, and asks again when told to", async () => {
   let now = 0;
   let asks = 0;
-  let answer: UsageWindow[] | null = [{ window: "week", percent: 41 }];
+  let answer: UsageReply | null = { windows: [{ window: "week", percent: 41 }] };
   const usages = new PlanUsages({ ask: async () => (asks++, answer), now: () => now });
   assert.equal(await usages.get("gemini"), null, "no check for Google");
   assert.equal(await usages.get(null), null);
@@ -119,9 +183,16 @@ test("T19.1 the daemon keeps an answer two minutes and a missing one half a minu
   now = 140_000;
   await usages.get("claude");
   assert.equal(asks, 2, "a missing one is kept too, a little");
-  answer = [{ window: "week", percent: 42 }];
+  answer = { windows: [{ window: "week", percent: 42 }] };
   assert.equal((await usages.get("claude", true))?.windows[0].percent, 42);
   assert.equal(asks, 3);
+  // A sign-in that ran out: no windows, and asked again as soon as no answer.
+  answer = { signIn: "expired" };
+  assert.deepEqual(await usages.get("claude", true).then((u) => u && { windows: u.windows, signIn: u.signIn }), { windows: [], signIn: "expired" });
+  now = 171_000;
+  answer = { windows: [{ window: "week", percent: 43 }] };
+  assert.equal((await usages.get("claude"))?.windows[0].percent, 43, "a sign-in just done shows its numbers soon");
+  assert.equal(asks, 5);
 });
 
 test("T19.1 a build on a plan carries no dollar amount, though the CLI wrote its own estimate", async () => {
