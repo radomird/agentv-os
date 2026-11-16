@@ -14,6 +14,7 @@
 // official app, which leaves its program, games and saves, and install the
 // Xbox controller driver from Settings, Phones and controllers.
 
+import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { loadIndex, type IndexEntry } from "./apps/index.ts";
@@ -139,13 +140,34 @@ export interface SetupAppsOptions {
   onChange?: (apps: Record<string, Status>) => void;
   // Whether the Xbox controller driver's package is on the box.
   hasDriver?: () => boolean;
+  // Whether root's origaitv-setup-apps.service is running: true, false, or
+  // null when it can't tell.
+  running?: () => Promise<boolean | null>;
 }
 
 const ID = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$/;
-// Longer than origaitv-setup-apps.service may run.
-const STALE_MS = 2 * 3600_000;
+// Longer than one app may take as root: 20 minutes to fetch it and 60 for
+// its program (bin/origaitv-setup-apps, origaitv-app-package@.service), and
+// 30 for the driver (origaitv-xbox-driver.service). A line still installing
+// or removing after that was cut short, and so is any line still going once
+// root has stopped. A queued line waits as long as the queue takes.
+const APP_LIMIT_MS = 90 * 60_000;
+const DRIVER_LIMIT_MS = 40 * 60_000;
 const STATES: InstallState[] = ["queued", "installing", "installed", "failed", "removing"];
 const GOING: (InstallState | null | undefined)[] = ["queued", "installing", "removing"];
+
+// Whether root's unit is running, from systemd. A oneshot unit is
+// "activating" while it runs. Null when systemctl can't say.
+function setupAppsRunning(): Promise<boolean | null> {
+  return new Promise((resolve) => {
+    execFile("systemctl", ["is-active", "origaitv-setup-apps.service"], { timeout: 5000 }, (_error, stdout) => {
+      const state = String(stdout ?? "").trim();
+      if (["active", "activating", "reloading", "deactivating"].includes(state)) resolve(true);
+      else if (["inactive", "failed"].includes(state)) resolve(false);
+      else resolve(null);
+    });
+  });
+}
 
 // Whether xpadneo's package is installed, from pacman's own record.
 function driverPackage(): boolean {
@@ -177,6 +199,10 @@ export class SetupApps {
   private removing = new Set<string>();
   // The driver, handed over, until root says how it's going.
   private driverQueued = false;
+  private isRunning: () => Promise<boolean | null>;
+  // What systemd last said about root's unit, and when.
+  private running: { at: number; value: boolean | null } = { at: 0, value: null };
+  private asking = false;
 
   constructor(options: SetupAppsOptions) {
     this.drop = join(options.state, "apps-drop", "install.json");
@@ -187,6 +213,32 @@ export class SetupApps {
     this.waitMs = options.waitMs ?? 10_000;
     this.onChange = options.onChange;
     this.hasDriver = options.hasDriver ?? driverPackage;
+    this.isRunning = options.running ?? setupAppsRunning;
+  }
+
+  // Whether root may still be at it: what systemd last said, asked again
+  // every few seconds while a line is going. Until it has answered, or when
+  // it can't, root may be.
+  private rootMayBeRunning(): boolean {
+    if (!this.asking && Date.now() - this.running.at > 5000) {
+      this.asking = true;
+      void this.isRunning()
+        .catch(() => null)
+        .then((value) => {
+          this.running = { at: Date.now(), value };
+          this.asking = false;
+        });
+    }
+    return this.running.value !== false;
+  }
+
+  // Whether root's line for an app or the driver says it's going when it
+  // can't be any more: root has stopped, or it's been installing or
+  // removing for longer than one may take.
+  private cutShort(line: Partial<Status> | undefined, limitMs: number): boolean {
+    if (!GOING.includes(line?.state)) return false;
+    if (line!.state !== "queued" && line!.at && Date.now() - Date.parse(line!.at) > limitMs) return true;
+    return !this.rootMayBeRunning();
   }
 
   // The official apps in the index, or why there are none.
@@ -210,7 +262,13 @@ export class SetupApps {
       const data = JSON.parse(readFileSync(this.statusPath, "utf8")) as { apps?: Record<string, Partial<Status>> };
       for (const [id, app] of Object.entries(data.apps ?? {})) {
         if (!ID.test(id) || !STATES.includes(app.state as InstallState)) continue;
-        found[id] = { state: app.state as InstallState, ...(typeof app.error === "string" ? { error: app.error.slice(0, 200) } : {}), ...(typeof app.at === "string" ? { at: app.at } : {}) };
+        const at = typeof app.at === "string" ? { at: app.at } : {};
+        // Cut short: an install didn't finish, and a removal left the app.
+        if (this.cutShort(app, APP_LIMIT_MS)) {
+          found[id] = app.state === "removing" ? { state: "installed", error: "Couldn't remove it", ...at } : { state: "failed", error: "Couldn't install it. Try again.", ...at };
+          continue;
+        }
+        found[id] = { state: app.state as InstallState, ...(typeof app.error === "string" ? { error: app.error.slice(0, 200) } : {}), ...at };
       }
     } catch {
       // nothing installed from setup yet
@@ -241,11 +299,10 @@ export class SetupApps {
   }
 
   // Whether root has something going: an app queued, installing or being
-  // removed, or the driver. One that hasn't moved for longer than root may
-  // take was cut short.
+  // removed, or the driver. One cut short isn't.
   private busy(): boolean {
-    const fresh = (app: Partial<Status> | undefined) => GOING.includes(app?.state) && !(app?.at && Date.now() - Date.parse(app.at) > STALE_MS);
-    return Object.values(this.status()).some(fresh) || fresh(this.raw().drivers?.xpadneo) || this.driverQueued;
+    const driver = this.raw().drivers?.xpadneo;
+    return Object.values(this.status()).some((app) => GOING.includes(app.state)) || (GOING.includes(driver?.state as InstallState) && !this.cutShort(driver, DRIVER_LIMIT_MS)) || this.driverQueued;
   }
 
   // The apps for the goal first, then the rest, each with whether it's on the
@@ -351,7 +408,7 @@ export class SetupApps {
     if (typeof id !== "string" || !ID.test(id)) return "send the app to add as its id";
     if (present.some((app) => app.id === id)) return "You already have that app";
     const now = this.status()[id];
-    if (GOING.includes(now?.state) && !(now?.at && Date.now() - Date.parse(now.at) > STALE_MS)) return null;
+    if (GOING.includes(now?.state)) return null;
     const why = await this.install([id]);
     if (!why) this.added.add(id);
     return why;
@@ -376,7 +433,9 @@ export class SetupApps {
   // The Xbox controller driver (ADR-103): whether it's in, and how its
   // install is going.
   driver(): DriverState {
-    const line = this.raw().drivers?.xpadneo;
+    const raw = this.raw().drivers?.xpadneo;
+    // Cut short, it didn't install.
+    const line = this.cutShort(raw, DRIVER_LIMIT_MS) ? { ...raw, state: "failed", error: "Couldn't install the driver" } : raw;
     const state = STATES.includes(line?.state as InstallState) && line?.state !== "removing" ? (line!.state as DriverState["state"]) : null;
     if (state && state !== "queued") this.driverQueued = false;
     const installed = this.hasDriver() || state === "installed";

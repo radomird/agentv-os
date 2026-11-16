@@ -14,7 +14,11 @@ Type=oneshot
 # suspends in the middle of a download (ADR-072). That covers a native app's
 # program too, which it waits for.
 ExecStart=/usr/bin/systemd-inhibit --what=sleep --who=OrigaiTV "--why=installing apps" --mode=block /usr/bin/origaitv-setup-apps
-TimeoutStartSec=90min
+# No limit for the whole queue, which can be every game platform: each step
+# has its own (bin/origaitv-setup-apps, and the program's and the driver's
+# units), and the daemon shows a line that's gone on longer than its step
+# may take as not installed.
+TimeoutStartSec=infinity
 StateDirectory=origaitv/apps
 StateDirectoryMode=0755
 RuntimeDirectory=origaitv-setup-apps

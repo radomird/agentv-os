@@ -129,6 +129,9 @@ export interface DaemonOptions {
   // the official apps in the index, in place of the signed index itself.
   setupAppsStatus?: string;
   setupAppsWaitMs?: number;
+  // Whether root's origaitv-setup-apps.service is running, for the tests,
+  // which have no root.
+  setupAppsRunning?: () => Promise<boolean | null>;
   setupCatalog?: (source: string) => Promise<IndexEntry[]>;
   // Omarchy's own files, whose themes setup previews: /usr/share/omarchy.
   omarchy?: string;
@@ -608,6 +611,7 @@ export class Daemon {
       source: async () => process.env.ORIGAITV_INDEX_URL || (await this.settings()).ORIGAITV_INDEX_URL || undefined,
       catalog: options.setupCatalog,
       waitMs: options.setupAppsWaitMs,
+      running: options.setupAppsRunning,
       // The setup screens hear each install move on, and home gets each
       // app as it lands.
       onChange: (apps) => {

@@ -367,6 +367,8 @@ export async function startBox(
     // puts the box on edge (ADR-053).
     channelFile: join(state, "..", "channel"),
     setupAppsStatus,
+    // The stand-in for root's unit runs for as long as it has something going.
+    setupAppsRunning: async () => true,
     setupCatalog: async () => catalog,
     // Omarchy's themes, from this checkout, for setup's look, and the themes
     // your agent made, empty until a test plays root's part in them.
