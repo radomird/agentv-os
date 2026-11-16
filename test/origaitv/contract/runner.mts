@@ -56,7 +56,7 @@ import { HARNESS } from "../harness.mts";
 import { type Contract, differences, Fixtures } from "../../../builder/fixtures.ts";
 import { MusicApp, MusicLibrary, type MusicPlayer, type Track } from "../../../daemon/music.ts";
 import { cdpPage } from "../../../daemon/page.ts";
-import { REMOTE_PAGE, REMOTE_WORLD, SPATIAL_NAVIGATION } from "../../../daemon/remote-page.ts";
+import { navigationPage, REMOTE_PAGE, REMOTE_WORLD, SPATIAL_NAVIGATION } from "../../../daemon/remote-page.ts";
 import type { Storage } from "../../../daemon/storage.ts";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
@@ -135,9 +135,10 @@ async function runApp(dir: string, browser: () => Promise<Browser>): Promise<Res
   if (contract.music) return [...results, ...(await runMusic(app, fixtures, contract))];
 
   const served = new Fixtures(fixtures, contract);
-  // Its page in Playwright's Chromium, driven over DevTools as the TV drives it.
+  // Its page in Playwright's Chromium, driven over DevTools as the TV drives it,
+  // at the TV's standard size, as the builder's checks on the box run.
   const openPage = async (): Promise<CheckPage> => {
-    const page: Page = await (await browser()).newPage();
+    const page: Page = await (await browser()).newPage({ viewport: { width: 1920, height: 1080 } });
     await page.route("**/*", (route) => answerRoute(served, route));
     const session = await page.context().newCDPSession(page);
     // The d-pad's ring and Back, as the screen daemon gives every app's page.
@@ -165,6 +166,8 @@ async function runApp(dir: string, browser: () => Promise<Browser>): Promise<Res
         await settled((expression) => page.evaluate(expression));
       },
       focused: () => page.evaluate(FOCUSED),
+      // The app's hints for the d-pad, as the screen daemon gives them.
+      hints: async (list) => void (await session.send("Page.addScriptToEvaluateOnNewDocument", { source: navigationPage(list), worldName: REMOTE_WORLD })),
       close: () => page.close(),
     };
   };

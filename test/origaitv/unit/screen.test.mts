@@ -10,7 +10,7 @@ import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
-import { BACK_TAP, FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, WHEEL_AT } from "../../../daemon/remote-page.ts";
+import { BACK_TAP, FOCUS_BINDING, navigationPage, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, WHEEL_AT } from "../../../daemon/remote-page.ts";
 import { FIELD } from "../../../daemon/remote-text.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
@@ -91,12 +91,17 @@ class FakeHyprland implements Hyprland {
   refuseOff = 0;
   // A call the compositor fails, as a hyprctl that timed out does.
   refuse: (expression: string) => boolean = () => false;
+  // Whether the TV's output is there. Without it Hyprland lists no monitor,
+  // and a window moved, focused or placed then kills it, as 0.56 did.
+  output = true;
+  killedBy = "";
   private handler: (name: string, data: string) => void = () => {};
 
   async clients() {
     return structuredClone(this.windows);
   }
   async monitors(): Promise<Monitor[]> {
+    if (!this.output) return [];
     const special = this.specialShown ? HELD_WORKSPACE : "";
     return [{ name: "HDMI-A-1", width: 1920, height: 1080, refreshRate: 60, focused: true, specialWorkspace: { id: -98, name: special } }];
   }
@@ -115,6 +120,10 @@ class FakeHyprland implements Hyprland {
   async dispatch(expression: string) {
     this.dispatched.push(expression);
     if (this.refuse(expression)) throw new Error("hyprctl dispatch: timed out");
+    if (!this.output && /^hl\.dsp\.(window\.(move|fullscreen_state)|focus|workspace\.toggle_special)\(/.test(expression)) {
+      this.killedBy ||= expression;
+      throw new Error("hyprctl dispatch: couldn't connect to Hyprland");
+    }
     let m;
     if (/^hl\.dsp\.dpms\(\{ action = "disable"/.test(expression) && this.refuseOff > 0) {
       this.refuseOff--;
@@ -940,6 +949,8 @@ test("ADR-032 a tile that says Sign in opens the app maximized over OrigaiTV's s
   assert.deepEqual(calls.checked, []);
   calls.done!(true);
   await t.screen.idle();
+  // The toast comes after, not on the daemon's queue.
+  await sleep(0);
   assert.deepEqual(t.launcher.bars, ["Tube", null]);
   assert.deepEqual(t.launcher.signings, ["origaitv.tube", null]);
   assert.equal(t.hypr.get("0xd").fullscreen, 2, "full screen again once it's signed in");
@@ -1012,6 +1023,44 @@ test("T22.1 with Fit to screen's margin, Steam's gamescope is maximized inside i
   await screen.idle();
   assert.equal(screen.front()?.role, "game");
   assert.equal(hypr.get("0xf").fullscreen, 1);
+});
+
+// The TV's output going away (track 22): the TV to standby or another input
+// takes Hyprland's only monitor, and moving a window then killed it.
+test("T22.4 with the TV's output gone nothing moves, and what's in front goes back on the TV, inside the margin, when it's back", async () => {
+  const t = await tv({ fitted: () => true });
+  await openApp(t, "origaitv.tube", "0xb");
+  await t.screen.showAmbient();
+  assert.deepEqual(t.hypr.onTv(), ["0xa"], "the ambient screen, with the app behind it");
+  // As on the NUC: the output goes, Hyprland says focus is on no window,
+  // and input ends the ambient screen.
+  t.hypr.output = false;
+  t.hypr.emit("monitorremovedv2", "0,HDMI-A-1,TV");
+  t.hypr.emit("activewindowv2", "");
+  await t.screen.idle();
+  await t.screen.wake("input again");
+  // A window opening meanwhile, out of sight as the window rule puts it.
+  t.hypr.open("0xc", 4242);
+  await t.screen.idle();
+  assert.equal(t.hypr.killedBy, "", "nothing is moved, focused or placed");
+  assert.ok(!t.lines.some((line) => line.startsWith("focus went to 0x")), t.lines.join("\n"));
+  assert.equal(t.screen.front()?.address, "0xb", "the app is what's in front, for the daemon");
+  assert.ok(t.lines.includes("the TV's output is gone; windows stay where they are until it's back"), t.lines.join("\n"));
+  // Hyprland's own stand-in output coming isn't the TV.
+  t.hypr.emit("monitoraddedv2", "2,FALLBACK,");
+  await t.screen.idle();
+  assert.equal(t.hypr.killedBy, "");
+  // The output's back. Hyprland says so a moment before it lists it.
+  t.hypr.emit("monitoraddedv2", "1,HDMI-A-1,TV");
+  await t.screen.idle();
+  assert.equal(t.hypr.killedBy, "");
+  t.hypr.output = true;
+  await sleep(600);
+  await t.screen.idle();
+  assert.deepEqual(t.hypr.onTv(), ["0xb"]);
+  assert.equal(t.hypr.active, "0xb");
+  assert.equal(t.hypr.get("0xb").fullscreen, 1, "maximized inside Fit to screen's margin");
+  assert.ok(t.lines.some((line) => line.startsWith("HDMI-A-1 came after the TV's output was gone; web")), t.lines.join("\n"));
 });
 
 test("T22.1 with no margin, an app is full screen as before, and a sign-in that ends with a margin stays inside it", async () => {
@@ -1368,6 +1417,22 @@ test("T21.1 two fingers on the phone scroll the page in front from its middle, t
   // Without the services' Chromium's wheel, as for a native window: no.
   t.launcher.browser.wheelIn = undefined;
   assert.equal(await t.screen.phoneWheel(0, 300), false);
+  t.screen.stop();
+});
+
+test("T21.1 an app's hints for the d-pad go into its page, in the world its ring and Back run in", async () => {
+  const hints = [{ url: "/home$", rows: [{ row: ".row", next: ".next" }] }];
+  const playback: Playback = { opened() {}, closed() {}, navigation: async (id) => (id === "origaitv.tube" ? hints : []) };
+  const t = await tv({ playback });
+  const page = await openApp(t, "origaitv.tube", "0xb");
+  const ours = () => t.launcher.browser.scripts.filter((s) => s.targetId === page && s.world === REMOTE_WORLD).map((s) => s.source);
+  for (let i = 0; i < 100 && ours().length < 2; i++) await sleep(5);
+  assert.deepEqual(ours(), [REMOTE_PAGE, navigationPage(hints)]);
+  assert.equal(navigationPage(hints), `window.__origaitvHints = ${JSON.stringify(hints)};`, "as data");
+  // An app that gives none gets nothing more.
+  const other = await openApp(t, "origaitv.player", "0xc");
+  await sleep(30);
+  assert.deepEqual(t.launcher.browser.scripts.filter((s) => s.targetId === other && s.world === REMOTE_WORLD).map((s) => s.source), [REMOTE_PAGE]);
   t.screen.stop();
 });
 

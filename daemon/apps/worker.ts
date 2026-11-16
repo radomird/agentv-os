@@ -157,12 +157,23 @@ function optional(app: Record<string, unknown>): { has: string[]; broken: string
   return { has, broken };
 }
 
+// The app's hints for the phone's d-pad (ADR-103), as plain data, which the
+// loader checks. One that isn't plain data goes as a string saying so.
+function navigation(app: Record<string, unknown>): unknown {
+  if (app.navigation === undefined) return undefined;
+  try {
+    return JSON.parse(JSON.stringify(app.navigation));
+  } catch {
+    return "not plain data";
+  }
+}
+
 let app: Record<string, unknown>;
 try {
   const module = await import(entry);
   app = module.default;
   if (!app || typeof app !== "object") throw new Error("its module has no default export");
-  send({ type: "ready", id: String(app.id), capabilities: capabilities(app), optional: optional(app) });
+  send({ type: "ready", id: String(app.id), capabilities: capabilities(app), optional: optional(app), navigation: navigation(app) });
 } catch (error) {
   send({ type: "failed", message: (error as Error).message ?? String(error) });
   process.exit(1);
