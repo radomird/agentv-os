@@ -10,7 +10,10 @@
 // - a click picks an app up rather than opening it;
 // - the bar says it's editing home, and how, where home says to hold OK
 //   for details, and those words read clearly and fit;
-// - and a child's profile with a PIN asks for it, as Terminal's does.
+// - a child's profile with a PIN asks for it, as Terminal's does;
+// - and in Glass, the pinned row's apps move along it, and across its edge
+//   an app swaps places with the one in the list, or joins the pinned row
+//   while it has room. Back puts both back.
 
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -75,7 +78,15 @@ async function setLayout(tiles: Tile[]): Promise<void> {
 const useLook = (look: string) => fetch(`${url}/api/look`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look }) });
 const useTheme = async (theme: string) => assert.equal((await fetch(`${url}/api/theme?name=${theme}`, { method: "POST", headers: { "Content-Type": "text/css" }, body: rendered(theme) })).status, 200, `the theme ${theme} took`);
 
-beforeEach(() => setLayout(START));
+// Glass's pinned row. These tests start with it empty, so every app is in
+// the list's rows, and the pinned row's own test fills it.
+const setPinned = async (pinned: string[]) => assert.equal((await fetch(`${url}/api/pinned`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pinned }) })).status, 200);
+const pinned = async (): Promise<string[]> => (await (await fetch(`${url}/api/home`)).json()).pinned;
+
+beforeEach(async () => {
+  await setLayout(START);
+  await setPinned([]);
+});
 
 async function tv(size: keyof typeof SIZES = "standard"): Promise<Page> {
   const width = SIZES[size];
@@ -174,7 +185,8 @@ for (const look of LOOKS) {
       await page.keyboard.press("Delete");
       await page.waitForTimeout(300);
       assert.ok(!(await order()).includes("someone.radio"), "off home");
-      assert.equal(await page.locator('.row-edit [data-id="someone.radio"]').count(), 0);
+      // Glass's list has it again, under Not on home.
+      assert.equal(await page.locator('.row-edit [data-id="someone.radio"]:not([data-section="off"] *)').count(), 0);
       assert.ok(await focused(page), "the focus lands on an app nearby");
       // A click picks up, and opens nothing.
       await page.locator('.row-edit [data-id="local.mytv"]').click();
@@ -217,6 +229,58 @@ for (const look of LOOKS) {
     assert.deepEqual(problems, [], `${look}:\n${problems.join("\n")}`);
   });
 }
+
+test("glass: the pinned row's apps move along it, and across its edge an app swaps with the list's or joins it, and Back puts both back", async () => {
+  await useLook("glass");
+  await setPinned(["origaitv.sample", "origaitv.tube"]);
+  const page = await tv();
+  try {
+    // Along the pinned row: only its order changes.
+    await editing(page, "origaitv.tube");
+    assert.ok(await page.locator('.row-edit .glass-pinned [data-id="origaitv.tube"]').count(), "Tube is pinned");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(300);
+    assert.deepEqual(await pinned(), ["origaitv.tube", "origaitv.sample"]);
+    assert.deepEqual(await order(), ["origaitv.sample", "origaitv.tube", "someone.radio", "local.mytv", "origaitv.games"]);
+    // Down: Tube and Radio, under it, swap places.
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("ArrowDown");
+    assert.ok(await page.locator('.row-edit .glass-list .held[data-id="origaitv.tube"]').count(), "Tube went down into the list");
+    assert.ok(await page.locator('.row-edit .glass-pinned [data-id="someone.radio"]').count(), "Radio came up");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(300);
+    assert.deepEqual(await pinned(), ["someone.radio", "origaitv.sample"]);
+    assert.deepEqual(await order(), ["origaitv.sample", "someone.radio", "origaitv.tube", "local.mytv", "origaitv.games"]);
+    // Up from the list, then Back: both are as they were.
+    await focusOn(page, "local.mytv");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("ArrowUp");
+    assert.ok(await page.locator('.row-edit .glass-pinned .held[data-id="local.mytv"]').count(), "My TV went up");
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
+    assert.deepEqual(await pinned(), ["someone.radio", "origaitv.sample"]);
+    assert.ok(await page.locator('.row-edit .glass-list [data-id="local.mytv"]').count(), "My TV is back in the list");
+    // With room in the pinned row, an app further along than its last joins it.
+    await setPinned(["origaitv.sample"]);
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector(".row-edit"));
+    await page.reload();
+    await page.waitForSelector("html[data-look] #page .focused");
+    await rest(page);
+    // The list is Radio, Tube and My TV: Tube is second, past the one pinned.
+    await editing(page, "origaitv.tube");
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(300);
+    assert.deepEqual(await pinned(), ["origaitv.sample", "origaitv.tube"]);
+    assert.deepEqual(await order(), ["origaitv.sample", "someone.radio", "origaitv.tube", "local.mytv", "origaitv.games"], "home's order is as it was");
+  } finally {
+    await page.close();
+  }
+});
 
 test("glass: a child's profile with a PIN asks for it before editing home", async () => {
   await useLook("glass");

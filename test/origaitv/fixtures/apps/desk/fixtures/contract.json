@@ -2,7 +2,9 @@
   "routes": [
     { "url": "https://desk.test/desktop.html", "file": "pages/desktop.html" },
     { "url": "https://desk.test/next.html", "file": "pages/next.html" },
-    { "url": "https://desk.test/own-keys.html", "file": "pages/own-keys.html" }
+    { "url": "https://desk.test/own-keys.html", "file": "pages/own-keys.html" },
+    { "url": "https://desk.test/rows.html", "file": "pages/rows.html" },
+    { "url": "https://desk.test/inner.html", "file": "pages/inner.html" }
   ],
   "checks": [
     { "name": "launch opens its site", "page": "https://desk.test/next.html", "call": "launch", "after": { "url": "^https://desk\\.test/desktop\\.html$" } },

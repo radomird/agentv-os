@@ -10,7 +10,7 @@ import { createServer as net } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { RemoteInput, sendInput } from "../../../daemon/remote.ts";
+import { RemoteInput, sendInput, wheelTurn } from "../../../daemon/remote.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "origaitv-remote-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -103,6 +103,42 @@ test("a command from the daemon, such as Install now from a phone, goes to the T
   assert.deepEqual(sent, [{ key: "up" }]);
   remote.stop();
   await fake.close();
+});
+
+test("T21.1 two fingers' scroll goes to the screen daemon's wheel, from the page or the pointer, in order with the keys; without one it's the input device's wheel", async () => {
+  const fake = await daemon();
+  const sent: unknown[] = [];
+  const wheels: unknown[] = [];
+  const remote = new RemoteInput({ url: fake.url, send: async (request) => void sent.push(request), wheel: async (dx, dy, at) => void wheels.push([dx, dy, at]), retryMs: 20 });
+  remote.start();
+  await until(() => fake.connected() === 1);
+  fake.say({ wheel: [0, 240] });
+  fake.say({ wheel: [-90, 0], at: "pointer" });
+  fake.say({ key: "down" });
+  await until(() => wheels.length === 2 && sent.length === 1);
+  assert.deepEqual(wheels, [
+    [0, 240, "page"],
+    [-90, 0, "pointer"],
+  ]);
+  remote.stop();
+  await fake.close();
+
+  // On Omarchy's desktop, which has no screen daemon's wheel: the input
+  // device's, in 120ths of a notch, right and up.
+  const desk = await daemon();
+  const keys: unknown[] = [];
+  const relay = new RemoteInput({ url: desk.url, as: "desktop", send: async (request) => void keys.push(request), retryMs: 20 });
+  relay.start();
+  await until(() => desk.connected() === 1);
+  desk.say({ wheel: [0, 53] });
+  desk.say({ wheel: [-106, 0] });
+  desk.say({ wheel: [0, 0.1] });
+  desk.say({ key: "up" });
+  await until(() => keys.length === 3);
+  assert.deepEqual(keys, [{ wheel: [0, -120] }, { wheel: [-240, 0] }, { key: "up" }], "a page's 53 pixels down is a notch down, and a turn too small sends nothing");
+  relay.stop();
+  await desk.close();
+  assert.equal(wheelTurn(0, 0), null);
 });
 
 test("ADR-037 on Omarchy's desktop it says it's the desktop's relay, and the trackpad's moves and clicks go to the input device", async () => {

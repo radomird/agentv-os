@@ -6,6 +6,7 @@
 
 import { daemon, screen } from "../api.ts";
 import { h } from "../dom.ts";
+import { MOST_PINNED } from "../looks/glass/home.ts";
 import { lookId } from "../looks/looks.ts";
 import { mark } from "../looks/words.ts";
 import type { Ctx, View } from "../main.ts";
@@ -37,11 +38,42 @@ export function details(ctx: Ctx, id: string): View {
     h("span", { class: "button-value" }, mark(onHome ? "[x]" : "[ ]")),
   );
 
+  const look = lookId();
+
+  // Top row: Glass's pinned row (D12), six apps or games at most, for an
+  // app on home.
+  const pinned = ctx.state.pinned ?? [];
+  const topRow =
+    onHome && look === "glass"
+      ? h(
+          "button",
+          {
+            class: "button",
+            "data-focus": true,
+            "data-action": "top-row",
+            onclick: async () => {
+              const now = ctx.state.pinned ?? [];
+              const on = now.includes(id);
+              if (!on && now.length >= MOST_PINNED) {
+                ctx.sounds.play("failure");
+                ctx.toast(`The top row holds ${MOST_PINNED} apps. Take one off it first.`, "fail");
+                return;
+              }
+              if (await ctx.savePinned(on ? now.filter((one) => one !== id) : [...now, id])) {
+                ctx.sounds.play("confirm");
+                ctx.render(`details/${id}`, "top-row");
+              }
+            },
+          },
+          h("span", {}, "Top row"),
+          h("span", { class: "button-value" }, mark(pinned.includes(id) ? "[x]" : "[ ]")),
+        )
+      : null;
+
   // Move: home in edit mode with this app in hand, to carry with the
   // arrows (ADR-103). In Glass and Cinema, while it's on home. Terminal's
   // details stack their buttons with no room for another, and its grid's
   // own edit already moves a tile every way.
-  const look = lookId();
   const moveIt = onHome && (look === "glass" || look === "cinema") ? h("button", { class: "button", "data-focus": true, "data-action": "move", onclick: () => ctx.edit(id, true) }, "Move") : null;
 
   // Whether a child's profile can open it, past the PIN once there is one.
@@ -131,7 +163,7 @@ export function details(ctx: Ctx, id: string): View {
           app.credit ? h("dt", {}, "Data from") : null,
           app.credit ? h("dd", {}, app.credit) : null,
         ),
-        h("div", { class: "actions" }, open, close, toggle, moveIt, children, childProfileButton(ctx, app, () => ctx.render(`details/${id}`, "child-profile")), ...builtActions(ctx, id)),
+        h("div", { class: "actions" }, open, close, toggle, topRow, moveIt, children, childProfileButton(ctx, app, () => ctx.render(`details/${id}`, "child-profile")), ...builtActions(ctx, id)),
       ),
       app.owner ? h("p", { class: "owner" }, app.owner) : null,
     ),

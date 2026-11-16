@@ -1641,6 +1641,7 @@ export class Daemon {
         appsTile: APPS_TILE,
         apps: apps.map((app) => ({ id: app.id, name: app.name, category: app.category, sizes: app.sizes })),
         layout,
+        pinned: await this.home.pinned(viewer.id, layout, apps),
         look: looks ? await currentLook({ root: this.options.root, state: this.options.state }) : null,
       });
       return;
@@ -1660,6 +1661,13 @@ export class Daemon {
       const layout = await this.home.layout(viewer.id, viewer.role);
       this.broadcast("layout", { viewer: viewer.id, layout });
       this.json(response, 200, { ok: true, layout });
+      return;
+    }
+
+    // Glass's pinned row, changed on the phone's Edit home (D12).
+    if (method === "PUT" && path === "/api/phone/pinned") {
+      if (!(await this.adult(request, response, "arranging home from a phone"))) return;
+      await this.keepPinned(response, (await this.body(request)) as { pinned?: unknown } | undefined);
       return;
     }
 
@@ -1819,8 +1827,14 @@ export class Daemon {
       else if (Array.isArray(body.move) && body.move.length === 2 && body.move.every((d) => whole(d, 2000))) event = { move: body.move };
       else if (body.click === "left" || body.click === "right" || body.click === "middle") event = { click: body.click };
       else if (whole(body.scroll, 50) && body.scroll !== 0) event = { scroll: body.scroll };
+      // Two fingers on the new remote's pad (ADR-103): how far to scroll,
+      // right and down, as a page's wheel says it. The page in front scrolls
+      // from its middle, or from the pointer in pointer mode.
+      else if (Array.isArray(body.wheel) && body.wheel.length === 2 && body.wheel.every((d) => whole(d, 4000)) && body.wheel.some((d) => d !== 0)) {
+        event = { wheel: body.wheel, ...(body.at === "pointer" ? { at: "pointer" } : {}) };
+      }
       if (!event) {
-        this.json(response, 400, { ok: false, error: "a key, a held key, text of up to 500 characters, or a move, click or scroll" });
+        this.json(response, 400, { ok: false, error: "a key, a held key, text of up to 500 characters, or a move, click, scroll or wheel" });
         return;
       }
       if (!this.remote(event)) {
@@ -2222,6 +2236,20 @@ export class Daemon {
       region,
       ...(found ? { services: found.services, ...(found.ok ? {} : { error: found.error }) } : {}),
     };
+  }
+
+  // Keeps the active viewer's pinned row, and every TV page draws home again.
+  private async keepPinned(response: ServerResponse, body: { pinned?: unknown } | undefined): Promise<void> {
+    const viewer = await this.profiles.active();
+    const layout = await this.home.layout(viewer.id, viewer.role);
+    const why = await this.home.savePinned(viewer.id, body?.pinned, layout);
+    if (why) {
+      this.json(response, 400, { ok: false, error: why });
+      return;
+    }
+    const pinned = await this.home.pinned(viewer.id, layout, await this.home.apps(viewer));
+    this.broadcast("layout", { viewer: viewer.id, layout });
+    this.json(response, 200, { ok: true, pinned });
   }
 
   // New this week's tile (S8.1): this week's titles on the apps who's
@@ -2661,6 +2689,8 @@ export class Daemon {
         apps,
         appsTile: APPS_TILE,
         layout,
+        // Glass's pinned row (D12).
+        pinned: await this.home.pinned(viewer.id, layout, apps),
         settings,
         pin: { set: pin.set, locked: pin.locked },
       });
@@ -2680,6 +2710,14 @@ export class Daemon {
       const layout = await this.home.layout(viewer.id, viewer.role, grid);
       this.broadcast("layout", { viewer: viewer.id, layout, grid: `${grid.columns}x${grid.rows}` });
       this.json(response, 200, { ok: true, layout });
+      return;
+    }
+
+    // Glass's pinned row (D12): an adult's to change, past the PIN on a
+    // child's profile, as home's layout is.
+    if (method === "PUT" && path === "/api/pinned") {
+      if (!(await this.adult(request, response, "changing home"))) return;
+      await this.keepPinned(response, (await this.body(request)) as { pinned?: unknown } | undefined);
       return;
     }
 

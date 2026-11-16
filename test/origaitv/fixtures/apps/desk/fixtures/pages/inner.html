@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Inner</title>
+<style>
+  * { outline: none; }
+  html, body { height: 100%; overflow: hidden; }
+  body { margin: 0; background: #111; color: #eee; font: 20px sans-serif; display: flex; }
+  aside { flex: 0 0 240px; padding: 24px; display: flex; flex-direction: column; gap: 24px; }
+  aside span { cursor: pointer; }
+  main { flex: 1; height: 100%; overflow-y: auto; scrollbar-width: none; }
+  h2 { margin: 40px 24px 0; font-size: 24px; }
+  .row { display: flex; gap: 24px; overflow-x: auto; scrollbar-width: none; padding: 16px 24px; }
+  .card { flex: 0 0 320px; height: 220px; border-radius: 8px; background: #2a2a3a; cursor: pointer; }
+</style>
+</head>
+<body>
+<!--
+  A stand-in page whose document doesn't scroll: a menu down the left side,
+  and the rows in a scroll area of their own beside it. Its cards are divs
+  that show a pointer and can't take focus. More rows load as the area
+  scrolls near its end, up to row 8.
+-->
+<aside>
+  <span id="menu-home" data-pick="menu-home">Home</span>
+  <span id="menu-search" data-pick="menu-search">Search</span>
+</aside>
+<main id="main">
+  <div id="rows"></div>
+  <div id="more" aria-hidden="true"></div>
+</main>
+<script>
+  const rows = document.getElementById("rows");
+  const addRow = (r) => {
+    const heading = document.createElement("h2");
+    heading.textContent = `Row ${r}`;
+    const row = document.createElement("div");
+    row.className = "row";
+    row.id = `row-${r}`;
+    for (let n = 1; n <= 8; n++) {
+      const el = document.createElement("div");
+      el.className = "card";
+      el.dataset.pick = `${r}-${n}`;
+      el.setAttribute("aria-label", `Row ${r} title ${n}`);
+      row.append(el);
+    }
+    rows.append(heading, row);
+  };
+  for (let r = 1; r <= 3; r++) addRow(r);
+  let made = 3;
+  document.addEventListener("click", (event) => {
+    const picked = event.target.closest("[data-pick]");
+    if (picked) document.title = `picked ${picked.dataset.pick}`;
+  });
+  // Looked at again after each load, so rows go on loading while the end
+  // is still near.
+  const more = document.getElementById("more");
+  let loading = false;
+  const watch = new IntersectionObserver((seen) => {
+    if (!seen.some((entry) => entry.isIntersecting) || loading || made >= 8) return;
+    loading = true;
+    setTimeout(() => {
+      for (let i = 0; i < 2 && made < 8; i++) addRow(++made);
+      loading = false;
+      watch.unobserve(more);
+      watch.observe(more);
+    }, 150);
+  }, { root: document.getElementById("main"), rootMargin: "0px 0px 100px 0px" });
+  watch.observe(more);
+</script>
+</body>
+</html>

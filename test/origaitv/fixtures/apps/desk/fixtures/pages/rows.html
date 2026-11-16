@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rows</title>
+<style>
+  * { outline: none; }
+  body { margin: 0; background: #111; color: #eee; font: 20px sans-serif; }
+  nav { display: flex; gap: 32px; padding: 24px 48px; }
+  nav a { color: #eee; text-decoration: none; }
+  .hero { height: 420px; margin: 0 48px; border-radius: 12px; background: #23233a; display: flex; align-items: flex-end; padding: 32px; box-sizing: border-box; }
+  .hero span { font-size: 40px; }
+  h2 { margin: 40px 48px 0; font-size: 24px; }
+  .row { display: flex; gap: 24px; overflow-x: auto; scrollbar-width: none; padding: 16px 48px; }
+  .card { flex: 0 0 320px; height: 180px; border-radius: 8px; background: #2a2a3a; display: grid; place-items: center; cursor: pointer; }
+  .card .art { display: block; width: 60%; height: 40%; border-radius: 4px; background: #3a3a55; }
+  .slider { position: relative; overflow: hidden; margin: 0 48px; }
+  .slider .track { display: flex; gap: 24px; padding: 16px 0; transition: none; }
+  .slider .card { flex: 0 0 360px; }
+  .slider button { position: absolute; top: 16px; bottom: 16px; width: 48px; border: 0; background: rgba(0, 0, 0, 0.6); color: #eee; font: inherit; opacity: 0; }
+  .slider:hover button { opacity: 1; }
+  .slider .previous { left: 0; }
+  .slider .next { right: 0; }
+  footer { padding: 48px; color: #999; }
+  footer p { margin: 0 0 600px; }
+</style>
+</head>
+<body>
+<!--
+  A stand-in home page of a site made for a desktop, the way many streaming
+  sites draw theirs:
+  - its cards are divs that show a pointer and can't take focus, and one
+    listener on the document opens what's clicked;
+  - its rows slide sideways, and one row is a slider that moves by its own
+    buttons, which show only under a pointer;
+  - more rows load as the page scrolls near its end, a moment later, up to
+    row 10, and under them is a footer with nothing to press.
+  It hides every focus outline and doesn't touch the arrow keys.
+-->
+<nav>
+  <a id="home" href="rows.html">Home</a>
+  <a id="films" href="next.html?films">Films</a>
+  <a id="series" href="next.html?series">Series</a>
+</nav>
+<div class="hero"><span>Tonight's film</span></div>
+<div id="rows"></div>
+<div id="more" aria-hidden="true"></div>
+<footer><p>Nothing here to press.</p><p>The end of the page.</p></footer>
+<script>
+  const rows = document.getElementById("rows");
+  const card = (row, n) => {
+    const el = document.createElement("div");
+    el.className = "card";
+    el.dataset.pick = `${row}-${n}`;
+    el.setAttribute("aria-label", `Row ${row} title ${n}`);
+    el.innerHTML = `<span class="art"></span>`;
+    return el;
+  };
+  const addRow = (r) => {
+    const heading = document.createElement("h2");
+    heading.textContent = `Row ${r}`;
+    if (r === 2) {
+      // A slider: the row moves by its buttons, not by scrolling.
+      const slider = document.createElement("div");
+      slider.className = "slider";
+      slider.id = `row-${r}`;
+      const track = document.createElement("div");
+      track.className = "track";
+      for (let n = 1; n <= 12; n++) track.append(card(r, n));
+      let at = 0;
+      const move = (by) => {
+        at = Math.max(0, Math.min(8, at + by));
+        track.style.transform = `translateX(${-at * 384}px)`;
+      };
+      const previous = document.createElement("button");
+      previous.className = "previous";
+      previous.setAttribute("aria-label", "Previous");
+      previous.textContent = "<";
+      previous.addEventListener("click", () => move(-4));
+      const next = document.createElement("button");
+      next.className = "next";
+      next.setAttribute("aria-label", "Next");
+      next.textContent = ">";
+      next.addEventListener("click", () => move(4));
+      slider.append(track, previous, next);
+      rows.append(heading, slider);
+      return;
+    }
+    const row = document.createElement("div");
+    row.className = "row";
+    row.id = `row-${r}`;
+    for (let n = 1; n <= 15; n++) row.append(card(r, n));
+    rows.append(heading, row);
+  };
+  for (let r = 1; r <= 3; r++) addRow(r);
+  let made = 3;
+  // What's clicked opens, from one listener on the document.
+  document.addEventListener("click", (event) => {
+    const picked = event.target.closest(".card");
+    if (picked) document.title = `picked ${picked.dataset.pick}`;
+  });
+  // More rows as the end of them comes near, a moment later.
+  // Looked at again after each load, so rows go on loading while the end
+  // is still near.
+  const more = document.getElementById("more");
+  let loading = false;
+  const watch = new IntersectionObserver((seen) => {
+    if (!seen.some((entry) => entry.isIntersecting) || loading || made >= 10) return;
+    loading = true;
+    setTimeout(() => {
+      for (let i = 0; i < 2 && made < 10; i++) addRow(++made);
+      loading = false;
+      watch.unobserve(more);
+      watch.observe(more);
+    }, 150);
+  }, { rootMargin: "0px 0px 200px 0px" });
+  watch.observe(more);
+</script>
+</body>
+</html>

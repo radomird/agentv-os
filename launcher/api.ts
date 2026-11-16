@@ -82,6 +82,8 @@ export interface HomeState {
   apps: App[];
   appsTile: string;
   layout: Placed[];
+  // Glass's pinned row (D12): up to six of the apps on home, in its order.
+  pinned: string[];
   settings: Settings;
   // Whether there's an adult PIN, and whether the TV is locked (ADR-009).
   pin: { set: boolean; locked: boolean };
@@ -455,6 +457,7 @@ export const daemon = {
   available: () => call<Available>("GET", "/api/apps/add"),
   addApp: (id: string, grant?: string) => call<Available>("POST", "/api/apps/add", { id }, grant),
   saveLayout: (layout: Placed[], grant?: string) => call<{ layout: Placed[] }>("PUT", "/api/layout", gridName() ? { layout, grid: gridName() } : { layout }, grant),
+  savePinned: (pinned: string[], grant?: string) => call<{ pinned: string[] }>("PUT", "/api/pinned", { pinned }, grant),
   saveSettings: (change: Partial<Settings>, grant?: string) => call<{ settings: Settings }>("POST", "/api/settings", change, grant),
   // A look's preview fills New this week with stand-ins while it has no
   // posters of its own (looks/showcase.ts).

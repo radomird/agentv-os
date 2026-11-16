@@ -1,10 +1,11 @@
-// The TV's size (ADR-062, daemon/display.ts):
-//   - GET /api/display: what's picked, and the mode, scale, canvas and the
-//     sizes this TV offers;
-//   - PUT /api/display with {"size"} or {"output"}: picks one, and the screen
-//     daemon applies it at once. The answer is the new state, and the TV's
-//     pages hear the display event. A child's profile needs the adult PIN
-//     for it, as for the look.
+// The TV's size (ADR-062) and Fit to screen's margin (ADR-103),
+// daemon/display.ts:
+//   - GET /api/display: what's picked, and the mode, scale, canvas, the
+//     sizes this TV offers, and the margin;
+//   - PUT /api/display with {"size"}, {"output"} or {"margin"}: picks one,
+//     and the screen daemon applies it at once. The answer is the new
+//     state, and the TV's pages hear the display event. A child's profile
+//     needs the adult PIN for it, as for the look.
 // And for the screen daemon, which holds Hyprland in the TV session:
 //   - POST /api/display/tv: the TV it sees, answered with what to set it to;
 //   - GET /api/display/ask and POST /api/display/ask/<n>: the daemon's asks
