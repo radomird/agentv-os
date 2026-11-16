@@ -1,13 +1,20 @@
 // What each model costs, for the key relay to keep a build inside its cap
 // (ADR-011, ADR-045): dollars per million tokens, at each provider's
-// standard rate. Read on the providers' own pages on 2026-10-27:
-// - https://platform.claude.com/docs/en/about-claude/pricing
-// - https://developers.openai.com/api/docs/pricing
+// standard rate. Read on the providers' own pages on 2026-10-27, and for
+// Claude Fable 5.2, the GPT-6 line and Muse Ember 1.0 on 2026-11-16:
+// - https://platform.claude.com/docs/en/about-claude/pricing (Fable 5.2's
+//   cache reads are 0.025 times its input, and it has no long-context rate)
+// - https://developers.openai.com/api/docs/pricing (the GPT-6 line bills a
+//   prompt over 272K tokens at its long rate for all of it, and writes to
+//   the cache at 1.25 times input; GPT-5.6 Sol's price is a promotion until
+//   2026-11-30, so read it again then)
 // - https://ai.google.dev/gemini-api/docs/pricing (Gemini 3's prices are
 //   to roughly double on 2027-01-01, so read it again before then)
 // - https://docs.x.ai/docs/models (a prompt that reaches 200K tokens is
 //   billed at the long rate for all of it)
-// - https://dev.meta.ai/docs/pricing-rate-limits (no long-context premium)
+// - https://dev.meta.ai/docs/pricing-rate-limits (no long-context premium,
+//   but for Muse Ember 1.0, whose prompt over 200K tokens, its cache
+//   included, is billed at the long rate for all of it)
 //
 // A model that isn't here isn't priced, so the relay refuses it rather than
 // guess what a build spent.
@@ -27,6 +34,7 @@ export interface Rate {
 // claude-opus-5-5 isn't read as claude-opus-5.
 export const PRICES: Record<Provider, Record<string, Rate>> = {
   claude: {
+    "claude-fable-5-2": { in: 8, out: 40, cacheRead: 0.2 },
     "claude-fable-5-1": { in: 10, out: 50, cacheRead: 0.25 },
     "claude-mythos-5-1": { in: 10, out: 50, cacheRead: 0.25 },
     "claude-fable-5": { in: 10, out: 50, cacheRead: 1 },
@@ -43,6 +51,9 @@ export const PRICES: Record<Provider, Record<string, Rate>> = {
     "claude-haiku-4-5": { in: 1, out: 5, cacheRead: 0.1 },
   },
   chatgpt: {
+    "gpt-6-astra": { in: 10, out: 50, cacheRead: 1, above: { tokens: 272_000, rate: { in: 20, out: 75, cacheRead: 2 } } },
+    "gpt-6.1-sol": { in: 2, out: 10, cacheRead: 0.1, above: { tokens: 272_000, rate: { in: 4, out: 15, cacheRead: 0.2 } } },
+    "gpt-6-luna": { in: 0.1, out: 0.5, cacheRead: 0.01, above: { tokens: 272_000, rate: { in: 0.2, out: 0.75, cacheRead: 0.02 } } },
     "gpt-5.6-sol": { in: 4, out: 20, cacheRead: 0.4 },
     "gpt-5.6-terra": { in: 2, out: 12, cacheRead: 0.2 },
     "gpt-5.6-luna": { in: 0.2, out: 1.2, cacheRead: 0.02 },
@@ -78,6 +89,7 @@ export const PRICES: Record<Provider, Record<string, Rate>> = {
   muse: {
     "muse-wonder-1.0": { in: 4, out: 20, cacheRead: 0.2 },
     "muse-spark-1.3": { in: 1.25, out: 4.25, cacheRead: 0.15 },
+    "muse-ember-1.0": { in: 0.1, out: 0.5, cacheRead: 0.004, above: { tokens: 200_000, rate: { in: 0.3, out: 1.5, cacheRead: 0.012 } } },
     "muse-spark-1.2": { in: 1.25, out: 4.25, cacheRead: 0.15 },
     "muse-spark-1.1": { in: 1.25, out: 4.25, cacheRead: 0.15 },
     "muse-spark-1.3-contributor": { in: 0.1, out: 0.2, cacheRead: 0.002 },
@@ -101,7 +113,8 @@ export function rateFor(provider: Provider, model: string): Rate | null {
 
 // What one request used, in tokens. Input is what wasn't cached; a cache
 // write is billed as input at 1.25 times for five minutes and twice for an
-// hour (Claude's), and a read at its own rate.
+// hour (Claude's), and a read at its own rate. OpenAI's writes, for its
+// default half hour, are 1.25 times too, and count as cacheWrite5m.
 export interface Usage {
   input: number;
   output: number;

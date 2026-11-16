@@ -62,7 +62,9 @@ test("T19.1 each provider's list is short and strongest first, with its two defa
     for (const model of modelsFor(provider, "key")) assert.ok(rateFor(provider, model.id), `${provider}: ${model.id} is priced`);
   }
   for (const path of ["plan", "key"] as const) assert.deepEqual(DEFAULT_MODELS.claude[path], { ask: "claude-haiku-5-5", build: "claude-sonnet-5-5" }, "Q312: Haiku 5.5 for asking, Sonnet 5.5 for building");
-  assert.deepEqual(modelsFor("claude", "key").map((m) => m.name), ["Opus 5.5", "Sonnet 5.5", "Haiku 5.5"], "Fable 5.2 isn't priced yet");
+  assert.deepEqual(modelsFor("claude", "key").map((m) => m.name), ["Fable 5.2", "Opus 5.5", "Sonnet 5.5", "Haiku 5.5"], "Fable 5.2 is priced for a key");
+  assert.deepEqual(modelsFor("chatgpt", "key").map((m) => m.id), ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna", "gpt-5.6-luna"], "the GPT-6 line, and the model the router's evals ran on");
+  assert.deepEqual(modelsFor("muse", "key").map((m) => m.id), ["muse-wonder-1.0", "muse-spark-1.3", "muse-ember-1.0"]);
   assert.deepEqual(modelsFor("claude", "plan").map((m) => m.name), ["Fable 5.2", "Opus 5.5", "Sonnet 5.5", "Haiku 5.5"]);
   assert.deepEqual(modelsFor("claude", "plan")[0], { id: "claude-fable-5-2", name: "Fable 5.2", costsExtra: "plan" }, "Q324: on a plan, Fable says it can cost extra");
 });
@@ -87,7 +89,7 @@ test("T19.1 root takes a build's model only from its provider's list, and with a
   assert.equal(checkRequest(asked({ model: "claude-sonnet-5-5" })).request!.model, "claude-sonnet-5-5");
   assert.equal(checkRequest(asked({ model: "claude-haiku-5-5", path: "plan", cap: undefined })).request!.model, "claude-haiku-5-5");
   assert.match(checkRequest(asked({ model: "claude-opus-9" })).error!, /model on the provider's list/);
-  assert.match(checkRequest(asked({ provider: "chatgpt", model: "gpt-6-astra" })).error!, /relay prices/, "a plan's own model, with a key");
+  assert.match(checkRequest(asked({ provider: "chatgpt", model: "gpt-5.6-terra" })).error!, /relay prices/, "one the relay prices that isn't on the list");
   assert.match(checkRequest(asked({ provider: "chatgpt", path: "plan", cap: undefined, model: "gpt-5.6-terra" })).error!, /model on the provider's list/, "a key's own model, on a plan");
   assert.match(checkRequest(asked({ model: "gpt-5.6-sol" })).error!, /model on the provider's list/, "another provider's model");
   assert.match(checkRequest(asked({ model: "--dangerously-skip-permissions" })).error!, /model/, "nothing that reads as a flag");
