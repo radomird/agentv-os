@@ -189,7 +189,7 @@ cat >"$SCRATCH/bin/pacman" <<SH
 [[ \$1 == "-Qem" ]] && { [[ -f $SCRATCH/aur ]]; exit; }
 [[ \$1 == "-Q" ]] || exit 1
 case "\$2" in
-  origaitv) if [[ -f $SCRATCH/upgraded ]]; then echo "origaitv 0.3.0-1"; else echo "origaitv 0.2.1-1"; fi ;;
+  origaitv) if [[ -f $SCRATCH/upgraded && ! -f $SCRATCH/omarchy-only ]]; then echo "origaitv 0.3.0-1"; else echo "origaitv 0.2.1-1"; fi ;;
   omarchy) echo "omarchy 4.0.6-1" ;;
   *) exit 1 ;;
 esac
@@ -395,6 +395,24 @@ grep -q "aren't updated from the TV" "$ORIGAITV_UPDATE_STATE/update.log" || fail
 ! grep -q "^yay" "$calls" || fail "yay doesn't run from the TV"
 rm "$SCRATCH/aur"
 pass "AUR packages are left for omarchy update at the desktop's terminal, and the log says so"
+
+# An update of Omarchy's or the system's packages alone leaves OrigaiTV on
+# the version it was. There's no other OrigaiTV to go back to, so no Go back
+# is written for it, and Go back from an earlier update stays as it was.
+cp "$ORIGAITV_UPDATE_STATE/go-back.json" "$SCRATCH/go-back-before.json"
+touch "$SCRATCH/omarchy-only"
+update || fail "an update of Omarchy's packages alone goes through" "$(cat "$SCRATCH/out")"
+cmp -s "$ORIGAITV_UPDATE_STATE/go-back.json" "$SCRATCH/go-back-before.json" ||
+  fail "an update that leaves OrigaiTV's version as it was keeps Go back from before" "$(cat "$ORIGAITV_UPDATE_STATE/go-back.json")"
+rm "$ORIGAITV_UPDATE_STATE/go-back.json"
+update || fail "an update of Omarchy's packages alone goes through again" "$(cat "$SCRATCH/out")"
+[[ ! -f $ORIGAITV_UPDATE_STATE/go-back.json ]] ||
+  fail "an update that leaves OrigaiTV's version as it was writes no Go back" "$(cat "$ORIGAITV_UPDATE_STATE/go-back.json")"
+rm "$SCRATCH/omarchy-only"
+update || fail "an update of OrigaiTV goes through after" "$(cat "$SCRATCH/out")"
+[[ $(jq -c '[.from.origaitv, .to.origaitv]' "$ORIGAITV_UPDATE_STATE/go-back.json") == '["0.2.1-1","0.3.0-1"]' ]] ||
+  fail "an update of OrigaiTV writes Go back again" "$(cat "$ORIGAITV_UPDATE_STATE/go-back.json" 2>&1)"
+pass "Go back is written only when OrigaiTV's own version changed"
 
 # Its steps, as the Updating screen sees them: the package lines move it on.
 # shellcheck disable=SC2016 # the progress function is read from the script

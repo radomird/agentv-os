@@ -447,6 +447,12 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
     setTimeout(() => focus.release(), 400);
   }
   page.replaceChildren(el);
+  // Only a page's own lists scroll. Anything that moved the page itself,
+  // such as the browser bringing something into view, is undone here, so a
+  // page always starts at its margins.
+  for (const box of new Set([document.scrollingElement, document.body, page])) {
+    if (box && (box.scrollLeft || box.scrollTop)) box.scrollTo(0, 0);
+  }
   tell({ details: detailsNow() !== undefined });
   // Under a PIN pad, the page waits for it to close before it has the focus.
   if (pinOpen) return;
