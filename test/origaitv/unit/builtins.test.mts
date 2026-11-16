@@ -151,6 +151,17 @@ test("S8.1 a streaming household's home gets New this week once, at the largest 
     };
     saved();
     assert.deepEqual((await get("/api/home")).layout.find((tile: any) => tile.id === "origaitv.new"), { id: "origaitv.new", size: "m", x: 0, y: 2 });
+    // With Terminal's grid full, it goes on small, past the grid, where
+    // Glass and Cinema show it (T20.1).
+    writeFileSync(join(state, "builtins-pinned.json"), JSON.stringify({ [viewer]: ["origaitv.clock", "origaitv.weather"] }));
+    const packed = [
+      { id: "origaitv.sample", x: 0, y: 0, size: "l" },
+      { id: "origaitv.clock", x: 2, y: 0, size: "m" },
+      { id: "origaitv.weather", x: 2, y: 1, size: "m" },
+      ...["origaitv.games", "origaitv.tube", "someone.radio", "local.mytv"].map((id, x) => ({ id, x, y: 2, size: "s" })),
+    ];
+    writeFileSync(join(state, "layouts.json"), JSON.stringify({ [viewer]: packed }));
+    assert.deepEqual((await get("/api/home")).layout.find((tile: any) => tile.id === "origaitv.new"), { id: "origaitv.new", size: "s", x: 0, y: 3 });
     await withLooksOff(async () => {
       // With Clock pinned, New this week large between the two.
       fresh();

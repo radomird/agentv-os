@@ -149,16 +149,19 @@ const PIN_SIZE: Record<string, Size> = { [NEW_APP]: "l" };
 
 // A tile pinned in the first place it fits: a built-in that's pinned large
 // at the largest of its sizes that fits, from that one down, and anything
-// else small.
+// else small. On a home with no tile limit, "fits" is Terminal's 4 × 3, so
+// a large or medium tile is one Terminal shows; with no room there, it goes
+// on small, past it, as any app does.
 function pinBuiltin(layout: Placed[], id: string, sizes: Size[] = ["s"], grid: Grid = GRID): Placed[] | null {
   const want = PIN_SIZE[id];
   if (!want) return pin(layout, id, "s", grid);
+  const shown = grid.columns === HOME.columns && grid.rows === HOME.rows ? GRID : grid;
   for (const size of (["l", "m", "s"] as Size[]).slice((["l", "m", "s"] as Size[]).indexOf(want))) {
     if (!sizes.includes(size)) continue;
-    const placed = pin(layout, id, size, grid);
+    const placed = pin(layout, id, size, shown);
     if (placed) return placed;
   }
-  return null;
+  return shown === grid ? null : pin(layout, id, "s", grid);
 }
 
 const isMore = (grid: Grid) => grid.columns === GRID_MORE.columns && grid.rows === GRID_MORE.rows;
