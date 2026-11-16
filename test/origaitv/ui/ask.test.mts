@@ -173,13 +173,14 @@ bothWays("askbuilds", "T11.2 the TV's Ask makes an app to the confirm and a tile
     await page.keyboard.press("ArrowRight");
     assert.match(await page.locator('[data-action="model"]').innerText(), /haiku 5\.5$/);
     await page.keyboard.press("ArrowRight");
-    assert.match(await page.locator('[data-action="model"]').innerText(), /opus 5\.5$/, "round to the strongest, and no Fable with a key, as it isn't priced");
+    assert.match(await page.locator('[data-action="model"]').innerText(), /fable 5\.2$/, "round to the strongest, Fable 5.2, priced for a key");
+    assert.equal(await page.locator('[data-action="model"].noted').count(), 0, "with a key, Fable says nothing about costing extra on a plan");
     await page.keyboard.press("ArrowLeft");
     assert.match(await page.locator('[data-action="model"]').innerText(), /haiku 5\.5$/);
     // The phone has the same confirm, in its Ask, with the list.
     const ask = await (await token.fetch(`/api/phone/ask`)).json();
     assert.deepEqual([ask.ask.kind, ask.ask.state, ask.ask.recipe, ask.ask.model], ["build", "confirm", "game", "claude-sonnet-5-5"]);
-    assert.deepEqual(ask.ask.models.map((m: { name: string }) => m.name), ["Opus 5.5", "Sonnet 5.5", "Haiku 5.5"]);
+    assert.deepEqual(ask.ask.models.map((m: { name: string }) => m.name), ["Fable 5.2", "Opus 5.5", "Sonnet 5.5", "Haiku 5.5"]);
     await page.keyboard.press("ArrowDown");
     assert.equal(await page.locator(".focused").getAttribute("data-action"), "confirm");
     await page.keyboard.press("Enter");
@@ -261,7 +262,7 @@ test("T11.2 on the phone's remote, Ask is the same box, and a make your agent re
     // The sheet stays up after the send, and shows what the agent read.
     status(builds, start.build, "1.0.0", { state: "confirm", understood: UNDERSTOOD });
     await hand.waitForSelector('#r2-sheet [data-ask="confirm"]', { timeout: 10_000 });
-    assert.match(await hand.locator('#r2-sheet [data-ask="confirm"]').innerText(), /^Your own app\n+Make Blocks\?\n+It stays on this TV\n+Model\n+Opus 5\.5\n+Sonnet 5\.5\n+Haiku 5\.5\n+Make it\n+Not this$/);
+    assert.match(await hand.locator('#r2-sheet [data-ask="confirm"]').innerText(), /^Your own app\n+Make Blocks\?\n+It stays on this TV\n+Model\n+Fable 5\.2\n+Opus 5\.5\n+Sonnet 5\.5\n+Haiku 5\.5\n+Make it\n+Not this$/);
     // The model row (Q311): the household's ticked, and a tap picks another
     // for this app.
     assert.equal(await hand.locator('#r2-sheet .ask-models [aria-checked="true"]').innerText(), "Sonnet 5.5");

@@ -42,11 +42,10 @@ export const MODELS: Record<Provider, Model[]> = {
     { id: "claude-haiku-5-5", name: "Haiku 5.5" },
   ],
   chatgpt: [
-    { id: "gpt-6-astra", name: "GPT-6 Astra", only: "plan" },
-    { id: "gpt-6.1-sol", name: "GPT-6.1 Sol", only: "plan" },
-    { id: "gpt-6-luna", name: "GPT-6 Luna", only: "plan" },
-    { id: "gpt-5.6-sol", name: "GPT-5.6 Sol", only: "key" },
-    { id: "gpt-5.6-terra", name: "GPT-5.6 Terra", only: "key" },
+    { id: "gpt-6-astra", name: "GPT-6 Astra" },
+    { id: "gpt-6.1-sol", name: "GPT-6.1 Sol" },
+    { id: "gpt-6-luna", name: "GPT-6 Luna" },
+    // With a key, the router still asks on the model its evals ran on.
     { id: "gpt-5.6-luna", name: "GPT-5.6 Luna", only: "key" },
   ],
   gemini: [
@@ -73,7 +72,7 @@ type Pair = { ask: string; build: string };
 // and its middle one for building.
 export const DEFAULT_MODELS: Record<Provider, Record<"plan" | "key", Pair>> = {
   claude: { plan: { ask: "claude-haiku-5-5", build: "claude-sonnet-5-5" }, key: { ask: "claude-haiku-5-5", build: "claude-sonnet-5-5" } },
-  chatgpt: { plan: { ask: "gpt-6-luna", build: "gpt-6.1-sol" }, key: { ask: "gpt-5.6-luna", build: "gpt-5.6-terra" } },
+  chatgpt: { plan: { ask: "gpt-6-luna", build: "gpt-6.1-sol" }, key: { ask: "gpt-5.6-luna", build: "gpt-6.1-sol" } },
   gemini: { plan: { ask: "gemini-3.8-flash", build: "gemini-3.8-flash" }, key: { ask: "gemini-3.8-flash", build: "gemini-3.8-flash" } },
   grok: { plan: { ask: "grok-4.7", build: "grok-4.7" }, key: { ask: "grok-4.7", build: "grok-4.7" } },
   muse: { plan: { ask: "muse-spark-1.3", build: "muse-spark-1.3" }, key: { ask: "muse-spark-1.3", build: "muse-spark-1.3" } },
