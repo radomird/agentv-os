@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# origaitv:summary=Open Battle.net on the TV, running its own setup the first time
+# origaitv:hidden=true
+
+# Battle.net's tile on the TV runs this, in a gamescope of its own (ADR-103).
+# Omarchy installs Battle.net from a terminal: it downloads Blizzard's
+# Windows setup and starts it under umu-launcher and GE-Proton, where the
+# person clicks through it. On the TV that happens the first time the tile
+# opens, in front, with a mouse and keyboard: bin/origaitv-game-setup has
+# downloaded the setup already. After that, the tile opens Battle.net with
+# Omarchy's own launcher.
+
+set -euo pipefail
+
+OMARCHY_PATH=${OMARCHY_PATH:-/usr/share/omarchy}
+PREFIX="$HOME/Games/battlenet"
+LAUNCHER="$PREFIX/drive_c/Program Files (x86)/Battle.net/Battle.net Launcher.exe"
+SETUP="$HOME/.cache/origaitv/Battle.net-Setup.exe"
+BATTLENET_SETUP_URL=${ORIGAITV_BATTLENET_SETUP_URL:-https://downloader.battle.net/download/getInstallerForGame?os=win&gameProgram=BATTLENET_APP&version=Live}
+
+launch() {
+  exec "$OMARCHY_PATH/bin/omarchy-launch-battlenet"
+}
+
+[[ -f $LAUNCHER ]] && launch
+
+# A setup that was closed halfway leaves a prefix Battle.net's setup can't
+# carry on from. Nothing can be in it yet but the setup's own files, so it's
+# set aside, never deleted, and the setup starts again.
+if [[ -d $PREFIX && -n $(ls -A -- "$PREFIX" 2>/dev/null) ]]; then
+  mv -- "$PREFIX" "$PREFIX.unfinished-$(date +%Y%m%d-%H%M%S)"
+fi
+mkdir -p "$PREFIX" "$(dirname -- "$SETUP")"
+if [[ ! -s $SETUP ]]; then
+  curl --fail --silent --show-error --location --retry 3 --max-time 600 --output "$SETUP.part" "$BATTLENET_SETUP_URL"
+  mv -f "$SETUP.part" "$SETUP"
+fi
+
+# The setup's window is this process's child, so it shows in the tile's
+# gamescope. When it ends, Battle.net opens if it's there.
+WINEPREFIX="$PREFIX" PROTONPATH=GE-Proton GAMEID=umu-battlenet PROTON_VERB=run umu-run "$SETUP" || true
+[[ -f $LAUNCHER ]] && launch
+echo "origaitv-battlenet: Battle.net's setup ended before Battle.net was in" >&2
+exit 1
