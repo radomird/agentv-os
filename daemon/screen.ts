@@ -736,14 +736,14 @@ export class Screen {
           this.queue(() => this.omarchyShell());
         }
         break;
-      // "monitoradded>>NAME", "monitoraddedv2>>ID,NAME,DESCRIPTION".
-      case "monitoradded":
+      // "monitoraddedv2>>ID,NAME,DESCRIPTION", and the same when one goes.
+      // Hyprland sends "monitoradded>>NAME" too, for the same monitor.
       case "monitoraddedv2":
-      case "monitorremoved":
       case "monitorremovedv2": {
-        const output = name.endsWith("v2") ? data.split(",")[1] : data;
+        const output = data.split(",")[1] ?? "";
         if (output === FALLBACK_OUTPUT) break;
-        if (name.startsWith("monitoradded")) this.queue(() => this.outputAdded(output ?? ""));
+        this.log(`Hyprland: ${name.replace("v2", "")} ${output}`);
+        if (name === "monitoraddedv2") this.queue(() => this.outputAdded(output));
         else this.queue(() => this.outputThere().then(() => {}));
         break;
       }
@@ -981,8 +981,14 @@ export class Screen {
   // since Hyprland's workspace may have stayed on its stand-in. The display
   // daemon gives the monitor its mode, scale and Fit to screen's margin
   // (daemon/display.ts).
-  private async outputAdded(name: string): Promise<void> {
-    if (!(await this.outputThere()) || this.ending) return;
+  private async outputAdded(name: string, tries = 10): Promise<void> {
+    if (this.ending) return;
+    if (!(await this.outputThere())) {
+      // Hyprland can say a monitor came a moment before it lists it.
+      if (tries > 1) setTimeout(() => void this.queue(() => this.outputAdded(name, tries - 1)), 500).unref?.();
+      else this.log(`${name || "a monitor"} came, but Hyprland lists no monitor to put a window on`);
+      return;
+    }
     const front = this.front();
     const later = this.frontLater;
     this.frontLater = false;

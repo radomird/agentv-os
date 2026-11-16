@@ -1047,9 +1047,12 @@ test("T22.4 with the TV's output gone nothing moves, and what's in front goes ba
   t.hypr.emit("monitoraddedv2", "2,FALLBACK,");
   await t.screen.idle();
   assert.equal(t.hypr.killedBy, "");
-  // The output's back.
-  t.hypr.output = true;
+  // The output's back. Hyprland says so a moment before it lists it.
   t.hypr.emit("monitoraddedv2", "1,HDMI-A-1,TV");
+  await t.screen.idle();
+  assert.equal(t.hypr.killedBy, "");
+  t.hypr.output = true;
+  await sleep(600);
   await t.screen.idle();
   assert.deepEqual(t.hypr.onTv(), ["0xb"]);
   assert.equal(t.hypr.active, "0xb");
