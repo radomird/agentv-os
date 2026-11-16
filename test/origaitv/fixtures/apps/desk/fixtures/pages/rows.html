@@ -8,7 +8,7 @@
   body { margin: 0; background: #111; color: #eee; font: 20px sans-serif; }
   nav { display: flex; gap: 32px; padding: 24px 48px; }
   nav a { color: #eee; text-decoration: none; }
-  .hero { height: 420px; margin: 0 48px; border-radius: 12px; background: #23233a; display: flex; align-items: flex-end; padding: 32px; box-sizing: border-box; }
+  .hero { height: 420px; margin: 0 48px; border-radius: 12px; background: #23233a; display: flex; align-items: flex-end; padding: 32px; box-sizing: border-box; color: #eee; text-decoration: none; }
   .hero span { font-size: 40px; }
   h2 { margin: 40px 48px 0; font-size: 24px; }
   .row { display: flex; gap: 24px; overflow-x: auto; scrollbar-width: none; padding: 16px 48px; }
@@ -29,6 +29,7 @@
 <!--
   A stand-in home page of a site made for a desktop, the way many streaming
   sites draw theirs:
+  - a big banner at the top, a link that opens tonight's film;
   - its cards are divs that show a pointer and can't take focus, and one
     listener on the document opens what's clicked;
   - its rows slide sideways, and one row is a slider that moves by its own
@@ -42,7 +43,7 @@
   <a id="films" href="next.html?films">Films</a>
   <a id="series" href="next.html?series">Series</a>
 </nav>
-<div class="hero"><span>Tonight's film</span></div>
+<a class="hero" id="hero" href="next.html?hero"><span>Tonight's film</span></a>
 <div id="rows"></div>
 <div id="more" aria-hidden="true"></div>
 <footer><p>Nothing here to press.</p><p>The end of the page.</p></footer>

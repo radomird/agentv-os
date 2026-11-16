@@ -21,6 +21,8 @@ import { lstatSync, readlinkSync, realpathSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import { boxHost } from "../../apps/contract/address.ts";
 import type { Capability, Manifest } from "../../apps/contract/manifest.ts";
+import type { Navigation } from "../../apps/contract/contract.ts";
+import { checkNavigation } from "../../apps/contract/navigation.ts";
 import { PageError } from "../page.ts";
 import { appHeaders, reach } from "./reach.ts";
 
@@ -212,6 +214,8 @@ export class AppHost {
   private bwrap: string;
   // The optional calls the module has, once it's started.
   private optional = new Set<string>();
+  // Its hints for the phone's d-pad, once it's started.
+  private hints: Navigation[] = [];
 
   constructor(options: AppHostOptions) {
     this.manifest = options.manifest;
@@ -315,12 +319,14 @@ export class AppHost {
           ready = true;
           clearTimeout(timer);
           const optional = (message.optional ?? { has: [], broken: [] }) as { has: string[]; broken: string[] };
-          const problem = this.checkModule(String(message.id), message.capabilities as string[], optional);
+          const hints = checkNavigation(message.navigation, this.manifest.name);
+          const problem = this.checkModule(String(message.id), message.capabilities as string[], optional) ?? ("problem" in hints ? hints.problem : null);
           if (problem) {
             letGo(child);
             rejectStart(new AppError("refused", problem));
           } else {
             this.optional = new Set(optional.has);
+            this.hints = "hints" in hints ? hints.hints : [];
             resolveStart();
           }
         } else if (message.type === "failed") {
@@ -376,6 +382,13 @@ export class AppHost {
       if (capability && !this.manifest.tv.capabilities.includes(capability)) return `${this.manifest.name} has ${path}, but doesn't say it can ${capability}`;
     }
     return null;
+  }
+
+  // The app's hints for the phone's d-pad on its pages (ADR-103), none when
+  // it gives none. It starts the worker to know.
+  async navigation(): Promise<Navigation[]> {
+    await this.start();
+    return this.hints;
   }
 
   // Whether the module has one of the contract's optional calls, such as

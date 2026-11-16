@@ -10,7 +10,7 @@ import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
 import { PAUSE, RESUME } from "../../../daemon/media.ts";
-import { BACK_TAP, FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, WHEEL_AT } from "../../../daemon/remote-page.ts";
+import { BACK_TAP, FOCUS_BINDING, navigationPage, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, WHEEL_AT } from "../../../daemon/remote-page.ts";
 import { FIELD } from "../../../daemon/remote-text.ts";
 import type { Cli } from "../../../daemon/ai.ts";
 import type { PageBroker } from "../../../daemon/apps/loader.ts";
@@ -1417,6 +1417,22 @@ test("T21.1 two fingers on the phone scroll the page in front from its middle, t
   // Without the services' Chromium's wheel, as for a native window: no.
   t.launcher.browser.wheelIn = undefined;
   assert.equal(await t.screen.phoneWheel(0, 300), false);
+  t.screen.stop();
+});
+
+test("T21.1 an app's hints for the d-pad go into its page, in the world its ring and Back run in", async () => {
+  const hints = [{ url: "/home$", rows: [{ row: ".row", next: ".next" }] }];
+  const playback: Playback = { opened() {}, closed() {}, navigation: async (id) => (id === "origaitv.tube" ? hints : []) };
+  const t = await tv({ playback });
+  const page = await openApp(t, "origaitv.tube", "0xb");
+  const ours = () => t.launcher.browser.scripts.filter((s) => s.targetId === page && s.world === REMOTE_WORLD).map((s) => s.source);
+  for (let i = 0; i < 100 && ours().length < 2; i++) await sleep(5);
+  assert.deepEqual(ours(), [REMOTE_PAGE, navigationPage(hints)]);
+  assert.equal(navigationPage(hints), `window.__origaitvHints = ${JSON.stringify(hints)};`, "as data");
+  // An app that gives none gets nothing more.
+  const other = await openApp(t, "origaitv.player", "0xc");
+  await sleep(30);
+  assert.deepEqual(t.launcher.browser.scripts.filter((s) => s.targetId === other && s.world === REMOTE_WORLD).map((s) => s.source), [REMOTE_PAGE]);
   t.screen.stop();
 });
 

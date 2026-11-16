@@ -70,9 +70,9 @@ import { PageAskWatch, type PageAnswer } from "./page-asks.ts";
 import { PageMedia } from "./page-media.ts";
 import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
-import type { Item } from "../apps/contract/contract.ts";
+import type { Item, Navigation } from "../apps/contract/contract.ts";
 import { RemoteInput, sendInput, wheelTurn } from "./remote.ts";
-import { BACK_TAP, FOCUS_BINDING, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION, WHEEL_AT } from "./remote-page.ts";
+import { BACK_TAP, FOCUS_BINDING, navigationPage, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION, WHEEL_AT } from "./remote-page.ts";
 import { type Bar, FIELD, PhoneTyping, type TypingFront } from "./remote-text.ts";
 import { MEDIA_PLAYING, PhonePlayback, type PlaybackFront } from "./remote-play.ts";
 import type { SayAnswer, SayAsk } from "./say.ts";
@@ -318,6 +318,8 @@ export interface Playback {
   play?(id: string, item: unknown): void;
   // One of the app's playback calls, for the phone's play and pause.
   call?(id: string, path: string): Promise<unknown>;
+  // The app's hints for the phone's d-pad on its pages (ADR-103).
+  navigation?(id: string): Promise<Navigation[]>;
 }
 
 // What asks an app with signIn whether it's signed in (signin.ts).
@@ -2168,6 +2170,8 @@ export class Screen {
       if (id !== url && this.signingIn?.id !== id) void this.signIn?.check(id, this.pageOf(entry)).catch(() => null);
       // A child watching gets the service's profile for children.
       if (id !== url) entry.ready = this.serviceProfile(entry);
+      // The app's hints for the d-pad, next to its ring and Back.
+      if (id !== url) void this.navigationHints(id, entry);
       await this.makeRoom(id);
     }).then(() => ({ ok: true }));
   }
@@ -2385,6 +2389,17 @@ export class Screen {
     await cdp.addScriptIn(target, source, REMOTE_WORLD).catch((error: Error) => this.log(`the d-pad's ring and Back aren't in that page: ${error.message}`));
     // Its focus moving: the phone's keyboard may come up for it (ADR-065).
     await cdp.bindIn?.(target, FOCUS_BINDING, REMOTE_WORLD, () => void this.tellContext()).catch((error: Error) => this.log(`that page can't say where its focus is: ${error.message}`));
+  }
+
+  // An app's hints for the phone's d-pad on its own pages (ADR-103), in
+  // the world its ring and Back run in, once its worker has said them.
+  private async navigationHints(id: string, entry: Open): Promise<void> {
+    const hints = (await this.playback?.navigation?.(id).catch(() => [])) ?? [];
+    if (!hints.length) return;
+    for (let tries = 0; tries < 50 && !entry.target; tries++) await sleep(100);
+    const cdp = this.apps.get("web")?.cdp;
+    if (!entry.target || !cdp) return;
+    await cdp.addScriptIn(entry.target, navigationPage(hints), REMOTE_WORLD).catch((error: Error) => this.log(`${id}'s hints for the d-pad aren't in its page: ${error.message}`));
   }
 
   // A native game (ADR-103), Steam among them: its window in front if it's
