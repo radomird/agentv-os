@@ -80,7 +80,7 @@ interface State {
 }
 
 interface Ask {
-  ask: "terms" | "key";
+  ask: "terms" | "key" | "sign-in";
   provider: string;
   path: "plan" | "key";
   name: string;
@@ -89,6 +89,9 @@ interface Ask {
   terms: { id: string; name: string; url: string }[];
   summary: string;
   keyUrl: string;
+  // The household's plan signing in, from setup or Settings: its page to
+  // open here, and a code to enter there or one it gives to paste back.
+  signIn?: { url: string; code?: string; pastes: boolean };
 }
 
 type Mode = "remote" | "type" | "play" | "mouse" | "home" | "who" | "update" | "photo" | "share" | "build" | "push";
@@ -438,6 +441,43 @@ function keyPage(ask: Ask): HTMLElement {
     h("a", { href: ask.keyUrl, target: "_blank", rel: "noopener noreferrer", class: "link" }, "Get a key"),
     h("div", { class: "limits" }, h("b", {}, "Spending limits"), h("span", {}, "$5 an app, $20 a month")),
     h("button", { class: "button primary", type: "button", "data-action": "save-key", onclick: () => void save() }, glyph("lock", 20), h("span", {}, "Save")),
+  );
+}
+
+// The household's plan signing in, from setup or Settings (ADR-070,
+// ADR-103): the provider's own page, opened here, and the code it gives,
+// pasted into a field of this page's own, since the TV's page is plain http
+// and can't read this phone's clipboard. The code goes to the CLI's prompt
+// on the TV. Its tokens stay in the CLI's own files there; this page never
+// sees them. "Not now" leaves it to the TV's own field.
+function signInPage(ask: Ask): HTMLElement {
+  const s = ask.signIn!;
+  const head = [prompt("tv ai sign-in"), h("h1", {}, `Sign in to ${ask.name}`)];
+  const link = h("a", { class: "button primary", href: s.url, target: "_blank", rel: "noopener noreferrer", "data-action": "open-sign-in" }, `Open ${ask.name}'s sign-in`);
+  const later = h("button", { class: "button", type: "button", "data-action": "not-now", onclick: () => notNow() }, "Not now");
+  if (s.code) return h("div", { class: "page" }, ...head, link, h("p", { class: "note" }, "Sign in there, and enter this code when it asks:"), h("p", { class: "plan-code" }, s.code), h("p", { class: "note" }, "It continues once you're in"), later);
+  const field = h("input", { class: "field", type: "text", name: "code", autocomplete: "off", autocapitalize: "off", spellcheck: "false", placeholder: "Paste the code", "aria-label": "Sign-in code" }) as HTMLInputElement;
+  const send = async (event: Event) => {
+    event.preventDefault();
+    const code = field.value.trim();
+    if (!code) return toast("Paste the code first");
+    try {
+      const answered = await withPin(`signing in to ${ask.name}`, (grant) => api("POST", "/api/phone/ai/sign-in/code", { code }, grant));
+      if (answered === null) return;
+      field.value = "";
+      toast("Signing in on your TV…", true);
+    } catch (error) {
+      failed(error);
+    }
+  };
+  return h(
+    "div",
+    { class: "page" },
+    ...head,
+    link,
+    h("p", { class: "note" }, "Sign in there, then paste the code it gives you here"),
+    h("form", { class: "plan-paste", onsubmit: (event: Event) => void send(event) }, field, h("button", { class: "button primary", type: "submit", "data-action": "send-code" }, glyph("lock", 20), h("span", {}, "Send"))),
+    later,
   );
 }
 
@@ -832,16 +872,24 @@ function drawPad(): void {
 // What setup's AI step asks, over the remote while it does. Not drawn again
 // while its field is being typed in.
 let asked = "";
+// A sign-in put off with "Not now", until it changes.
+let putOff = "";
 function drawAsk(): void {
   const now = state?.ai ? JSON.stringify(state.ai) : "";
   if (now === asked && document.getElementById("tv-ask")) return;
   asked = now;
   document.getElementById("tv-ask")?.remove();
   const ask = state?.ai;
-  if (!ask) return;
-  const page = ask.ask === "terms" ? termsPage(ask) : keyPage(ask);
+  if (!ask || now === putOff) return;
+  const page = ask.ask === "terms" ? termsPage(ask) : ask.ask === "sign-in" && ask.signIn ? signInPage(ask) : keyPage(ask);
   page.classList.add("ask");
-  document.body.append(h("div", { class: "overlay", id: "tv-ask", role: "dialog", "aria-label": ask.ask === "terms" ? `${ask.name}'s terms` : `${ask.name} API key` }, page));
+  const label = ask.ask === "terms" ? `${ask.name}'s terms` : ask.ask === "sign-in" ? `Sign in to ${ask.name}` : `${ask.name} API key`;
+  document.body.append(h("div", { class: "overlay", id: "tv-ask", role: "dialog", "aria-label": label }, page));
+}
+
+function notNow(): void {
+  putOff = asked;
+  document.getElementById("tv-ask")?.remove();
 }
 
 // Who's watching, the lock, a sign-in, an update and what's on the TV. With
