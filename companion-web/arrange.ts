@@ -8,6 +8,11 @@
 // and so is this: the apps in rows of six, then the games, as the TV draws
 // them. Tap an app, then the place it goes, and the others move up one. In
 // Terminal, the grid shows its 4 × 3, and says how many more are in Apps.
+//
+// Glass has its top row first, up to six apps or games, as the TV pins them.
+// A tap on another app in the top row puts the picked one there, and a tap
+// across its edge swaps the two. Top row adds the picked app to it, or
+// takes it off.
 
 import { choices, COLUMNS, GRID, HOME, inside, move, pin, reading, reorder, ROWS, span, unpin, resize, type Placed, type Size } from "../launcher/layout.ts";
 import { glyph } from "../launcher/glyphs.ts";
@@ -21,9 +26,12 @@ interface Home {
   layout: Placed[];
   // The TV's look, or null with the looks off.
   look?: string | null;
+  // Glass's top row, in its order.
+  pinned?: string[];
 }
 
-// Glass's rows, which the phone draws Cinema's apps in too.
+// Glass's rows, which the phone draws Cinema's apps in too, and the most
+// its top row holds.
 const PER_ROW = 6;
 
 export async function arrange(root: HTMLElement): Promise<void> {
@@ -41,21 +49,41 @@ export async function arrange(root: HTMLElement): Promise<void> {
   const rows = () => home.look === "glass" || home.look === "cinema";
   const keptOn = () => (home.look ? HOME : GRID);
   const isGame = (id: string) => home.apps.find((app) => app.id === id)?.category === "games";
+  const glass = () => home.look === "glass";
+  const pinned = () => (glass() ? (home.pinned ?? []) : []);
+  const isPinned = (id: string) => pinned().includes(id);
 
-  const save = async (next: Placed[] | null) => {
-    if (!next) {
-      toast("Home is full. Make room first.");
-      return;
-    }
+  const savePinned = async (next: string[]) => {
     try {
-      const reply = await withPin("arranging a child's home", (grant) => api<{ layout: Placed[] }>("PUT", "/api/phone/layout", { layout: next }, grant));
+      const reply = await withPin("arranging a child's home", (grant) => api<{ pinned: string[] }>("PUT", "/api/phone/pinned", { pinned: next }, grant));
       if (!reply) return;
-      home.layout = reply.layout;
+      home.pinned = reply.pinned;
       navigator.vibrate?.(8);
     } catch (error) {
       toast((error as Error).message);
     }
     draw();
+  };
+
+  // True once the box kept it.
+  const save = async (next: Placed[] | null): Promise<boolean> => {
+    let kept = false;
+    if (!next) {
+      toast("Home is full. Make room first.");
+      return kept;
+    }
+    try {
+      const reply = await withPin("arranging a child's home", (grant) => api<{ layout: Placed[] }>("PUT", "/api/phone/layout", { layout: next }, grant));
+      if (reply) {
+        home.layout = reply.layout;
+        kept = true;
+        navigator.vibrate?.(8);
+      }
+    } catch (error) {
+      toast((error as Error).message);
+    }
+    draw();
+    return kept;
   };
 
   // A tile picked goes where the next tap is, and is let go of after.
@@ -69,13 +97,36 @@ export async function arrange(root: HTMLElement): Promise<void> {
     draw();
   };
 
+  // Glass's top row: the picked app takes the tapped one's place in it, or
+  // the two swap across its edge, each taking the other's place in home's
+  // order too.
+  const tapPinned = (moving: string, id: string) => {
+    const top = pinned();
+    if (isPinned(moving) && isPinned(id)) {
+      const next = top.filter((one) => one !== moving);
+      next.splice(top.indexOf(id), 0, moving);
+      return void savePinned(next);
+    }
+    const [up, down] = isPinned(id) ? [moving, id] : [id, moving];
+    const order = reading(home.layout).map((tile) => tile.id);
+    const swapped = reorder(home.layout, order.map((one) => (one === up ? down : one === down ? up : one)), keptOn());
+    const next = top.map((one) => (one === down ? up : one));
+    void save(swapped).then((kept) => {
+      if (kept) void savePinned(next);
+    });
+  };
+
   // In the row looks: a tap picks an app up, and a tap on another in its
   // shelf puts it there, the others moving up one.
   const tapRow = (id: string) => {
     if (picked === id) picked = null;
-    else if (picked && isGame(picked) === isGame(id)) {
+    else if (picked && (isPinned(picked) || isPinned(id))) {
+      const moving = picked;
+      picked = null;
+      tapPinned(moving, id);
+    } else if (picked && isGame(picked) === isGame(id)) {
       const order = reading(home.layout).map((tile) => tile.id);
-      const shelf = order.filter((one) => isGame(one) === isGame(id) && one !== home.appsTile);
+      const shelf = order.filter((one) => isGame(one) === isGame(id) && one !== home.appsTile && !isPinned(one));
       const moved = shelf.filter((one) => one !== picked);
       moved.splice(shelf.indexOf(id), 0, picked);
       let next = 0;
@@ -85,9 +136,31 @@ export async function arrange(root: HTMLElement): Promise<void> {
     draw();
   };
 
-  const rowsOf = (ids: string[]) => {
-    const box = h("div", { class: "mini-rows" });
+  const rowsOf = (ids: string[], top = false) => {
+    const box = h("div", { class: `mini-rows${top ? " mini-pinned" : ""}` });
     for (const id of ids) box.append(h("button", { type: "button", class: `mini-tile${id === picked ? " picked" : ""}`, "data-id": id, onclick: () => tapRow(id) }, name(id)));
+    // Room left in the top row: a tap there adds the picked app.
+    if (top) {
+      for (let at = ids.length; at < PER_ROW; at++) {
+        box.append(
+          h(
+            "button",
+            {
+              type: "button",
+              class: "mini-empty",
+              "data-cell": `top-${at}`,
+              onclick: () => {
+                if (!picked) return;
+                const id = picked;
+                picked = null;
+                void savePinned([...pinned().filter((one) => one !== id), id]);
+              },
+            },
+            "Empty",
+          ),
+        );
+      }
+    }
     return box;
   };
 
@@ -170,14 +243,41 @@ export async function arrange(root: HTMLElement): Promise<void> {
     const order = reading(home.layout)
       .map((tile) => tile.id)
       .filter((id) => id !== home.appsTile && home.apps.some((app) => app.id === id));
-    const apps = order.filter((id) => !isGame(id));
-    const games = order.filter(isGame);
-    const shelves = h("div", { class: "mini-shelves" }, rowsOf(apps), ...(games.length ? [h("p", { class: "label" }, "# Games"), rowsOf(games)] : []));
+    const top = pinned().filter((id) => order.includes(id));
+    const apps = order.filter((id) => !isGame(id) && !top.includes(id));
+    const games = order.filter((id) => isGame(id) && !top.includes(id));
+    const shelves = h(
+      "div",
+      { class: "mini-shelves" },
+      ...(glass() ? [h("p", { class: "label" }, "# Top row"), rowsOf(top, true)] : []),
+      ...(apps.length || !glass() ? [rowsOf(apps)] : []),
+      ...(games.length ? [h("p", { class: "label" }, "# Games"), rowsOf(games)] : []),
+    );
+    const full = top.length >= PER_ROW;
+    const topRow =
+      picked && glass()
+        ? h(
+            "button",
+            {
+              type: "button",
+              class: `chip${isPinned(picked) ? " on" : ""}`,
+              "data-action": "top-row",
+              disabled: !isPinned(picked) && full,
+              onclick: () => {
+                const id = picked!;
+                picked = null;
+                void savePinned(isPinned(id) ? top.filter((one) => one !== id) : [...top, id]);
+              },
+            },
+            isPinned(picked) ? "Off the top row" : full ? "Top row · full" : "To the top row",
+          )
+        : null;
     const remove = picked
       ? h(
           "div",
           { class: "sizes" },
           h("p", { class: "label" }, name(picked)),
+          topRow,
           h("button", { type: "button", class: "chip", "data-action": "unpin", onclick: () => { const id = picked!; picked = null; void save(unpin(home.layout, id)); } }, glyph("minus", 14), h("span", {}, "Remove")),
         )
       : null;

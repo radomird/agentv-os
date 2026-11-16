@@ -60,8 +60,30 @@ assert events() == [(2, 0, 5), (2, 1, -3)], "move"
 device.handle({"click": "left"})
 assert events() == [(1, 0x110, 1), (1, 0x110, 0)], "click"
 device.handle({"scroll": -1})
-assert events() == [(2, 8, -1)], "scroll"
+assert events() == [(2, 11, -120), (2, 8, -1)], "scroll is a whole notch, high-resolution too"
 print("ok - the pointer moves, clicks and scrolls")
+
+# Two fingers on the phone (ADR-103): the high-resolution wheel both ways,
+# with a whole notch each way once a notch's worth has gone, as a modern
+# mouse sends them.
+device.handle({"wheel": [0, 50]})
+assert events() == [(2, 11, 50)], "part of a notch up"
+device.handle({"wheel": [0, 80]})
+assert events() == [(2, 11, 80), (2, 8, 1)], "a whole notch once 120 has gone"
+device.handle({"wheel": [-130, 0]})
+assert events() == [(2, 12, -130), (2, 6, -1)], "sideways, left"
+device.handle({"wheel": [0, -60]})
+assert events() == [(2, 11, -60)], "a change of way starts the notch again"
+device.handle({"wheel": [0, -60]})
+assert events() == [(2, 11, -60), (2, 8, -1)], "down"
+for bad in ({"wheel": [0, 0]}, {"wheel": [0, 6001]}, {"wheel": [1.5, 0]}, {"wheel": 5}, {"wheel": [1]}, {"scroll": 0}, {"scroll": 51}, {"scroll": True}):
+    try:
+        device.handle(bad)
+    except ValueError:
+        continue
+    raise AssertionError(f"accepted {bad}")
+assert events() == [], "nothing for a turn it can't do"
+print("ok - T21.1 the wheel turns sideways and up, high-resolution, with whole notches as they go by")
 
 for bad in ({"key": "nope"}, {"text": "é"}, {"click": "fourth"}, {"jump": 1}):
     try:

@@ -89,6 +89,13 @@ function rowsOff(page: Page): Promise<string[]> {
   });
 }
 
+// Once the page has come in: what's measured is the page as it stays, not
+// part way through its entrance.
+async function settled(page: Page): Promise<void> {
+  await page.waitForTimeout(100);
+  await page.waitForFunction(() => document.getAnimations().every((one) => one.playState !== "running" || one.effect?.getComputedTiming().endTime === Infinity), null, { timeout: 5000 });
+}
+
 for (const look of LOOKS) {
   test(`${look}: Updates opens on Install now, and it and What's new fit and read clearly at each size, dark and light`, async () => {
     await fetch(`${url}/api/look`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look }) });
@@ -104,7 +111,7 @@ for (const look of LOOKS) {
           await page.waitForSelector('.focused[data-action="updates"]');
           await page.keyboard.press("Enter");
           await page.waitForSelector('.settings-panel[data-page="updates"]');
-          await page.waitForTimeout(300);
+          await settled(page);
           const focused = await page.evaluate(() => document.querySelector(".focused")?.getAttribute("data-action"));
           if (focused !== "install") problems.push(`${at}: Updates opened on ${focused}, not Install now`);
           for (const one of await rowsOff(page)) problems.push(`${at}, Updates: ${one}`);
@@ -113,7 +120,7 @@ for (const look of LOOKS) {
           await page.keyboard.press("ArrowDown");
           await page.keyboard.press("Enter");
           await page.waitForSelector('.settings-panel[data-page="whats-new"] .notes li');
-          await page.waitForTimeout(300);
+          await settled(page);
           const notes = await page.locator(".settings-panel .notes li").count();
           if (notes !== 2) problems.push(`${at}: What's new shows ${notes} notes, not the release's 2`);
           for (const one of await rowsOff(page)) problems.push(`${at}, What's new: ${one}`);

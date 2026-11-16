@@ -222,11 +222,14 @@ for (const look of LOOKS) {
         const el = document.querySelector<HTMLElement>('[data-action="bar-apps"]')!;
         (window as unknown as { origaitvLauncher: { focus: { set(el: HTMLElement, announce: boolean): void } } }).origaitvLauncher.focus.set(el, false);
       });
+      // In Glass, Apps is home's list, which comes up under the pinned row.
       await page.keyboard.press("Enter");
-      await page.waitForSelector(".page.apps, .apps-page");
+      await page.waitForSelector(".page.apps, .apps-page, .glass-home.list");
       // Back from Apps is home, its parent.
+      await page.waitForSelector(".page.apps, .apps-page, .glass-home.list:not(.moving)");
       await page.keyboard.press("Escape");
       await page.waitForSelector("body.on-home");
+      if (look === "glass") await page.waitForSelector(".glass-home.rest");
       // The arrows reach it from the first tile.
       const reached = await page.evaluate(async () => {
         const launcher = (window as unknown as { origaitvLauncher: { focus: { get(): HTMLElement | undefined; move(d: string): boolean } } }).origaitvLauncher;

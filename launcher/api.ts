@@ -82,6 +82,8 @@ export interface HomeState {
   apps: App[];
   appsTile: string;
   layout: Placed[];
+  // Glass's pinned row (D12): up to six of the apps on home, in its order.
+  pinned: string[];
   settings: Settings;
   // Whether there's an adult PIN, and whether the TV is locked (ADR-009).
   pin: { set: boolean; locked: boolean };
@@ -169,7 +171,9 @@ export interface TileEntry {
 // Settings → AI: which provider has a key.
 export interface PlanUsageState {
   plan: boolean;
-  usage: { provider: string; windows: { window: "hours" | "week" | "month"; hours?: number; percent: number; resets?: string }[]; at: string } | null;
+  // With no windows and signIn, the plan's sign-in ran out ("expired") or
+  // was never done ("none").
+  usage: { provider: string; windows: { window: "hours" | "week" | "month"; hours?: number; percent: number; resets?: string }[]; signIn?: "expired" | "none"; at: string } | null;
 }
 
 export interface KeyState {
@@ -185,7 +189,7 @@ export interface KeyState {
     accepted: boolean;
     // The models it asks and builds on, and the list to pick from,
     // strongest first (ADR-103).
-    models?: { ask: string; build: string; list: { id: string; name: string }[] } | null;
+    models?: { ask: string; build: string; list: { id: string; name: string; costsExtra?: "plan" }[] } | null;
   };
 }
 
@@ -453,6 +457,7 @@ export const daemon = {
   available: () => call<Available>("GET", "/api/apps/add"),
   addApp: (id: string, grant?: string) => call<Available>("POST", "/api/apps/add", { id }, grant),
   saveLayout: (layout: Placed[], grant?: string) => call<{ layout: Placed[] }>("PUT", "/api/layout", gridName() ? { layout, grid: gridName() } : { layout }, grant),
+  savePinned: (pinned: string[], grant?: string) => call<{ pinned: string[] }>("PUT", "/api/pinned", { pinned }, grant),
   saveSettings: (change: Partial<Settings>, grant?: string) => call<{ settings: Settings }>("POST", "/api/settings", change, grant),
   // A look's preview fills New this week with stand-ins while it has no
   // posters of its own (looks/showcase.ts).
@@ -568,7 +573,7 @@ export interface BuildView {
   // The model it runs on, and while "Make X?" waits, the ones it could run
   // on instead, strongest first (ADR-103).
   model?: string;
-  models?: { id: string; name: string }[];
+  models?: { id: string; name: string; costsExtra?: "plan" }[];
   state: "starting" | "running" | "confirm" | "plan" | "approve" | "installed" | "kept" | "sign-in" | "plan-sign-in" | "failed";
   phase: "understand" | "plan" | "build" | "stage-b";
   step?: string;
