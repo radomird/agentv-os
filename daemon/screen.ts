@@ -2051,7 +2051,7 @@ export class Screen {
     try {
       seen = await onTv();
       // With no monitor nothing shows, and home comes in front of the game
-      // as soon as there's one (frontAgain).
+      // as soon as there's one (outputAdded).
       if (games.some((a) => seen.includes(a)) && !(await this.onScreen())) {
         this.log("the TV is locked and the game is on it, with no output; home goes in front of it once there's one");
         seen = [];
