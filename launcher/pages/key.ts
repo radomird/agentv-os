@@ -379,16 +379,21 @@ async function signInCall(method: string, path: string, body?: unknown, grant?: 
 }
 
 // Settings, AI's sign-in to the household's plan (ADR-070): the same
-// sign-in a first build runs, started from here. Its link shows as a QR
-// code, and the code its page gives is typed on the phone's keyboard into
-// the field. Once it's in, back to Settings.
+// sign-in a first build runs, started from here. Laid out as pairing a
+// phone is, in each look (ADR-103): its link as a QR code on the left, and
+// on the right the steps, scan it, sign in, and paste the code it gives,
+// typed on the phone's keyboard into the field, or enter the one shown.
+// Once it's in, back to Settings.
 export function planSignInPage(ctx: Ctx): View {
   const line = h("p", { class: "panel-note", "data-line": "sign-in" }, "Getting the sign-in ready…");
   const qr = h("img", { alt: "The sign-in's code to scan" }) as HTMLImageElement;
-  const qrBox = h("div", { class: "pair-qr build-qr hidden" }, qr);
+  const qrBox = h("div", { class: "pair-qr sign-in-qr hidden" }, qr);
   const field = h("input", { class: "music-search", type: "text", "data-focus": true, "data-action": "sign-in-code", "aria-label": "The code the sign-in gave you", placeholder: "Paste the code", autocomplete: "off", spellcheck: "false" }) as HTMLInputElement;
   const send = h("button", { class: "button primary", "data-focus": true, "data-action": "send-code", onclick: () => void sendCode() }, "Send");
-  const paste = h("div", { class: "profile-form hidden" }, field, h("div", { class: "check-actions" }, send));
+  const paste = h("div", { class: "sign-in-paste hidden" }, field, send);
+  const lastSaid = h("span", {});
+  const lastStep = h("li", { "data-step": "code" }, lastSaid, paste);
+  const steps = h("ol", { class: "sign-in-steps hidden" }, h("li", { "data-step": "scan" }, "Scan the code"), h("li", { "data-step": "sign-in" }, "Sign in on the page it opens"), lastStep);
   const again = h("button", { class: "button", "data-focus": true, "data-action": "again", onclick: () => void start() }, "Start over");
   let grant: string | undefined;
   let shown = "";
@@ -410,6 +415,14 @@ export function planSignInPage(ctx: Ctx): View {
               ? "Couldn't sign in"
               : "Getting the sign-in ready…";
     const url = state === "waiting" ? now?.now?.url : undefined;
+    // With the steps beside the code to scan, the line says where and which
+    // plan, and the steps say what to do.
+    const plan = providerName(now?.provider ?? keyState?.ai?.provider);
+    if (url && !now?.signedIn) line.textContent = plan ? `On your phone, with your ${plan} plan` : "On your phone, with your plan";
+    steps.classList.toggle("hidden", !url || Boolean(now?.signedIn));
+    if (now?.now?.code) lastSaid.replaceChildren("Enter ", asWritten(now.now.code), " when it asks");
+    else lastSaid.textContent = "Paste the code it gives you";
+    lastStep.classList.toggle("hidden", !now?.now?.code && !now?.now?.pastes);
     qrBox.classList.toggle("hidden", !url);
     if (url && url !== shown) {
       shown = url;
@@ -422,7 +435,7 @@ export function planSignInPage(ctx: Ctx): View {
     // by itself and its paste goes straight in: no mouse needed (ADR-103).
     // Not from under the PIN's pad, which has the keys while it's up.
     const on = ctx.focus.get();
-    if (appears && field.isConnected && (!on || paste.parentElement?.contains(on))) ctx.focus.set(field);
+    if (appears && field.isConnected && (!on || on.closest(".plan-sign-in"))) ctx.focus.set(field);
   };
 
   const look = async () => {
@@ -490,7 +503,7 @@ export function planSignInPage(ctx: Ctx): View {
   const el = h(
     "div",
     { class: "screen" },
-    h("div", { class: "page profile plan-sign-in" }, ...heading("tv settings · ai", "Sign in to your plan"), line, paste, again, qrBox),
+    h("div", { class: "page pair plan-sign-in" }, qrBox, h("div", { class: "pair-text" }, ...heading("tv settings · ai", "Sign in to your plan"), line, steps, h("div", { class: "check-actions" }, again))),
     bar(ctx, "settings"),
   );
   return { el, first: again };
