@@ -139,6 +139,8 @@ test("T21.1 two fingers' scroll goes to the screen daemon's wheel, from the page
   relay.stop();
   await desk.close();
   assert.equal(wheelTurn(0, 0), null);
+  // The route's biggest scroll is a turn the device takes.
+  assert.deepEqual(wheelTurn(4000, -4000), { wheel: [6000, 6000] });
 });
 
 test("ADR-037 on Omarchy's desktop it says it's the desktop's relay, and the trackpad's moves and clicks go to the input device", async () => {
