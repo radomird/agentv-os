@@ -95,6 +95,9 @@ class FakeHyprland implements Hyprland {
   // and a window moved, focused or placed then kills it, as 0.56 did.
   output = true;
   killedBy = "";
+  // The output goes right after this dispatch is done, as a TV switching
+  // input in the middle of a window coming in front.
+  loseOutputAfter = "";
   private handler: (name: string, data: string) => void = () => {};
 
   async clients() {
@@ -148,6 +151,10 @@ class FakeHyprland implements Hyprland {
       this.dpms = m[1] === "enable";
     } else {
       throw new Error(`the fake doesn't know ${expression}`);
+    }
+    if (this.loseOutputAfter && expression.startsWith(this.loseOutputAfter)) {
+      this.loseOutputAfter = "";
+      this.output = false;
     }
   }
 
@@ -1068,6 +1075,23 @@ test("T22.4 with the TV's output gone nothing moves, and what's in front goes ba
   assert.equal(t.hypr.active, "0xb");
   assert.equal(t.hypr.get("0xb").fullscreen, 1, "maximized inside Fit to screen's margin");
   assert.ok(t.lines.some((line) => line.startsWith("HDMI-A-1 came after the TV's output was gone; web")), t.lines.join("\n"));
+});
+
+test("T22.4 an output that goes while a window comes in front stops it there, and the window comes in front when it's back", async () => {
+  const t = await tv();
+  await openApp(t, "origaitv.tube", "0xb");
+  // Home comes in front, and the output goes right after it's moved.
+  t.hypr.loseOutputAfter = 'hl.dsp.window.move({ window = "address:0xa"';
+  await t.screen.handle({ cmd: "home" });
+  await t.screen.idle();
+  assert.equal(t.hypr.killedBy, "", "nothing after the move goes to Hyprland");
+  assert.equal(t.screen.front()?.role, "home");
+  assert.ok(t.lines.some((line) => line.endsWith("goes in front once the TV's output is back") && line.startsWith("home ")), t.lines.join("\n"));
+  t.hypr.output = true;
+  t.hypr.emit("monitoraddedv2", "1,HDMI-A-1,TV");
+  await t.screen.idle();
+  assert.deepEqual(t.hypr.onTv(), ["0xa"]);
+  assert.equal(t.hypr.active, "0xa");
 });
 
 test("T22.1 with no margin, an app is full screen as before, and a sign-in that ends with a margin stays inside it", async () => {
