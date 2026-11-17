@@ -64,12 +64,22 @@ let live: (() => void) | null = null;
 // removal that fails then still says so.
 let armed: string | null = null;
 let disarm = 0;
-const removing = new Set<string>();
+// Each removal with the last look at the games asked for before the daemon
+// took it. A look asked for earlier can land later, and it still shows the
+// game as it was, so only a later one says how the removal went.
+const removing = new Map<string, number>();
+// Each look at the games is numbered as it's asked for, and one that lands
+// after a later one is dropped.
+let asked = 0;
+let shown = 0;
 
 export function loadGames(): Promise<void> {
+  const look = ++asked;
   return call<Games>("GET", "/api/games")
     .then(({ data }) => {
-      if (Array.isArray(data.apps)) games = data;
+      if (!Array.isArray(data.apps) || look < shown) return;
+      games = data;
+      shown = look;
     })
     .catch(() => {});
 }
@@ -148,11 +158,15 @@ export function gamesPanel(ctx: Ctx): HTMLElement[] {
       failed("That needs the PIN. Try again.");
     } else if (!answer.data.ok) failed(answer.data.error ?? words.fail);
     else {
+      if (path === "/api/games/remove") removing.set(app.id, asked);
       ctx.sounds.play("confirm");
       ctx.toast(words.done, "ok");
     }
     await loadGames();
-    draw();
+    // The page on screen now, which may not be this one, with what the
+    // daemon says once it has the removal.
+    if (live) live();
+    else draw();
   };
 
   const choose = (app: GameApp) => {
@@ -171,7 +185,6 @@ export function gamesPanel(ctx: Ctx): HTMLElement[] {
     if (app.installed) {
       armed = null;
       clearTimeout(disarm);
-      removing.add(app.id);
       return void act(app, "/api/games/remove", { done: `Removing ${app.name}. Your games and saves stay.`, fail: `Couldn't remove ${app.name}` });
     }
     return void act(app, "/api/apps/add", { done: `Adding ${app.name}…`, fail: `Couldn't add ${app.name}` });
@@ -222,7 +235,8 @@ export function gamesPanel(ctx: Ctx): HTMLElement[] {
       return;
     }
     // A removal that's over: gone, or still here and saying why.
-    for (const id of [...removing]) {
+    for (const [id, before] of [...removing]) {
+      if (shown <= before) continue;
       const app = games?.apps.find((one) => one.id === id);
       if (app?.state === "removing") continue;
       removing.delete(id);

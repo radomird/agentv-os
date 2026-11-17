@@ -194,10 +194,32 @@ test("T23.1 adding two games: the second waits its turn, both land on home's Gam
     await toast(page, "Removing RetroArch. Your games and saves stay.");
     await page.waitForFunction(() => document.querySelector('.panel [data-action="game-origaitv.retroarch"] .button-value')?.textContent === "Add", undefined, { timeout: 8000 });
     assert.equal(await value(page, "origaitv.xboxcloud"), "Remove");
-    // A removal that didn't work says so, and the game stays.
+    // A removal that didn't work says so, and the game stays. The page is
+    // opened again first, and the look at the games it asks for then is
+    // answered before the removal but only lands after the daemon took it,
+    // as on a busy TV. The page waits for a look asked after.
     APPS_MOVER.removeFails = true;
-    await page.keyboard.press("ArrowDown");
-    assert.equal(await focused(page), "game-origaitv.xboxcloud");
+    let taken!: () => void;
+    const handedOver = new Promise<void>((resolve) => (taken = resolve));
+    let held = false;
+    await page.route(
+      (address) => address.pathname === "/api/games",
+      async (route) => {
+        if (held || route.request().method() !== "GET") return route.continue();
+        held = true;
+        const answer = await route.fetch();
+        await handedOver;
+        await route.fulfill({ response: answer });
+      },
+    );
+    page.on("response", (response) => {
+      if (new URL(response.url()).pathname === "/api/games/remove") taken();
+    });
+    await go(page, "settings/games");
+    await page.waitForFunction(() => document.querySelector('.panel [data-action="game-origaitv.xboxcloud"] .button-value')?.textContent === "Remove");
+    if (!(await focused(page))?.startsWith("game-")) await page.keyboard.press("Enter");
+    await moveTo(page, "origaitv.xboxcloud");
+    assert.ok(held, "the page asked for the games as it opened");
     await page.keyboard.press("Enter");
     await page.keyboard.press("Enter");
     // Root's step, the daemon's next look and the page drawn again come
