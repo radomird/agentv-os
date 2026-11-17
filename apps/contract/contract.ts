@@ -34,6 +34,10 @@ export interface PlaybackState {
   position: number; // seconds, from <video>.currentTime
   duration: number; // seconds, from <video>.duration
   playing: boolean;
+  // For a phone's card of what's playing. All three are optional.
+  hasNext?: boolean; // false when the player has nothing after this one right now; left out, an app with next() is taken to have one
+  hasPrevious?: boolean; // the same for previous()
+  picture?: string; // artwork URL for what's playing, from the app's origins or TMDB
 }
 
 export type TileSize = "s" | "m" | "l"; // 1×1, 2×1, 2×2 (ADR-016)
@@ -138,6 +142,21 @@ export interface TvApp {
      */
     pause?(ctx: AppContext): Promise<void>;
     resume?(ctx: AppContext): Promise<void>;
+    /**
+     * Optional. The player's own way to the one before this, such as the
+     * previous episode or track, for a phone's card of what's playing.
+     * Resolves once the player has moved. Without it, the phone isn't
+     * offered previous in this app.
+     */
+    previous?(ctx: AppContext): Promise<void>;
+    /**
+     * Optional. A jump to a place in what's playing, in seconds from its
+     * start, on the same clock as readPlaybackState's position. Resolves
+     * once the player is there. Without it, the box moves the video on the
+     * page itself, by as far as the place is from the position the app
+     * reads.
+     */
+    seek?(ctx: AppContext, seconds: number): Promise<void>;
   };
 
   /** Children (ADR-009): list the service's profiles once, then open the mapped one for child viewers. */

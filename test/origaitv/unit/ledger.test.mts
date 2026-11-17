@@ -211,6 +211,27 @@ test("T8.2 the phone's play and pause calls the open app's own playback, and one
   watch.stop();
 });
 
+test("T27.2 a jump reaches the open app's own playback with its seconds, and the box can ask which calls the app has", async () => {
+  const called: unknown[][] = [];
+  const host = {
+    setPage() {},
+    async call(_viewer: Viewer, path: string, ...args: unknown[]) {
+      if (path !== "playback.readPlaybackState") called.push([path, ...args]);
+      return null;
+    },
+    has: async (path: string) => path === "playback.seek",
+    stop() {},
+  } as unknown as AppHost;
+  const watch = new PlaybackWatch({ host: async (id) => (id === "origaitv.tube" ? host : null), viewer: async () => ({ id: "radomir", role: "adult" }), record: async () => {}, first: 5, every: 1000 });
+  watch.opened("origaitv.tube");
+  await watch.call("origaitv.tube", "playback.seek", 754);
+  assert.deepEqual(called, [["playback.seek", 754]]);
+  assert.equal(await watch.has("origaitv.tube", "playback.seek"), true);
+  assert.equal(await watch.has("origaitv.tube", "playback.previous"), false);
+  assert.equal(await watch.has("origaitv.radio", "playback.seek"), false, "an app that isn't open has none");
+  watch.stop();
+});
+
 // --- The daemon's ledger requests ---------------------------------------------
 
 let daemon: Daemon;

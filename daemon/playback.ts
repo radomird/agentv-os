@@ -114,13 +114,22 @@ export class PlaybackWatch {
 
   // One of the app's own playback calls, such as playback.pause from the
   // phone's play and pause (ADR-065). It throws when the app isn't open
-  // here, has no playback, or has no such call.
-  async call(id: string, path: string): Promise<unknown> {
+  // here, has no playback, or has no such call. A jump to a place carries
+  // its seconds.
+  async call(id: string, path: string, ...args: unknown[]): Promise<unknown> {
     const watching = this.watching.get(id);
     const host = watching ? await watching.host : null;
     if (!watching || !host) throw new Error(`${id} has no playback here`);
     host.setPage(watching.page);
-    return host.call(await this.deps.viewer(), path);
+    return host.call(await this.deps.viewer(), path, ...args);
+  }
+
+  // Whether the app's module has one of the playback calls it may leave
+  // out, such as playback.previous, so a phone isn't offered what the app
+  // can't do. False for an app that isn't open here or has no playback.
+  async has(id: string, path: string): Promise<boolean> {
+    const host = await this.watching.get(id)?.host;
+    return host ? host.has(path).catch(() => false) : false;
   }
 
   // The app's hints for the phone's d-pad on its pages (ADR-103), once its

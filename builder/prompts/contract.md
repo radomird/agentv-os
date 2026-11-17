@@ -11,6 +11,7 @@ A streaming app is a TypeScript module the TV's daemon loads in a worker of its 
 - `playback.readPlaybackState(ctx)` reads the title, season and episode from the address and the page, and the position, duration and playing from the `<video>` element. Never from pixels. Null when nothing plays.
 - `playback.next(ctx)` uses the site's own next episode control.
 - `playback.pause(ctx)` and `playback.resume(ctx)`, if you write them, press the player's own pause and play, and resolve once the video says so. Without them, the box pauses the video on the page itself.
+- `playback.previous(ctx)` and `playback.seek(ctx, seconds)`, if you write them, use the player's own way to the one before this, and to a place in seconds from the start, on the same clock as the position you read. Each resolves once the player is there. Without `seek`, the box moves the video on the page itself. Without `previous`, a phone isn't offered it. The state you read may also say `hasNext: false` or `hasPrevious: false` when there's none right now, and give a `picture` address on the app's own origins.
 - `profiles.list(ctx)` and `profiles.select(ctx, name)`: the service's own profiles, so a child lands on the profile for children.
 
 `ctx.page` has what an app needs of a browser page: `url`, `title`, `goto`, `evaluate`, `waitForSelector`, `click`, `fill` and `press`. It answers only while the page is on the app's origins. Every read has a timeout and fails with a message, never a retry loop.
