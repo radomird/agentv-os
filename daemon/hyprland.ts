@@ -30,6 +30,9 @@ export interface Monitor {
   scale?: number;
   availableModes?: string[];
   disabled?: boolean;
+  // The area Hyprland keeps clear of maximized windows: left, top, right and
+  // bottom, the monitor rule's own and the zones layers keep for themselves.
+  reserved?: number[];
   // The special workspace shown on it, with an empty name when there's none.
   specialWorkspace?: { id: number; name: string };
 }

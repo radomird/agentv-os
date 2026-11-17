@@ -328,11 +328,13 @@ class FakeHyprland implements DisplayHyprland {
   evals: string[] = [];
   handler: (name: string, data: string) => void = () => {};
   take = true;
-  async monitors() {
-    return [structuredClone(this.monitor)];
-  }
   // The reserved area the last rule set, top, right, bottom and left.
   reserved = [0, 0, 0, 0];
+  // Listed as hyprctl lists it: left, top, right and bottom.
+  async monitors() {
+    const [top, right, bottom, left] = this.reserved;
+    return [{ ...structuredClone(this.monitor), reserved: [left, top, right, bottom] }];
+  }
   async eval(code: string) {
     this.evals.push(code);
     const m = /^hl\.monitor\(\{ output = "([^"]+)", mode = "(\d+)x(\d+)@[\d.]+", position = "auto", scale = ([\d.]+), reserved = \{ top = (\d+), right = (\d+), bottom = (\d+), left = (\d+) \} \}\)$/.exec(code);
@@ -431,6 +433,22 @@ test("T22.1 the screen daemon sets Fit to screen's margin alone without setting 
   const before = hypr.evals.length;
   await again.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: FIT });
   assert.equal(hypr.evals.length, before, "what the session started at isn't set again");
+});
+
+test("T22.4 a monitor that comes back without Fit to screen's margin gets it again, without setting the mode", async () => {
+  const hypr = new FakeHyprland();
+  hypr.monitor.scale = 2;
+  const file = join(base, "back", "display");
+  const watch = new DisplayWatch({ hyprland: hypr, url: "http://127.0.0.1:1/", file, log: () => {}, settleMs: 500 });
+  await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: FIT });
+  const before = hypr.evals.length;
+  // The TV back from standby, its monitor without the margin.
+  hypr.reserved = [0, 0, 0, 0];
+  const again = await watch.apply({ output: "HDMI-A-1", mode: "3840x2160@60", scale: 2, reserved: FIT });
+  assert.equal(again.ok, true);
+  assert.equal(hypr.evals.length, before + 1, "the margin is set again");
+  assert.deepEqual(hypr.reserved, [32, 58, 32, 58]);
+  assert.equal(hypr.monitor.scale, 2, "at the same mode and scale");
 });
 
 test("the screen daemon tells the daemon its TV at the start, and again when one's plugged in", async () => {
