@@ -167,7 +167,6 @@ while [[ -f $DROP ]]; do
   mapfile -t apps < <(jq -r '.apps[]? | strings' "$taken" 2>/dev/null || true)
   mapfile -t gone < <(jq -r '.remove[]? | strings' "$taken" 2>/dev/null || true)
   driver=$(jq -r 'if .driver == "xpadneo" then "xpadneo" else empty end' "$taken" 2>/dev/null || true)
-  rm -f "$taken"
 
   wanted=()
   for id in "${apps[@]}"; do
@@ -182,8 +181,12 @@ while [[ -f $DROP ]]; do
   for id in "${gone[@]}"; do
     [[ $id =~ $ID ]] || continue
     removing+=("$id")
+    set_state "$id" removing
   done
   [[ -z $driver ]] || driver_state queued
+  # Each one marked first: until then, the daemon counts the hand-over
+  # taken aside as still waiting.
+  rm -f "$taken"
 
   for id in "${removing[@]}"; do remove_app "$id"; done
   for id in "${wanted[@]}"; do install_app "$id"; done

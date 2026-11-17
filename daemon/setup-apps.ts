@@ -280,10 +280,12 @@ export class SetupApps {
     // A removal root hasn't started yet; once it has, its line says, and
     // once it's done, the line is gone, or says why it isn't. Root may be
     // done before the daemon looks, so once root has taken the hand-over,
-    // its line is what counts.
+    // its line is what counts. Root takes it aside before it marks the
+    // removals, so one it has aside, while it runs, is still waiting.
+    const waiting = existsSync(this.drop) || (existsSync(`${this.drop}.taken`) && this.rootMayBeRunning());
     for (const id of this.removing) {
       if (found[id]?.state === "removing") this.seenRemoving.add(id);
-      else if (this.seenRemoving.has(id) || !existsSync(this.drop)) {
+      else if (this.seenRemoving.has(id) || !waiting) {
         this.removing.delete(id);
         this.seenRemoving.delete(id);
       } else found[id] = { state: "removing" };

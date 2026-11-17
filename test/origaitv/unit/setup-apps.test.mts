@@ -5,7 +5,7 @@
 // daemon answers the setup screens with.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -428,6 +428,17 @@ test("a removal root finishes before the daemon looks isn't left saying removing
   const now = apps.status();
   assert.equal(now["origaitv.retroarch"], undefined);
   assert.deepEqual([now["origaitv.lutris"].state, now["origaitv.lutris"].error], ["installed", "Couldn't remove it"]);
+  apps.stop();
+});
+
+test("a removal root has taken aside, and not marked yet, still says removing while root runs", async () => {
+  const { drop, apps } = busyRoot(join(scratch, "remove-aside"));
+  assert.equal(await apps.remove("origaitv.retroarch", [MUSIC, { id: "origaitv.retroarch", name: "RetroArch", tier: "official" }]), null);
+  // Root has moved the hand-over aside and hasn't written its line yet.
+  renameSync(drop, `${drop}.taken`);
+  apps.status();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(apps.status()["origaitv.retroarch"]?.state, "removing");
   apps.stop();
 });
 
