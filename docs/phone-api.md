@@ -367,6 +367,18 @@ What `POST /api/phone/remote` takes, one per request:
 
 `apps` is a list of `{id, name, category, sizes}`. `layout` is a list of tiles, each `{id, x, y, size}` with `size` one of `"s"`, `"m"` or `"l"`. `daemon/home.ts` and `launcher/layout.ts` have the rules a layout has to keep.
 
+### Updates
+
+These act on the update in the state's `update` field. It's `null` when there's nothing to install.
+
+| Route | Body | Answer | Who |
+| --- | --- | --- | --- |
+| `POST /api/phone/updates/tonight` | `{version}`: the `version` from the state's `update`, to install it tonight, or `null` to turn that off | `{ok, update}`. `400` with why not. | Grant, unless `version` is `null` |
+| `POST /api/phone/updates/install` | None | `{ok}`. Starts the install now. `503`. | Grant |
+| `POST /api/phone/updates/later` | None | `{ok, update}`. `404` when there's no update. | Anyone |
+
+`update` in the answers is the same object as in the state, after the change. `later` also turns tonight's install off, and the state's `update.later` is `true` from then on.
+
 ### Sharing
 
 | Route | Body | Answer | Who |
@@ -490,7 +502,7 @@ A few things to know:
 
 `test/origaitv/fixtures/phone-channel/vectors.json` has one run of everything above with fixed values:
 
-- `pairings`: one by the QR code's secret and one by a typed code. Each has the TV's code and secret, both X25519 pairs, `k`, the request and the answer as they go on the wire, the shared X25519 value, and `paired`, which is the phone's key.
+- `pairings`: one by the QR code's secret and one by a typed code. Each has the TV's code and secret, both X25519 pairs, `k`, the request and the answer as they go on the wire, the shared X25519 value, and `phoneKey`. The TV's part is under `tv`, with the QR code's secret as `tv.secret`.
 - `session.hello`: the request, both nonces and the answer. `session.derived` has `sign`, `up` and `down`.
 - `session.requests`: six requests the TV takes, counters 1 to 6. A sealed `POST`, a `GET` with a query, the PIN, a request with a grant, an upload with an address the wire escapes, and a `403` that comes back sealed. Each has the nonce, the extra data, the digest, the signed text, the headers and the body, and the answer's nonce, extra data and sealed bytes.
 - `session.refused`: requests the TV refuses, with the plain `401` each gets. A replayed counter, a body changed on the way, JSON that isn't sealed, a counter of 0. One of them has a good signature over a body with a bad tag, which gets the sealed `400`.
