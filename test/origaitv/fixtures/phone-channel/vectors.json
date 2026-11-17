@@ -1,0 +1,557 @@
+{
+  "about": "Test vectors for the channel between a paired phone and the TV. docs/phone-api.md says what each value is. Made by make-vectors.mts, next to this file. None of these is a real key.",
+  "encoding": "Bytes are base64url with no padding. A field named text, signed, extra, digest, code or typed is plain text, and so is every header.",
+  "labels": {
+    "pair": "origaitv pair v1",
+    "pairBox": "origaitv pair box v1",
+    "key": "origaitv phone key v1",
+    "helloBox": "origaitv hello box v1",
+    "session": "origaitv session v1"
+  },
+  "alphabet": "ABCDEFGHJKMNPQRSTUVWXYZ23456789",
+  "host": "192.168.1.20:3001",
+  "pairings": [
+    {
+      "name": "by the QR code's secret",
+      "by": "secret",
+      "tv": {
+        "code": "JHFRFW",
+        "qr": "x4vF5LT-AMSvfzzb7UAGkw",
+        "qrAddress": "http://192.168.1.20:3001/#pair=x4vF5LT-AMSvfzzb7UAGkw",
+        "x25519Private": "WdBZayI6YK-1Uu1lCykDyHOkt1peJ1EJwm5WL3FXK5Y",
+        "x25519Public": "UJ8O8f8M6V1Mewf_aYL-TJcbdeNjIV6GNmcErzY8Kjs",
+        "phoneId": "p-6bc96675",
+        "now": "2026-01-01T00:00:00.000Z"
+      },
+      "phone": {
+        "name": "Ana's iPhone",
+        "x25519Private": "5TnYkeM9kUZ-5ur9DpEhy9x7Hc3UUDPdcssKmuvX9Vw",
+        "x25519Public": "q4GwOqZawEv_VaE7mXZXsXpw2W4BdAg1OVLYmfZi50g"
+      },
+      "k": "x4vF5LT-AMSvfzzb7UAGkw",
+      "request": {
+        "method": "POST",
+        "address": "/api/phone/pair",
+        "type": "application/json",
+        "text": "{\"key\":\"q4GwOqZawEv_VaE7mXZXsXpw2W4BdAg1OVLYmfZi50g\",\"name\":\"Ana's iPhone\",\"proof\":\"_FjRmgXDQKETHQ3DpXhKOuHYLkA1oeYTwk_VtWfdDwE\"}"
+      },
+      "answer": {
+        "status": 200,
+        "type": "application/json",
+        "text": "{\"ok\":true,\"id\":\"p-6bc96675\",\"key\":\"UJ8O8f8M6V1Mewf_aYL-TJcbdeNjIV6GNmcErzY8Kjs\",\"confirm\":\"UJ5hZrxVPkc2Er3RJWTq2dXKVDEO5TEtRFa8Nk3nfro\",\"phone\":{\"id\":\"p-6bc96675\",\"name\":\"Ana's iPhone\",\"pairedAt\":\"2026-01-01T00:00:00.000Z\"}}"
+      },
+      "x25519Shared": "hHdIGn3zN7Z_CU8p9cEcrLWsKwHw7fmTGfMosVYr5hQ",
+      "paired": "G1lLwGmfyOryGsdYXqCl1Y5fOo5_3fT4SYTwmsowwbk",
+      "kept": "{\"id\":\"p-6bc96675\",\"key\":\"G1lLwGmfyOryGsdYXqCl1Y5fOo5_3fT4SYTwmsowwbk\"}"
+    },
+    {
+      "name": "by the code typed from the TV",
+      "by": "code",
+      "tv": {
+        "code": "Y48FUJ",
+        "qr": "DajVBRkAv111MI1e8gBq7A",
+        "qrAddress": "http://192.168.1.20:3001/#pair=DajVBRkAv111MI1e8gBq7A",
+        "x25519Private": "pU7KGc5jIhAljByajS4yXDlMJWBxSwU7QijLOIn-Y18",
+        "x25519Public": "zxHSX0dEGA36unWpQ5Z6DjlYHXIlFqk_My4y0d6aBCg",
+        "phoneId": "p-4238e226",
+        "now": "2026-01-01T00:00:00.000Z"
+      },
+      "phone": {
+        "typed": "y48-fuj ",
+        "name": "Living room iPad",
+        "x25519Private": "FhunUEMh-zVEeXV8dzPbqDsFk2gn6TmTtQSATMBu668",
+        "x25519Public": "yfUyyF2FJETq_2rQD4j6WDAJfR1cEs1oHPcBL9zg1GQ"
+      },
+      "k": "WTQ4RlVK",
+      "request": {
+        "method": "POST",
+        "address": "/api/phone/pair",
+        "type": "application/json",
+        "text": "{\"key\":\"yfUyyF2FJETq_2rQD4j6WDAJfR1cEs1oHPcBL9zg1GQ\",\"name\":\"Living room iPad\",\"proof\":\"GD5XcIfibObZZG6nWGDadfkZxiD8L55HiHbGxrXzoQg\"}"
+      },
+      "answer": {
+        "status": 200,
+        "type": "application/json",
+        "text": "{\"ok\":true,\"id\":\"p-4238e226\",\"key\":\"zxHSX0dEGA36unWpQ5Z6DjlYHXIlFqk_My4y0d6aBCg\",\"confirm\":\"w2lBThabFIkAYzlR63YK9L4JF8tFK7dod6H8G5sTEnk\",\"phone\":{\"id\":\"p-4238e226\",\"name\":\"Living room iPad\",\"pairedAt\":\"2026-01-01T00:00:00.000Z\"}}"
+      },
+      "x25519Shared": "G8IPa8pcc8DM-OUJD5D8KK6lpLwPrIyXYioXS9gO_i4",
+      "paired": "iWhk0jwTB2EA5hqE-CcbHSE74jNCt7MPWW8rqtSKR0U",
+      "kept": "{\"id\":\"p-4238e226\",\"key\":\"iWhk0jwTB2EA5hqE-CcbHSE74jNCt7MPWW8rqtSKR0U\"}"
+    }
+  ],
+  "pairingRefused": {
+    "name": "a proof made with a code the TV isn't showing",
+    "request": {
+      "method": "POST",
+      "address": "/api/phone/pair",
+      "type": "application/json",
+      "text": "{\"key\":\"q4GwOqZawEv_VaE7mXZXsXpw2W4BdAg1OVLYmfZi50g\",\"name\":\"Ana's iPhone\",\"proof\":\"2RJjNHf10SlnnUd_QddVUJjto02rcrlUv5x01tzXffg\"}"
+    },
+    "answer": {
+      "status": 403,
+      "type": "application/json",
+      "text": "{\"ok\":false,\"error\":\"That isn't the code on your TV\"}"
+    }
+  },
+  "session": {
+    "hello": {
+      "request": {
+        "method": "POST",
+        "address": "/api/phone/hello",
+        "type": "application/json",
+        "text": "{\"id\":\"p-6bc96675\",\"nonce\":\"MORKdJsFYbo-QM7AaGCCkw\"}"
+      },
+      "phoneNonce": "MORKdJsFYbo-QM7AaGCCkw",
+      "tvNonce": "VGeg7i8Elv0xF9Levk1-IQ",
+      "session": "D63yVB8zYhOlSO0M7tISoQ",
+      "answer": {
+        "status": 200,
+        "type": "application/json",
+        "text": "{\"ok\":true,\"session\":\"D63yVB8zYhOlSO0M7tISoQ\",\"nonce\":\"VGeg7i8Elv0xF9Levk1-IQ\",\"proof\":\"f4HWysO3ioE3nbmPAVUsf9PEEiR5pf9cUNTrtIRkX_A\"}"
+      },
+      "unknown": {
+        "request": {
+          "method": "POST",
+          "address": "/api/phone/hello",
+          "type": "application/json",
+          "text": "{\"id\":\"p-00000000\",\"nonce\":\"MORKdJsFYbo-QM7AaGCCkw\"}"
+        },
+        "answer": {
+          "status": 401,
+          "type": "application/json",
+          "text": "{\"ok\":false,\"error\":\"This phone isn't paired. Pair it from your TV.\",\"pair\":true}"
+        }
+      }
+    },
+    "derived": {
+      "sign": "jX8muuM1OtEaw96Aak-ArzG77MW_7SC_tTqNSv4KT3w",
+      "up": "uNkurm4HICQp04ex2QffweaI-HFHaioZg6csQjAwKFg",
+      "down": "JHZsSA9DrNT-o9ghMmbpzgTWtXrpro2cvNa2mVGEvG4"
+    },
+    "requests": [
+      {
+        "name": "a key on the remote: JSON, sealed",
+        "method": "POST",
+        "address": "/api/phone/remote",
+        "counter": 1,
+        "grant": "",
+        "json": {
+          "text": "{\"key\":\"up\"}",
+          "nonce": "sRt9hIfU-dO8s5fG",
+          "extra": "POST\n/api/phone/remote\n1"
+        },
+        "digest": "1fe97fe9dca80a9d747c3e62099bfa81b9b2d8648487df5bdcad412422a407bc",
+        "signed": "POST\n/api/phone/remote\n1\n\n1fe97fe9dca80a9d747c3e62099bfa81b9b2d8648487df5bdcad412422a407bc",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "1",
+          "Content-Type": "application/origaitv-sealed",
+          "Content-Length": "40",
+          "X-OrigaiTV-Sig": "8aw8jP13bkRaRmyoCXgCnipRegKK1srjQS8RRy5jcEs"
+        },
+        "body": "sRt9hIfU-dO8s5fG3znMBYsaNwPaCcnALR8y3mmWKTFBI6Lg4axz6A",
+        "answer": {
+          "status": 200,
+          "type": "application/origaitv-sealed",
+          "text": "{\"ok\":true}",
+          "nonce": "KaDynE-cZ0q80yz7",
+          "extra": "POST\n/api/phone/remote\n1\n200",
+          "body": "KaDynE-cZ0q80yz7aMmokDwVBJ_tfwnSaaEfNvf9QhBQQKvFlvZo"
+        }
+      },
+      {
+        "name": "the long poll: a GET with a query and no body",
+        "method": "GET",
+        "address": "/api/phone/state?since=7",
+        "counter": 2,
+        "grant": "",
+        "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signed": "GET\n/api/phone/state?since=7\n2\n\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "2",
+          "X-OrigaiTV-Sig": "CndFz0RLLB7N9AYNkEu8VZtdIaz0GT199n-OQ_7K9oI"
+        },
+        "body": null,
+        "answer": {
+          "status": 200,
+          "type": "application/origaitv-sealed",
+          "text": "{\"ok\":true,\"version\":8}",
+          "nonce": "zR_K8buxPPkWC8yP",
+          "extra": "GET\n/api/phone/state?since=7\n2\n200",
+          "body": "zR_K8buxPPkWC8yP-9wkUCg5nicvBT9sPAlnrGIg8LhC_gaUlLt9OkEdOof06Ixs6Hft"
+        }
+      },
+      {
+        "name": "the PIN, for a grant",
+        "method": "POST",
+        "address": "/api/phone/pin",
+        "counter": 3,
+        "grant": "",
+        "json": {
+          "text": "{\"pin\":\"1234\"}",
+          "nonce": "yHGg6OnrjhoHoVr2",
+          "extra": "POST\n/api/phone/pin\n3"
+        },
+        "digest": "8c395e926b96dcd4d102e239b79b12bd50f56ef95f25854a47b66f4b37ee14d4",
+        "signed": "POST\n/api/phone/pin\n3\n\n8c395e926b96dcd4d102e239b79b12bd50f56ef95f25854a47b66f4b37ee14d4",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "3",
+          "Content-Type": "application/origaitv-sealed",
+          "Content-Length": "42",
+          "X-OrigaiTV-Sig": "tE_csWqmb_kLWZHwHc2NOptgoYBghrT89zLTw1A_UUI"
+        },
+        "body": "yHGg6OnrjhoHoVr2DMFgIXyJMbm-BEgyNV23S62J_xlxMZLLyVEO5buZ",
+        "answer": {
+          "status": 200,
+          "type": "application/origaitv-sealed",
+          "text": "{\"ok\":true,\"grant\":\"1XTgmMBJczW77Vtb1QvEHo6OwSUKIVwj\",\"until\":\"2026-01-01T00:05:00.000Z\"}",
+          "nonce": "7h5plsfDMHqUWHHO",
+          "extra": "POST\n/api/phone/pin\n3\n200",
+          "body": "7h5plsfDMHqUWHHO3FQgB5ZzviylsWTMRNjpn8wfNLhSW_jY4HC3a1DA59PKQKCYiugJ3yuROxjAboQNfTkXjHwh9GDcFLj59aKrqba7qGcJXkjgefoZ7RL0DlIPydQNL8Vy8j9QGLUDDJnhnhLiWIrh-gDk"
+        }
+      },
+      {
+        "name": "a guarded request, sent again with the grant",
+        "method": "POST",
+        "address": "/api/phone/updates/install",
+        "counter": 4,
+        "grant": "1XTgmMBJczW77Vtb1QvEHo6OwSUKIVwj",
+        "json": {
+          "text": "{}",
+          "nonce": "WD1U-0xP6HURkBT1",
+          "extra": "POST\n/api/phone/updates/install\n4"
+        },
+        "digest": "6c100464f941c24a1feb5995820e75e3dc98fc5bb1580ea9a9d7448d1f83a0e8",
+        "signed": "POST\n/api/phone/updates/install\n4\n1XTgmMBJczW77Vtb1QvEHo6OwSUKIVwj\n6c100464f941c24a1feb5995820e75e3dc98fc5bb1580ea9a9d7448d1f83a0e8",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "4",
+          "X-OrigaiTV-Grant": "1XTgmMBJczW77Vtb1QvEHo6OwSUKIVwj",
+          "Content-Type": "application/origaitv-sealed",
+          "Content-Length": "30",
+          "X-OrigaiTV-Sig": "P1r2qV8rt1xgOlPJTPrR9mUZcBAPMIPSIqXqkNlKVyo"
+        },
+        "body": "WD1U-0xP6HURkBT1VNI57K1ID7ZyPVUecmXGLTbA",
+        "answer": {
+          "status": 200,
+          "type": "application/origaitv-sealed",
+          "text": "{\"ok\":true}",
+          "nonce": "nCyV-3zC7mg8m5al",
+          "extra": "POST\n/api/phone/updates/install\n4\n200",
+          "body": "nCyV-3zC7mg8m5alBBWGDyzx-c2RHRKc7sBmddcmrOZIe_0NwULL"
+        }
+      },
+      {
+        "name": "an upload: not sealed, signed by its length, with an address the wire escapes",
+        "method": "POST",
+        "written": "/api/phone/share/photo?credit=ana's día",
+        "address": "/api/phone/share/photo?credit=ana%27s%20d%C3%ADa",
+        "counter": 5,
+        "grant": "",
+        "upload": {
+          "type": "image/jpeg",
+          "length": 32
+        },
+        "digest": "length:32",
+        "signed": "POST\n/api/phone/share/photo?credit=ana%27s%20d%C3%ADa\n5\n\nlength:32",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "5",
+          "Content-Type": "image/jpeg",
+          "Content-Length": "32",
+          "X-OrigaiTV-Sig": "Y8SpH5J6XQYwz_ln-KNB_dm0fPNTC735fujFm8PM1lg"
+        },
+        "body": "_9j_4Cb29_FiJnETV8UWEcmbmgVgTBRMg8wierHkbtM",
+        "answer": {
+          "status": 200,
+          "type": "application/origaitv-sealed",
+          "text": "{\"ok\":true,\"waits\":false}",
+          "nonce": "-B3Gp32DfRhTsLSq",
+          "extra": "POST\n/api/phone/share/photo?credit=ana%27s%20d%C3%ADa\n5\n200",
+          "body": "-B3Gp32DfRhTsLSqkRBj0z10RUI9AU2p6TPqnd1r5RDdlMYDl97w8wQ69O90QrkPSxIoPpc"
+        }
+      },
+      {
+        "name": "a guarded request with no grant: the refusal comes sealed, tied to its 403",
+        "method": "POST",
+        "address": "/api/phone/updates/install",
+        "counter": 6,
+        "grant": "",
+        "json": {
+          "text": "{}",
+          "nonce": "9b_vnKbaJHP-_1sb",
+          "extra": "POST\n/api/phone/updates/install\n6"
+        },
+        "digest": "97bcacad8f3bae1e39991c592ae6800b6e9b541835cf1527e2cc5ce3036346bd",
+        "signed": "POST\n/api/phone/updates/install\n6\n\n97bcacad8f3bae1e39991c592ae6800b6e9b541835cf1527e2cc5ce3036346bd",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "6",
+          "Content-Type": "application/origaitv-sealed",
+          "Content-Length": "30",
+          "X-OrigaiTV-Sig": "-HRK88XVn2z-zuxmxFuyGDRgHo2TZBWpi_al3o8gZwU"
+        },
+        "body": "9b_vnKbaJHP-_1sb24w29RqLP_DqWcGnrNZMwYyo",
+        "answer": {
+          "status": 403,
+          "type": "application/origaitv-sealed",
+          "text": "{\"ok\":false,\"error\":\"That needs the PIN\",\"pin\":true}",
+          "nonce": "m5LilLhqGGqwyidP",
+          "extra": "POST\n/api/phone/updates/install\n6\n403",
+          "body": "m5LilLhqGGqwyidPLB7X9qm24bhhjHoFGjV7IFvDf6g0yRAUjqjkSpb0Uz-zQSkD9JvaVISiSWcPIZc4l5s-ieRLZ-Lrg1eqS4JX4S5Moew"
+        }
+      }
+    ],
+    "refused": [
+      {
+        "name": "the first request, sent again: its counter is used",
+        "method": "POST",
+        "address": "/api/phone/remote",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "1",
+          "Content-Type": "application/origaitv-sealed",
+          "Content-Length": "40",
+          "X-OrigaiTV-Sig": "8aw8jP13bkRaRmyoCXgCnipRegKK1srjQS8RRy5jcEs"
+        },
+        "body": "sRt9hIfU-dO8s5fG3znMBYsaNwPaCcnALR8y3mmWKTFBI6Lg4axz6A",
+        "counts": false,
+        "answer": {
+          "status": 401,
+          "type": "application/json",
+          "text": "{\"ok\":false,\"error\":\"this phone has to say hello again\",\"session\":true}"
+        }
+      },
+      {
+        "name": "counter 7 with a byte changed on the way: the signature doesn't fit",
+        "method": "POST",
+        "address": "/api/phone/remote",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "7",
+          "Content-Type": "application/origaitv-sealed",
+          "Content-Length": "42",
+          "X-OrigaiTV-Sig": "J28ZTzOAdAM76pMbWmLUlsecfYWc0B7LVbYwKlI8Zh4"
+        },
+        "body": "fwXY5VWeB7Z9UG0EatxivjXd0WVMyAtVJnM_hzP9jD-k5xGiwnxHCgV8",
+        "counts": false,
+        "answer": {
+          "status": 401,
+          "type": "application/json",
+          "text": "{\"ok\":false,\"error\":\"this phone has to say hello again\",\"session\":true}"
+        }
+      },
+      {
+        "name": "counter 7 signed over a body whose tag is wrong: the TV can't open it",
+        "method": "POST",
+        "address": "/api/phone/remote",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "7",
+          "Content-Type": "application/origaitv-sealed",
+          "Content-Length": "42",
+          "X-OrigaiTV-Sig": "eHyof-tbS18ZvvUWSKqC7frTOotthIDK6KvxkMsXxyM"
+        },
+        "body": "fwXY5VWeB7Z9UG0EatxivjXd0WVMyAtVJnM_hzP9jD-k5xGiwnxHCgV8",
+        "counts": true,
+        "answer": {
+          "status": 400,
+          "type": "application/origaitv-sealed",
+          "text": "{\"ok\":false,\"error\":\"that request couldn't be opened\"}",
+          "nonce": "Bx-dglcEnSUEBXSO",
+          "extra": "POST\n/api/phone/remote\n7\n400",
+          "body": "Bx-dglcEnSUEBXSOxyQQ2YOI3bBb0ekx8oRg-VSG7swAt2utqQPUgYyrlbrwrMPnJdwORzcAJDyyCn22DXUS9XyQECfj1A4XTc3f3EJPHa4qaA"
+        }
+      },
+      {
+        "name": "JSON that isn't sealed",
+        "method": "POST",
+        "address": "/api/phone/remote",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "8",
+          "Content-Type": "application/json",
+          "Content-Length": "12",
+          "X-OrigaiTV-Sig": "EqUF2whqWn6IeREtRx3-Tcqx_qbBHvelJ7OKZOXDI7Q"
+        },
+        "body": "eyJrZXkiOiJ1cCJ9",
+        "counts": false,
+        "answer": {
+          "status": 401,
+          "type": "application/json",
+          "text": "{\"ok\":false,\"error\":\"this phone has to say hello again\",\"session\":true}"
+        }
+      },
+      {
+        "name": "a counter of 0",
+        "method": "GET",
+        "address": "/api/phone/state",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "0",
+          "X-OrigaiTV-Sig": "heprHjV-Mem_ZIc1ZvifUtibGxnJUgVVPpPfJV1En_I"
+        },
+        "body": null,
+        "counts": false,
+        "answer": {
+          "status": 401,
+          "type": "application/json",
+          "text": "{\"ok\":false,\"error\":\"this phone has to say hello again\",\"session\":true}"
+        }
+      },
+      {
+        "name": "a counter with a 0 in front",
+        "method": "GET",
+        "address": "/api/phone/state",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "074",
+          "X-OrigaiTV-Sig": "ni_q5rwQ_ngmGSwuVmt-na1erZivhCiMJZx2yz6AWxg"
+        },
+        "body": null,
+        "counts": false,
+        "answer": {
+          "status": 401,
+          "type": "application/json",
+          "text": "{\"ok\":false,\"error\":\"this phone has to say hello again\",\"session\":true}"
+        }
+      },
+      {
+        "name": "a session the TV doesn't know",
+        "method": "GET",
+        "address": "/api/phone/state",
+        "headers": {
+          "X-OrigaiTV-Session": "BzZmHvmHzGzrPGu3gRCAyA",
+          "X-OrigaiTV-Counter": "8",
+          "X-OrigaiTV-Sig": "N5UaNKjzU4jAsPe3Dgn0IxbmdApkaafxWp6HJfdBk-Y"
+        },
+        "body": null,
+        "counts": false,
+        "answer": {
+          "status": 401,
+          "type": "application/json",
+          "text": "{\"ok\":false,\"error\":\"this phone has to say hello again\",\"session\":true}"
+        }
+      },
+      {
+        "name": "no session named at all",
+        "method": "GET",
+        "address": "/api/phone/state",
+        "headers": {},
+        "body": null,
+        "counts": false,
+        "answer": {
+          "status": 401,
+          "type": "application/json",
+          "text": "{\"ok\":false,\"error\":\"This phone isn't paired. Pair it from your TV.\",\"pair\":true}"
+        }
+      }
+    ],
+    "window": {
+      "size": 128,
+      "newest": {
+        "name": "counter 200, far ahead of the last: taken, and now the newest",
+        "method": "GET",
+        "address": "/api/phone/state",
+        "counter": 200,
+        "grant": "",
+        "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signed": "GET\n/api/phone/state\n200\n\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "200",
+          "X-OrigaiTV-Sig": "lzGgxJWXxrUkIpPsjNl6Jx4APNqihyZgsvAyQ3DGB80"
+        },
+        "body": null,
+        "answer": {
+          "status": 200,
+          "type": "application/origaitv-sealed",
+          "text": "{\"ok\":true,\"version\":8}",
+          "nonce": "htuvse29Xl2GOl_b",
+          "extra": "GET\n/api/phone/state\n200\n200",
+          "body": "htuvse29Xl2GOl_bJgV0tNnBUqVvmSoAikID1LgfXomt3EqIbHx2GflW-NZQVaP0kQId"
+        }
+      },
+      "tooOld": {
+        "name": "counter 72: 128 behind the newest, so refused",
+        "method": "GET",
+        "address": "/api/phone/state",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "72",
+          "X-OrigaiTV-Sig": "XNft0lSzyj1QdsoR8jrZauVXaAIG5mGN7NTpMVhcI7E"
+        },
+        "body": null,
+        "counts": false,
+        "answer": {
+          "status": 401,
+          "type": "application/json",
+          "text": "{\"ok\":false,\"error\":\"this phone has to say hello again\",\"session\":true}"
+        }
+      },
+      "oldest": {
+        "name": "counter 73: 127 behind the newest, so still taken",
+        "method": "GET",
+        "address": "/api/phone/state",
+        "counter": 73,
+        "grant": "",
+        "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signed": "GET\n/api/phone/state\n73\n\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "headers": {
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "73",
+          "X-OrigaiTV-Sig": "pa4mEAS-e0jx0CMe5tERz4ONChmsMvExQ_h3Rb1XoRs"
+        },
+        "body": null,
+        "answer": {
+          "status": 200,
+          "type": "application/origaitv-sealed",
+          "text": "{\"ok\":true,\"version\":8}",
+          "nonce": "oFjP5bnWOha8ESnS",
+          "extra": "GET\n/api/phone/state\n73\n200",
+          "body": "oFjP5bnWOha8ESnScFuXEVD8Z8jx3hpiw4TMFbii5vU-LuJpginFjircXobhSjPHdesO"
+        }
+      }
+    },
+    "answersToRefuse": [
+      {
+        "name": "the right answer with a byte of its tag changed",
+        "status": 200,
+        "type": "application/origaitv-sealed",
+        "body": "KaDynE-cZ0q80yz7aMmokDwVBJ_tfwnSaaEfNvf9QhBQQKvFlvZp"
+      },
+      {
+        "name": "the right answer under another status",
+        "status": 403,
+        "type": "application/origaitv-sealed",
+        "body": "KaDynE-cZ0q80yz7aMmokDwVBJ_tfwnSaaEfNvf9QhBQQKvFlvZo"
+      },
+      {
+        "name": "the answer to the second request",
+        "status": 200,
+        "type": "application/origaitv-sealed",
+        "body": "zR_K8buxPPkWC8yP-9wkUCg5nicvBT9sPAlnrGIg8LhC_gaUlLt9OkEdOof06Ixs6Hft"
+      },
+      {
+        "name": "the phone's own sealed request, played back as the answer",
+        "status": 200,
+        "type": "application/origaitv-sealed",
+        "body": "sRt9hIfU-dO8s5fG3znMBYsaNwPaCcnALR8y3mmWKTFBI6Lg4axz6A"
+      },
+      {
+        "name": "the same JSON, not sealed",
+        "status": 200,
+        "type": "application/json",
+        "body": "eyJvayI6dHJ1ZX0"
+      },
+      {
+        "name": "a refusal that isn't sealed",
+        "status": 403,
+        "type": "application/json",
+        "body": "eyJvayI6ZmFsc2UsImVycm9yIjoiVGhhdCBuZWVkcyB0aGUgUElOIiwicGluIjp0cnVlfQ"
+      }
+    ]
+  }
+}
