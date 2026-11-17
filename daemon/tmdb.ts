@@ -487,6 +487,13 @@ export class News {
     };
   }
 
+  // The titles already kept for a profile, on one app, without asking TMDB
+  // for anything: where a picture for what's playing can come from.
+  async kept(role: Role, app: string): Promise<NewTitle[]> {
+    await this.load();
+    return [...this.feeds.entries()].filter(([key]) => key.startsWith(`${role}:`)).flatMap(([, feed]) => feed.titles.filter((title) => title.app === app));
+  }
+
   // --- New episodes ----------------------------------------------------------------
 
   // Whether there's a new episode of a show, for who's watching: TMDB's air

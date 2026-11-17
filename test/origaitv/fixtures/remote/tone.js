@@ -1,7 +1,8 @@
-// A second of a quiet tone as a WAV, for the stand-in players to play.
-function tone() {
+// A second of a quiet tone as a WAV, for the stand-in players to play, or
+// as many seconds as asked for, for one to jump around in.
+function tone(seconds = 1) {
   const rate = 8000;
-  const samples = rate;
+  const samples = rate * seconds;
   const data = new DataView(new ArrayBuffer(44 + samples * 2));
   const text = (at, s) => [...s].forEach((c, i) => data.setUint8(at + i, c.charCodeAt(0)));
   text(0, "RIFF");

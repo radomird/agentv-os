@@ -54,7 +54,8 @@ bothWays("looks", "T12.1 home reads its switch and marks it for CSS", async (on,
     const tv = await home(url);
     assert.equal(await tv.on("looks"), on);
     assert.equal((await tv.marked()).split(" ").includes("looks"), on);
-    // Every other switch stays at its default either way.
+    // Every other switch stays at its default either way: on, but for one
+    // that lands off.
     for (const name of FEATURE_NAMES.filter((name) => name !== "looks")) assert.equal(await tv.on(name), FEATURES[name], name);
     await tv.page.close();
   } finally {

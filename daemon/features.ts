@@ -30,7 +30,8 @@ export const FEATURES = {
   starter: true, // the streaming starter pack (track 9)
   discover: true, // servers on your network (track 10)
   askbuilds: true, // the Ask box builds (track 11)
-  announce: false, // the TV found and woken (track 25)
+  announce: false, // the TV found and woken (track 25): off until it's reviewed
+  playing2: false, // what's playing, in full (track 27): off until it's reviewed
 } as const satisfies Record<string, boolean>;
 
 export type Feature = keyof typeof FEATURES;

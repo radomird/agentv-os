@@ -63,6 +63,8 @@ const CALLS: Record<string, { capability: Capability; ms: number }> = {
   "playback.next": { capability: "playback", ms: 10_000 },
   "playback.pause": { capability: "playback", ms: 10_000 },
   "playback.resume": { capability: "playback", ms: 10_000 },
+  "playback.previous": { capability: "playback", ms: 10_000 },
+  "playback.seek": { capability: "playback", ms: 10_000 },
   "profiles.list": { capability: "profiles", ms: 10_000 },
   "profiles.select": { capability: "profiles", ms: 10_000 },
   nowPlaying: { capability: "nowPlaying", ms: 5_000 },
@@ -318,14 +320,14 @@ export class AppHost {
         if (message.type === "ready") {
           ready = true;
           clearTimeout(timer);
-          const optional = (message.optional ?? { has: [], broken: [] }) as { has: string[]; broken: string[] };
+          const optional = (message.optional ?? { has: [], broken: [] }) as { has: string[]; broken: string[]; also?: string[] };
           const hints = checkNavigation(message.navigation, this.manifest.name);
           const problem = this.checkModule(String(message.id), message.capabilities as string[], optional) ?? ("problem" in hints ? hints.problem : null);
           if (problem) {
             letGo(child);
             rejectStart(new AppError("refused", problem));
           } else {
-            this.optional = new Set(optional.has);
+            this.optional = new Set([...optional.has, ...(optional.also ?? [])]);
             this.hints = "hints" in hints ? hints.hints : [];
             resolveStart();
           }
@@ -392,7 +394,7 @@ export class AppHost {
   }
 
   // Whether the module has one of the contract's optional calls, such as
-  // playback.show. It starts the worker to know.
+  // playback.show or playback.seek. It starts the worker to know.
   async has(path: string): Promise<boolean> {
     await this.start();
     return this.optional.has(path);

@@ -2,11 +2,11 @@
 // the screens' on by default and the iPhone app's off until it's been
 // checked, a box's changes are kept in features.json in the daemon's state,
 // only an edge box turns one on that's off by default, and a stable box
-// shows its defaults even if a switch was turned on while it was on edge. Turning one off works anywhere. The tests of those rules start
-// from every switch off, as phase 2 did, through the defaults a test can
-// give. Through the daemon: GET /api/features is the map and nothing else,
-// PUT changes it and sends the event `features`, and a paired phone can read
-// it too.
+// shows its defaults even if a switch was turned on while it was on edge.
+// Turning one off works anywhere. The tests of those rules start from every
+// switch off, as phase 2 did, through the defaults a test can give. Through
+// the daemon: GET /api/features is the map and nothing else, PUT changes it
+// and sends the event `features`, and a paired phone can read it too.
 
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -31,11 +31,11 @@ function box(channel = "edge", defaults?: Record<string, boolean>): { features: 
   return { features: new Features({ state, channel: async () => current, defaults: defaults as never }), state, set: (c) => (current = c) };
 }
 
-// What the iPhone app needs from the TV (tracks 25 to 27): each lands off.
-const LANDS_OFF = ["announce"];
+// The switches that land off and stay off until they're reviewed.
+const LANDS_OFF = ["announce", "playing2"];
 
-test("T12.1 every track's switch is there, in the plan's names, the screens' on by default and the iPhone app's off, on edge and stable alike", async () => {
-  assert.deepEqual(FEATURE_NAMES, ["boxcheck", "sizes", "looks", "dynamicbg", "setup2", "remote2", "starter", "discover", "askbuilds", "announce"]);
+test("T12.1 every track's switch is there, in the plan's names, and on by default, on edge and stable alike, but for the ones that land off", async () => {
+  assert.deepEqual(FEATURE_NAMES, ["boxcheck", "sizes", "looks", "dynamicbg", "setup2", "remote2", "starter", "discover", "askbuilds", "announce", "playing2"]);
   assert.deepEqual(FEATURES, Object.fromEntries(FEATURE_NAMES.map((name) => [name, !LANDS_OFF.includes(name)])));
   assert.deepEqual(await box().features.read(), FEATURES);
   assert.deepEqual(await box("stable").features.read(), FEATURES);
