@@ -45,12 +45,16 @@ export interface RemoteOptions {
 // How far one notch of a mouse's wheel scrolls a page in Chromium on
 // Linux, in pixels.
 export const WHEEL_NOTCH_PX = 53;
+// The most the virtual device's wheel turns in one request, each way: 50
+// notches of 120 (daemon/input.py's WHEEL_MOST and NOTCH). A bigger scroll,
+// up to the route's 4000 pixels, turns it this far.
+export const WHEEL_MOST = 6000;
 
 // A page's scroll, dx right and dy down in pixels, as the virtual device's
 // wheel: right and up, in 120ths of a notch (daemon/input.py). Null when
 // it's less than the wheel's smallest turn.
 export function wheelTurn(dx: number, dy: number): { wheel: [number, number] } | null {
-  const turn = (px: number) => Math.round((px * 120) / WHEEL_NOTCH_PX) || 0;
+  const turn = (px: number) => Math.max(-WHEEL_MOST, Math.min(WHEEL_MOST, Math.round((px * 120) / WHEEL_NOTCH_PX))) || 0;
   const wheel: [number, number] = [turn(dx), -turn(dy) || 0];
   return wheel[0] || wheel[1] ? { wheel } : null;
 }

@@ -383,7 +383,8 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
         held = null;
         return;
       }
-      if (ARROWS.has(event.key)) {
+      // Only a real key's arrows: one the page makes up itself moves nothing.
+      if (ARROWS.has(event.key) && event.isTrusted) {
         // The remote's listener goes on the end, after every one the page
         // has, to see whether the page took the arrow (move, above).
         arrow = event;
@@ -722,7 +723,11 @@ export function remotePage(holdMs = 1000, o: { back?: boolean } = {}): string {
         const b = next.el.getBoundingClientRect();
         if (b.left >= box.left - 1 && b.right <= box.right + 1) return false;
       }
-      const button = row.querySelector(dx > 0 ? hint.next : hint.previous || "");
+      // A row may give only its next button: then the d-pad goes back
+      // along it the usual way.
+      const selector = dx > 0 ? hint.next : hint.previous;
+      if (!selector) return false;
+      const button = row.querySelector(selector);
       if (!button || button.matches(":disabled") || button.getAttribute("aria-disabled") === "true") return false;
       button.click();
       return row;

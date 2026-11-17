@@ -415,8 +415,10 @@ test("T21.1 the d-pad reaches the last row of a page with cards that can't take 
 
 test("T21.1 with its app's hint, the d-pad slides a row by the row's own buttons, and lands on what comes into sight", async () => {
   const slider = `(() => { const s = document.getElementById("row-2"); const b = s.getBoundingClientRect(); const c = document.activeElement.getBoundingClientRect(); return { left: s.scrollLeft, moved: s.querySelector(".track").style.transform, inside: c.left >= b.left - 1 && c.right <= b.right + 1 }; })()`;
-  // Without the hint, the slider is scrolled like any other row.
-  for (const hints of [undefined, desk.navigation]) {
+  // Without the hint, the slider is scrolled like any other row. With only
+  // its next button, left goes back the usual way.
+  const nextOnly = [{ url: "/rows\\.html$", rows: [{ row: ".slider", next: ".next" }] }];
+  for (const hints of [undefined, desk.navigation, nextOnly]) {
     const page = await app("rows.html", REMOTE_PAGE, hints);
     const pick = () => cdp.evaluateIn(page.target, PICK) as Promise<string>;
     for (let tries = 0; tries < 6 && !(await pick()).startsWith("2-"); tries++) await page.press("ArrowDown");
@@ -433,8 +435,25 @@ test("T21.1 with its app's hint, the d-pad slides a row by the row's own buttons
     assert.equal(after.inside, true, "the card is in sight inside the slider");
     if (hints) assert.deepEqual([after.left, after.moved !== ""], [0, true], "the slider moved by its own button, not by scrolling");
     else assert.deepEqual([after.left > 0, after.moved], [true, ""], "the slider was scrolled");
+    // Left goes back along it, past its left edge too, where the card to
+    // land on is out of sight.
+    for (const [was, now] of [["2-6", "2-5"], ["2-5", "2-4"]]) {
+      await page.press("ArrowLeft");
+      for (let wait = 0; wait < 15 && (await pick()) === was; wait++) await sleep(100);
+      assert.equal(await pick(), now, `left from ${was} goes back along it`);
+    }
     await cdp.close(page.target);
   }
+});
+
+test("T21.1 an arrow the page makes up itself moves nothing, and a real one does", async () => {
+  const page = await app("desktop.html");
+  await cdp.evaluateIn(page.target, `document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))`);
+  await sleep(300);
+  assert.equal((await page.state()).focused, "", "the page's own arrow isn't the remote's");
+  await page.press("ArrowDown");
+  await page.until((s) => s.focused === "tile-3", "a real press lands on the biggest thing in view");
+  await cdp.close(page.target);
 });
 
 test("T21.1 a card's link and a button over the same place: the d-pad lands on the link, and on the button when the link is hidden", async () => {
