@@ -348,9 +348,14 @@ class FakeLauncher implements Launcher {
   async signingIn(app: { id: string; name: string } | null) {
     this.signings.push(app?.id ?? null);
   }
-  contexts: { front: "home" | "app"; playing: boolean }[] = [];
-  async tvContext(change: { front: "home" | "app"; playing: boolean }) {
+  contexts: { front: "home" | "app"; playing: boolean; game?: string | null }[] = [];
+  async tvContext(change: { front: "home" | "app"; playing: boolean; game?: string | null }) {
     this.contexts.push(change);
+  }
+  // Game mode's switch (ADR-113), off as it lands.
+  gameModeOn = false;
+  async gameMode() {
+    return this.gameModeOn;
   }
   desktops = 0;
   desktopGrants: (string | undefined)[] = [];
@@ -1368,6 +1373,38 @@ test("ADR-037 the daemon hears what's in front and whether something plays when 
     { front: "app", playing: true },
     { front: "home", playing: false },
   ]);
+});
+
+test("T26.1 with game mode on, the daemon hears which game is in front, and with it off it hears nothing new", async () => {
+  const t = await tv();
+  t.launcher.targets.set("origaitv.games", { runtime: "native", exec: ["steam", "-gamepadui"], category: "games" });
+  // Off: what it said before game mode was here.
+  await t.screen.tellContext();
+  assert.deepEqual(t.launcher.contexts, [{ front: "home", playing: false }]);
+  // On: home in front is no game.
+  t.launcher.gameModeOn = true;
+  await t.screen.tellContext();
+  assert.deepEqual(t.launcher.contexts.at(-1), { front: "home", playing: false, game: null });
+  // A native game in front, by its app's id.
+  await t.screen.fromHome({ cmd: "open-app", app: "origaitv.games" });
+  t.hypr.open("0xf", t.launcher.last("game").pid, "gamescope");
+  await t.screen.idle();
+  await t.screen.tellContext();
+  assert.deepEqual(t.launcher.contexts.at(-1), { front: "app", playing: false, game: "origaitv.games" });
+  // An app that isn't a game.
+  await openApp(t, "origaitv.tube", "0xb");
+  await t.screen.tellContext();
+  assert.deepEqual(t.launcher.contexts.at(-1), { front: "app", playing: false, game: null });
+  // Home again, and no game.
+  await t.screen.handle({ cmd: "home" });
+  await t.screen.tellContext();
+  assert.deepEqual(t.launcher.contexts.at(-1), { front: "home", playing: false, game: null });
+  // A daemon that doesn't answer about the switch counts as off.
+  t.launcher.gameMode = async () => {
+    throw new Error("the daemon isn't there");
+  };
+  await t.screen.tellContext();
+  assert.deepEqual(t.launcher.contexts.at(-1), { front: "home", playing: false });
 });
 
 test("T8.1 an app's page says when its focus moves, and the daemon hears the field in front with the app, so the phone's keyboard comes up", async () => {

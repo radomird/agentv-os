@@ -1,6 +1,6 @@
 {
   "about": "Test vectors for the channel between a paired phone and the TV. docs/phone-api.md says what each value is. Made by make-vectors.mts, next to this file. None of these is a real key.",
-  "encoding": "Bytes are base64url with no padding. A field named text, signed, extra, digest, code or typed is plain text, and so is every header.",
+  "encoding": "Bytes are base64url with no padding. A field named text, signed, extra, digest, code or typed is plain text, and so is every header. A WebSocket's own key and accept headers are base64 as that protocol has them.",
   "labels": {
     "pair": "origaitv pair v1",
     "pairBox": "origaitv pair box v1",
@@ -552,6 +552,217 @@
         "type": "application/json",
         "body": "eyJvayI6ZmFsc2UsImVycm9yIjoiVGhhdCBuZWVkcyB0aGUgUElOIiwicGluIjp0cnVlfQ"
       }
-    ]
+    ],
+    "pad": {
+      "buttons": [
+        "a",
+        "b",
+        "x",
+        "y",
+        "l1",
+        "r1",
+        "l2",
+        "r2",
+        "view",
+        "menu",
+        "home"
+      ],
+      "open": {
+        "name": "the request that opens game mode: a signed GET that asks for a WebSocket",
+        "method": "GET",
+        "address": "/api/phone/pad",
+        "counter": 201,
+        "grant": "",
+        "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "signed": "GET\n/api/phone/pad\n201\n\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "headers": {
+          "Connection": "Upgrade",
+          "Upgrade": "websocket",
+          "Sec-WebSocket-Version": "13",
+          "Sec-WebSocket-Key": "YSDJ2pBQeea1CrF16pnEmg==",
+          "X-OrigaiTV-Session": "D63yVB8zYhOlSO0M7tISoQ",
+          "X-OrigaiTV-Counter": "201",
+          "X-OrigaiTV-Sig": "jLGLNiLJlQxrRmu1iOex5mDslsPloxBMlj2UbgxXr-I"
+        },
+        "body": null,
+        "answer": {
+          "status": 101,
+          "headers": {
+            "Upgrade": "websocket",
+            "Connection": "Upgrade",
+            "Sec-WebSocket-Accept": "S2LAM3fyBdBIW/CKS2920iMj60U="
+          }
+        }
+      },
+      "up": [
+        {
+          "name": "A goes down",
+          "state": {
+            "buttons": 1,
+            "x": 0,
+            "y": 0
+          },
+          "n": 1,
+          "plain": "AAEAAAAA",
+          "nonce": "i7AQF54dQnldOoUe",
+          "extra": "pad up\n/api/phone/pad\n201\n1",
+          "message": "AAAAAAAAAAGLsBAXnh1CeV06hR4BYJhqSs_pemn77IfwFCmSUNItP1at"
+        },
+        {
+          "name": "A still down, and the stick up and to the right",
+          "state": {
+            "buttons": 1,
+            "x": 23170,
+            "y": -23170
+          },
+          "n": 2,
+          "plain": "AAFagqV-",
+          "nonce": "NdIyGUTcgP2BWwTk",
+          "extra": "pad up\n/api/phone/pad\n201\n2",
+          "message": "AAAAAAAAAAI10jIZRNyA_YFbBOQyFHvMVH04aSxFm_IbU2uJS3z2Jhgu"
+        }
+      ],
+      "down": [
+        {
+          "name": "as it opens: this phone is controller 1, and nothing is taken yet",
+          "slot": 1,
+          "took": 0,
+          "n": 1,
+          "plain": "AQAAAAAAAAAA",
+          "nonce": "G6Hgrtrx86TS9NrW",
+          "extra": "pad down\n/api/phone/pad\n201\n1",
+          "message": "AAAAAAAAAAEboeCu2vHzpNL02tY0yUjjbMpHZ9AFVvltr5YQayfb0edrJO5W"
+        },
+        {
+          "name": "the controller took the phone's first message",
+          "slot": 1,
+          "took": 1,
+          "n": 2,
+          "plain": "AQAAAAAAAAAB",
+          "nonce": "_zPgCv8X9vS_Mhk9",
+          "extra": "pad down\n/api/phone/pad\n201\n2",
+          "message": "AAAAAAAAAAL_M-AK_xf29L8yGT0x_UmV_iiuLP3aM4ml9btRvoexnTGnek95"
+        },
+        {
+          "name": "and its second",
+          "slot": 1,
+          "took": 2,
+          "n": 3,
+          "plain": "AQAAAAAAAAAC",
+          "nonce": "n8pF9L5t_6gDjTv8",
+          "extra": "pad down\n/api/phone/pad\n201\n3",
+          "message": "AAAAAAAAAAOfykX0vm3_qAONO_x7K0V_YSHoLCgSp8raxUhaT-YrOhiVsB0D"
+        },
+        {
+          "name": "and, after the ones it dropped, its fourth",
+          "slot": 1,
+          "took": 4,
+          "n": 4,
+          "plain": "AQAAAAAAAAAE",
+          "nonce": "tQwVpAM1kbj8V8YN",
+          "extra": "pad down\n/api/phone/pad\n201\n4",
+          "message": "AAAAAAAAAAS1DBWkAzWRuPxXxg2IhSmtCMDYTdnbRB0joqwA4qoZjJp_mmfa"
+        }
+      ],
+      "dropped": [
+        {
+          "name": "the first message again",
+          "message": "AAAAAAAAAAGLsBAXnh1CeV06hR4BYJhqSs_pemn77IfwFCmSUNItP1at",
+          "counts": false
+        },
+        {
+          "name": "a new message with a number that's been taken",
+          "state": {
+            "buttons": 4,
+            "x": 0,
+            "y": 0
+          },
+          "n": 2,
+          "plain": "AAQAAAAA",
+          "nonce": "zPr0UMD9mLp9c-1V",
+          "extra": "pad up\n/api/phone/pad\n201\n2",
+          "message": "AAAAAAAAAALM-vRQwP2Yun1z7VW7vPQN584MCNPwG54kRtFOvGueeUbx",
+          "counts": false
+        },
+        {
+          "name": "a state with its number, not sealed",
+          "message": "AAAAAAAAAAMAAgAAAAA",
+          "counts": false
+        },
+        {
+          "name": "sealed with the key of another session of this phone",
+          "n": 3,
+          "plain": "AAIAAAAA",
+          "nonce": "3UWHJEWBuSoQuLBd",
+          "extra": "pad up\n/api/phone/pad\n201\n3",
+          "message": "AAAAAAAAAAPdRYckRYG5KhC4sF31pei68R82AhnhXlL_M2ofiQnJsVc2",
+          "counts": false
+        },
+        {
+          "name": "sealed for another connection of this session, one that counter 202 opened",
+          "n": 3,
+          "plain": "AAIAAAAA",
+          "nonce": "6DbR5Z814_tE5FAp",
+          "extra": "pad up\n/api/phone/pad\n202\n3",
+          "message": "AAAAAAAAAAPoNtHlnzXj-0TkUCl0jJG5uyMD80_WNpolG6G50pJC44-I",
+          "counts": false
+        },
+        {
+          "name": "sealed with the key for the TV's own messages",
+          "n": 3,
+          "plain": "AAIAAAAA",
+          "nonce": "z_TUzejOt6eOr_sH",
+          "extra": "pad up\n/api/phone/pad\n201\n3",
+          "message": "AAAAAAAAAAPP9NTN6M63p46v-wf5lNFjTUbCSE-TDWpCiI57yyn2vTfO",
+          "counts": false
+        },
+        {
+          "name": "a byte of its tag changed on the way",
+          "message": "AAAAAAAAAANVRTNtV7NzSipDLxodCVHXKlX86lQ34xvsoodgPS1iwR7F",
+          "counts": false
+        },
+        {
+          "name": "sealed right, and not a controller's state: a bit no button has",
+          "n": 3,
+          "plain": "CAAAAAAA",
+          "nonce": "NHo_reT5-x_X8hAP",
+          "extra": "pad up\n/api/phone/pad\n201\n3",
+          "message": "AAAAAAAAAAM0ej-t5Pn7H9fyEA_B68-qjxXYQh5tyxk-7I_CFTYdKGEk",
+          "counts": true
+        }
+      ],
+      "after": {
+        "name": "B, with the next number",
+        "state": {
+          "buttons": 2,
+          "x": 0,
+          "y": 0
+        },
+        "n": 4,
+        "plain": "AAIAAAAA",
+        "nonce": "UTZ0TipLJEl7mE-9",
+        "extra": "pad up\n/api/phone/pad\n201\n4",
+        "message": "AAAAAAAAAARRNnROKkskSXuYT713Kk44-btqX50o036N1QnbsZsTvLfO"
+      },
+      "otherSession": {
+        "phoneNonce": "h2ScdemWaWPVrLX6rufGRA",
+        "tvNonce": "57vARXrE2_R5b68xKRd6rw",
+        "up": "ZtlCdTNS0k_w6szn_CBAxBa9UT0Zw0LV6dmpzXBsYLU"
+      },
+      "downToRefuse": [
+        {
+          "name": "the TV's first message again",
+          "message": "AAAAAAAAAAEboeCu2vHzpNL02tY0yUjjbMpHZ9AFVvltr5YQayfb0edrJO5W"
+        },
+        {
+          "name": "the phone's own message, played back as the TV's",
+          "message": "AAAAAAAAAAI10jIZRNyA_YFbBOQyFHvMVH04aSxFm_IbU2uJS3z2Jhgu"
+        },
+        {
+          "name": "the TV's second message with a byte of its tag changed",
+          "message": "AAAAAAAAAAL_M-AK_xf29L8yGT0x_UmV_iiuLP3aM4ml9btRvoexnTGnek94"
+        }
+      ]
+    }
   }
 }

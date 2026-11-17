@@ -1,5 +1,6 @@
-// The feature switches (daemon/features.ts): every track's switch is there
-// and on by default, a box's changes are kept in features.json in the
+// The feature switches (daemon/features.ts): every track's switch is there,
+// phase 2's on by default and the ones for the phone app's needs off until
+// they're reviewed, a box's changes are kept in features.json in the
 // daemon's state, only an edge box turns one on that's off by default, and a
 // stable box shows its defaults even if a switch was turned on while it was
 // on edge. Turning one off works anywhere. The tests of those rules start
@@ -31,9 +32,12 @@ function box(channel = "edge", defaults?: Record<string, boolean>): { features: 
   return { features: new Features({ state, channel: async () => current, defaults: defaults as never }), state, set: (c) => (current = c) };
 }
 
+// What the phone app needs from the TV lands off, a switch for each track.
+const LANDS_OFF = ["phonepad"];
+
 test("T12.1 every track's switch is there, in the plan's names, and on by default, on edge and stable alike", async () => {
-  assert.deepEqual(FEATURE_NAMES, ["boxcheck", "sizes", "looks", "dynamicbg", "setup2", "remote2", "starter", "discover", "askbuilds"]);
-  assert.deepEqual(FEATURES, Object.fromEntries(FEATURE_NAMES.map((name) => [name, true])));
+  assert.deepEqual(FEATURE_NAMES, ["boxcheck", "sizes", "looks", "dynamicbg", "setup2", "remote2", "starter", "discover", "askbuilds", "phonepad"]);
+  assert.deepEqual(FEATURES, Object.fromEntries(FEATURE_NAMES.map((name) => [name, !LANDS_OFF.includes(name)])));
   assert.deepEqual(await box().features.read(), FEATURES);
   assert.deepEqual(await box("stable").features.read(), FEATURES);
   assert.equal(isFeature("looks"), true);

@@ -1,8 +1,9 @@
 // The feature switches on the TV's pages, in a real Chromium (layer 4).
 // Every phase 2 track hides what people can see behind one of these
 // (PHASE-2-PLAN.md, "Feature switches"), and layer 4 runs each switched
-// screen both ways with bothWays from box.mts. Every switch is on by
-// default. Here, home reads its switch each way, marks it on <html> for
+// screen both ways with bothWays from box.mts. Every phase 2 switch is on
+// by default, and what the phone app needs from the TV is off until it's
+// reviewed. Here, home reads its switch each way, marks it on <html> for
 // CSS, and follows `origaitv feature off` and `on` without a reload, on edge
 // and on stable alike.
 
@@ -10,7 +11,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { after, before, test } from "node:test";
 import type { Browser, Page } from "playwright-core";
-import { FEATURE_NAMES } from "../../../daemon/features.ts";
+import { FEATURE_NAMES, FEATURES } from "../../../daemon/features.ts";
 import type { Daemon } from "../../../daemon/server.ts";
 import { bothWays, startBox } from "./box.mts";
 
@@ -54,8 +55,8 @@ bothWays("looks", "T12.1 home reads its switch and marks it for CSS", async (on,
     const tv = await home(url);
     assert.equal(await tv.on("looks"), on);
     assert.equal((await tv.marked()).split(" ").includes("looks"), on);
-    // Every other switch stays on, its default, either way.
-    for (const name of FEATURE_NAMES.filter((name) => name !== "looks")) assert.equal(await tv.on(name), true, name);
+    // Every other switch stays at its default either way.
+    for (const name of FEATURE_NAMES.filter((name) => name !== "looks")) assert.equal(await tv.on(name), FEATURES[name], name);
     await tv.page.close();
   } finally {
     await daemon.close();
@@ -90,15 +91,15 @@ test("T12.1 a switch turned off shows on the TV without a reload, and on again",
   }
 });
 
-test("T12.1 a stable box's page sees every switch on, and one turned off", async () => {
+test("T12.1 a stable box's page sees every switch at its default, and one turned off", async () => {
   // Turning on a switch that's off by default is for edge only, which the
-  // unit test checks: no switch is off by default now.
+  // unit tests check.
   const { daemon, url } = await startBox(0, undefined, {});
   let tv: Awaited<ReturnType<typeof home>> | undefined;
   try {
     tv = await home(url);
-    for (const name of FEATURE_NAMES) assert.equal(await tv.on(name), true, name);
-    assert.deepEqual((await tv.marked()).split(" ").sort(), [...FEATURE_NAMES].sort());
+    for (const name of FEATURE_NAMES) assert.equal(await tv.on(name), FEATURES[name], name);
+    assert.deepEqual((await tv.marked()).split(" ").sort(), FEATURE_NAMES.filter((name) => FEATURES[name]).sort());
     assert.equal((await put(url, { looks: false })).status, 200);
     await tv.page.waitForFunction(() => !(document.documentElement.dataset.features ?? "").split(" ").includes("looks"));
     assert.equal(await tv.on("looks"), false);
