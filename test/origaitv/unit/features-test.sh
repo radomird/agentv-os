@@ -3,7 +3,7 @@
 # Guards the feature switches (daemon/features.ts) with Node's own test
 # runner, then runs the daemon the way its unit does and checks origaitv
 # feature list, on and off: every track's switch is listed, phase 2's on by
-# default and phonepad off, off works on any channel and lasts through a
+# default and the newer ones off, off works on any channel and lasts through a
 # restart, on puts a switch back to its default, a switch that's off by
 # default turns on on edge only, and each says when the daemon isn't there.
 
@@ -48,9 +48,11 @@ channel() {
 channel stable
 start
 out=$("$ROOT/bin/origaitv" feature list) || fail "origaitv feature list works" "$out"
-expected=$(printf '%-12s on\n' boxcheck sizes looks dynamicbg setup2 remote2 starter discover askbuilds; printf '%-12s off\n' phonepad)
-[[ $out == "$expected" ]] || fail "T12.1 origaitv feature list shows every track's switch, phase 2's on and phonepad off" "$out"
-pass "T12.1 origaitv feature list shows every track's switch, phase 2's on by default and phonepad off"
+expected=$(printf '%-12s on\n' boxcheck sizes looks dynamicbg setup2 remote2 starter discover askbuilds)
+# The ones that land off, until they're reviewed.
+expected+=$'\n'$(printf '%-12s off\n' phonepad playing2)
+[[ $out == "$expected" ]] || fail "T12.1 origaitv feature list shows every track's switch, on" "$out"
+pass "T12.1 origaitv feature list shows every track's switch, each on by default but the ones that land off"
 
 # A switch that's off by default: stable says no, edge turns it on, and a
 # box back on stable shows it off again.
@@ -85,7 +87,7 @@ pass "a switch stays off after a restart and on either channel, and origaitv fea
 
 status=0
 out=$("$ROOT/bin/origaitv" feature on nope 2>&1) || status=$?
-(( status == 1 )) && [[ $out == "There's no switch called \"nope\". The switches are boxcheck, sizes, looks, dynamicbg, setup2, remote2, starter, discover, askbuilds, phonepad." ]] ||
+(( status == 1 )) && [[ $out == "There's no switch called \"nope\". The switches are boxcheck, sizes, looks, dynamicbg, setup2, remote2, starter, discover, askbuilds, phonepad, playing2." ]] ||
   fail "a name that isn't a switch is refused, with the names" "$out"
 for wrong in "" "Looks" "looks extra" '../x'; do
   status=0

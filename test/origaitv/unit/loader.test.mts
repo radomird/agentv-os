@@ -444,6 +444,31 @@ test("playback.show is optional, and when an app has it, it's a function under p
   await fails(host(app(shows, (m) => (m.tv.capabilities = ["launch", "signIn", "search", "tile"]))).start(), "refused", /has playback\.show, but doesn't say it can playback/);
 });
 
+test("T27.2 an app's own previous and its jump to a place are optional, reach its player with the seconds, and the box can tell which it has", async () => {
+  const plain = host(app(tileApp("return {};")));
+  for (const path of ["playback.next", "playback.pause", "playback.resume", "playback.previous", "playback.seek"]) assert.equal(await plain.has(path), false, path);
+  await fails(plain.call(viewer, "playback.seek", 754), "failed", /has no playback\.seek/);
+  const steers = tileApp("return {};").replace(
+    "playback: { async open() {}, async readPlaybackState() { return null; } },",
+    `playback: {
+    async open() {},
+    async readPlaybackState() { return { title: "Sintel", position, duration: 888, playing: true, hasPrevious: episode > 1 }; },
+    async next() { episode++; },
+    async previous() { episode--; position = 0; },
+    async seek(ctx, seconds) { position = seconds; },
+  },`,
+  );
+  const h = host(app(steers.replace("export default", "let position = 9;\nlet episode = 2;\nexport default")));
+  for (const path of ["playback.next", "playback.previous", "playback.seek"]) assert.equal(await h.has(path), true, path);
+  assert.equal(await h.has("playback.pause"), false);
+  await h.call(viewer, "playback.seek", 754);
+  assert.deepEqual(await h.call(viewer, "playback.readPlaybackState"), { title: "Sintel", position: 754, duration: 888, playing: true, hasPrevious: true });
+  await h.call(viewer, "playback.previous");
+  assert.deepEqual(await h.call(viewer, "playback.readPlaybackState"), { title: "Sintel", position: 0, duration: 888, playing: true, hasPrevious: false });
+  // One that's named and isn't a function stops the app loading, as show does.
+  await fails(host(app(tileApp("return {};").replace("async readPlaybackState() { return null; } },", "async readPlaybackState() { return null; }, seek: 30 },"))).start(), "refused", /playback\.seek isn't a function/);
+});
+
 test("T21.1 an app's hints for the d-pad come from its module as data, and a hint that isn't one stops it loading", async () => {
   assert.deepEqual(await host(app(tileApp("return {};"))).navigation(), [], "none when it gives none");
   const hints = [{ url: "/home$", items: ".card", skip: ".card a[hidden]", scroller: "main", rows: [{ row: ".row", next: ".next", previous: ".previous" }] }];

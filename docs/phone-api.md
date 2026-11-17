@@ -326,7 +326,8 @@ Unless a row says otherwise, a body is sealed JSON and an answer is sealed JSON 
 | --- | --- | --- | --- |
 | `POST /api/phone/remote` | One of: `{key}`, `{hold, ms}`, `{text}`, `{move:[dx,dy]}`, `{click}`, `{scroll}`, `{wheel:[x,y], at}`. See below. | `{ok}`. `400`, `503`. | Anyone |
 | `POST /api/phone/text` | `{value, caret}` on each change, or `{done:true}` for Enter | `{ok, by, why, value, kept}`, only the fields that apply. `503`. | Anyone |
-| `POST /api/phone/playback` | `{action}`: `"toggle"` or `"next"` | `{ok:true, by}` where `by` is `"app"`, `"page"` or `"key"`, or `{ok:false, why}` with status `200`. `503`. | Anyone |
+| `POST /api/phone/playback` | `{action}`: `"toggle"` or `"next"`. With the `playing2` switch on, also `"play"`, `"pause"`, `"previous"` and `"seek"`. See [What's playing](#whats-playing). | `{ok:true, by}` where `by` is `"app"`, `"page"` or `"key"`, or `{ok:false, why}` with status `200`. `503`. It can take up to 12 seconds, or 20 with `playing2` on. See [How long an answer can take](#how-long-an-answer-can-take). | Anyone |
+| `GET /api/phone/playing/picture` | None | A picture for what's playing, not sealed. `404` (sealed) when there's none, and always while the `playing2` switch is off. | Anyone |
 | `POST /api/phone/apps` | None | `{ok}`. Opens Apps on the TV. `503`. | Anyone |
 | `POST /api/phone/settings` | None | `{ok}`. Opens Settings on the TV. | Adult |
 | `POST /api/phone/viewer` | `{id}`: a profile's id | `{ok, viewer}`. `404`. | Anyone. Grant to switch from a child's profile to an adult's, or to a locked profile. |
@@ -479,7 +480,7 @@ A few things to know:
 | `signIn` | `{name}` while an app's sign-in screen is up on the TV, for `POST /api/phone/sign-in`. Otherwise `null`. |
 | `update` | An update that's ready or going in: `{version, installed, omarchy, notes, tonight, later, installing}`. `null` with nothing to install. |
 | `tv` | What's on the TV. See below. |
-| `nowPlaying` | `{title, app, left}` while something plays and the `remote2` switch is on. `left` is minutes, and may be missing. Otherwise `null`. |
+| `nowPlaying` | `{title, app, left}` while something plays and the `remote2` switch is on. `left` is minutes, and may be missing. Otherwise `null`. With the `playing2` switch on it says more, and it stays while the thing is paused. See [What's playing](#whats-playing). |
 | `setup` | While setup is on: `{step, part, n, of, muted}`. `n` and `of` may be missing. `null` once setup is done. |
 | `ai` | What the AI step asks of the phone, or `null`. See below. |
 | `discover` | The list of what's on the network that the TV is showing: `{kinds, machines}` or `{host}`. `null` with no list, or with the discover switch off. |
@@ -658,6 +659,120 @@ Two fields, there only while the switch is on:
 | `controllers` | `{phones, most}`: how many phones are controllers right now, and how many can be, which is 4. A real controller plugged into the TV isn't counted. |
 
 Both change the state's `version`, so the long poll hears a game coming in front and a controller coming or going.
+
+## What's playing
+
+This part is behind the `playing2` switch, which is off for now. `GET /api/phone/features` says whether it's on. While it's off, `nowPlaying` and `POST /api/phone/playback` are exactly as the tables above have them: the new actions get a `400` like any action the TV doesn't know, and the picture's address is a sealed `404` like any address that isn't there.
+
+It's made for a card that shows what's playing while the phone is locked: where the thing is, a bar to drag, and buttons that can't do the wrong thing when a press goes out twice.
+
+### `nowPlaying` with the switch on
+
+`nowPlaying` is what's in front on the TV that can be steered, playing or paused. It's `null` when there's nothing.
+
+```json
+{
+  "title": "Sintel",
+  "app": "Jellyfin",
+  "left": 11,
+  "position": 232.4,
+  "duration": 888,
+  "at": "2026-11-17T20:15:03.120Z",
+  "playing": true,
+  "next": false,
+  "previous": false,
+  "seek": true,
+  "picture": true
+}
+```
+
+| Field | What it is |
+| --- | --- |
+| `title` | What it's called: the app's own word for it, or the page's. |
+| `app` | The app's name. `"Shared"` for something a phone sent to the TV. |
+| `left` | Minutes left, counted when the answer was made. Missing for something live. The web remote's card shows it. |
+| `position` | Where it is, in seconds from the start, at the moment in `at`. |
+| `duration` | How long it runs, in seconds. `null` for something live. |
+| `at` | When `position` was read: an ISO time, on the TV's clock. |
+| `playing` | `true` while it plays, `false` while it's paused. |
+| `next` | Whether there's one after it to go to. |
+| `previous` | Whether there's one before it to go to. |
+| `seek` | Whether it can jump to a place. |
+| `picture` | Whether `GET /api/phone/playing/picture` has a picture for it. |
+
+Where the thing is right now is `position` while it's paused, and `position` plus the time since `at` while it plays. That sum uses the TV's clock and the phone's, so it's only as good as the two agree. If you'd rather not lean on that, use a playback answer: its `nowPlaying` was read just before the answer left the TV.
+
+A few things to know:
+
+- `next`, `previous` and `seek` say what this app can do with this thing right now. Don't offer one that's `false`. Asking anyway gets `"ok": false` and a sentence in `why`.
+- `tv.playing` is still `true` only while something plays. Something paused is `nowPlaying` with `"playing": false`.
+- The TV reads the place again when something starts, pauses or stops, after every playback request, and every 10 seconds while something is playing or paused in front.
+- The state's `version` doesn't go up just because time passed. It goes up when it's another thing, when it was paused or played, when it jumped by more than 2 seconds, when its length changed, when a picture was found, or when what it can do changed. So the long poll stays quiet through a film, and still tells you about a jump somebody made with the TV's own remote, within 10 seconds.
+- A native app, such as a game, has no `nowPlaying`. The TV can't see into it.
+- There's no volume, here or anywhere else in this API. The TV keeps its own.
+
+### The requests
+
+All of them are `POST /api/phone/playback` with a sealed body:
+
+| Body | What it does |
+| --- | --- |
+| `{"action":"play"}` | Plays. Does nothing when it's already playing. |
+| `{"action":"pause"}` | Pauses. Does nothing when it's already paused. |
+| `{"action":"next"}` | Goes to the one after, where there is one. |
+| `{"action":"previous"}` | Goes to the one before, where there is one. |
+| `{"action":"seek","position":754}` | Jumps to a place, in seconds from the start. `position` is a number from 0 to 86400. A place past the end stops at the end. |
+| `{"action":"toggle"}` | Plays or pauses, whichever it isn't doing. It's as it was, for the web remote, and its answer has no `nowPlaying`. |
+
+Use `play` and `pause` for anything that can send a press twice. A `toggle` sent twice undoes itself.
+
+The answer to every action but `toggle` has `nowPlaying`: the same object as in the state, read after the request was done, so it says where the thing then is.
+
+```json
+{ "ok": true, "by": "app", "nowPlaying": { "title": "Sintel", "position": 754, "playing": true } }
+```
+
+(The example leaves out the rest of `nowPlaying`'s fields.) When it didn't work the status is still `200`:
+
+```json
+{ "ok": false, "why": "This app can't go back", "nowPlaying": { "title": "Sintel", "position": 232.4, "playing": true } }
+```
+
+- `by` says who did it: `"app"` for the app's own player, `"page"` for the video on the page, `"key"` for a media key sent to a native app.
+- `why` is a sentence for the person, such as `Nothing is playing`, `This app can't skip`, `This app can't go back`, `This app can't jump to a time`, `Couldn't jump there`, `Couldn't pause` or `Couldn't play`.
+- `nowPlaying` is `null` when nothing is left to steer. Right after `next` or `previous` it can be `null`, or still the old title, while the new one loads. The state follows once it's there.
+- A native app has one key for play and pause, which can't say which way it went. So `play`, `pause` and `seek` answer `"ok": false` there, and `toggle`, `next` and `previous` send the key.
+- `400` is an action the TV doesn't know, or a `seek` with no `position` in range. `503` with `Your TV isn't ready yet` means the TV's screen session isn't running.
+
+### How long an answer can take
+
+Nearly every answer comes in well under a second. But the TV asks the app in front first, and an app that steers its own player may wait for that player:
+
+| Request | The longest it waits |
+| --- | --- |
+| `toggle`, and `next` with the `playing2` switch off | 12 seconds |
+| `play`, `pause`, `previous`, `seek`, and `next` with `playing2` on | 20 seconds |
+| `POST /api/phone/text` | 3 seconds |
+| `GET /api/phone/state` with the current `since` | 25 seconds |
+
+The TV gives an app's own call 10 seconds, then tries the video on the page, then reads where the thing is. If the wait runs out, the answer is `200` with `{"ok":false,"why":"Your TV isn't ready yet"}`, and `nowPlaying` as the TV last knew it where the action has one. Give each request a timeout a little longer than its row.
+
+### The picture
+
+```
+GET /api/phone/playing/picture
+```
+
+It answers `200` with the picture as it is, with its own content type (`image/jpeg`, `image/png`, `image/webp`, `image/gif` or `image/avif`), up to 5 MB, and it isn't sealed. With no picture it's a sealed `404` with `{"ok":false,"error":"There's no picture for what's playing"}`. Like everything under `/api/phone` past the hello, it needs a signed request, so only a paired phone gets it.
+
+The picture is one the TV already has for the title: the one the app itself gives for it, the one on the app's tile, the poster from New this week, or the album's cover when Music plays. Nothing new is looked up for it, so plenty of titles have none. `picture` in `nowPlaying` says whether there's one, and it can turn `true` a moment after the title shows up. Fetch it again when `title` or `app` changes.
+
+### What can do what
+
+- **An app with a video on its page** can play, pause and jump. `next` and `previous` are there only when the app has its own for them, and can say at any moment that there's none right now.
+- **Music** can play, pause, and go to the next and the previous track. It can't jump yet.
+- **Something a phone sent to the TV** can play, pause and jump.
+- **A native app** takes the media keys for `toggle`, `next` and `previous`, and nothing else.
 
 ## Test vectors
 

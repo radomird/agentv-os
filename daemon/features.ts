@@ -30,6 +30,7 @@ export const FEATURES = {
   discover: true, // servers on your network (track 10)
   askbuilds: true, // the Ask box builds (track 11)
   phonepad: false, // a controller the phone can be (track 26)
+  playing2: false, // what's playing, in full (track 27): off until it's reviewed
 } as const satisfies Record<string, boolean>;
 
 export type Feature = keyof typeof FEATURES;

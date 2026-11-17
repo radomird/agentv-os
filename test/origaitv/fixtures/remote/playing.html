@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tube</title>
+<script src="tone.js"></script>
+</head>
+<body style="margin: 0; background: #000">
+  <video id="backdrop" muted loop width="320" height="180" aria-hidden="true"></video>
+  <video id="video" width="1280" height="720"></video>
+<script>
+  // A video page with something long enough to jump around in: three
+  // minutes of a quiet tone. It says what it's called the way a site does
+  // for the browser's own media keys. Behind it a background loops with no
+  // sound, which isn't something to steer.
+  const video = document.getElementById("video");
+  const backdrop = document.getElementById("backdrop");
+  video.src = tone(180);
+  backdrop.src = tone();
+  navigator.mediaSession.metadata = new MediaMetadata({ title: "Sintel" });
+  window.ready = Promise.all([video.play(), backdrop.play()]).then(() => "playing");
+</script>
+</body>
+</html>

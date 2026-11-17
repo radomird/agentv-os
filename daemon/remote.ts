@@ -10,15 +10,18 @@
 
 import { createConnection } from "node:net";
 import { join } from "node:path";
+import type { PlaybackAsk } from "./remote-play.ts";
 import { type Bar, NativeTyping } from "./remote-text.ts";
 
 // What the daemon asks of the TV session for a phone, numbered for the
 // answer: the field in front holds value (daemon/remote-text.ts), Enter, or
-// play and pause in whatever plays.
+// play and pause in whatever plays. With what's playing in full, that's
+// also play, pause, previous, a jump to a place, and where the thing is
+// (daemon/remote-play.ts).
 export type RemoteAsk =
   | { n: number; kind: "text"; value: string; caret: number | null; bar: Bar | null }
   | { n: number; kind: "done" }
-  | { n: number; kind: "playback"; action: "toggle" | "next" };
+  | ({ n: number; kind: "playback" } & PlaybackAsk);
 
 export interface RemoteOptions {
   url: string; // the daemon's stream: http://127.0.0.1:3000/api/remote
@@ -204,7 +207,10 @@ export class RemoteInput {
       await this.send({ key: "enter" });
       return { ok: true, by: "key" };
     }
-    await this.send({ key: ask.action === "next" ? "next" : "playpause" });
-    return { ok: true, by: "key" };
+    // Nothing here can see what plays, or tell play from pause.
+    if (ask.action === "now") return { ok: true, now: null };
+    if (ask.action !== "toggle" && ask.action !== "next" && ask.action !== "previous") return { ok: false, why: "This app can't do that", ...(ask.now ? { now: null } : {}) };
+    await this.send({ key: ask.action === "toggle" ? "playpause" : ask.action });
+    return { ok: true, by: "key", ...(ask.now ? { now: null } : {}) };
   }
 }
