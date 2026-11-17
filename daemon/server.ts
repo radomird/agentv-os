@@ -54,6 +54,7 @@ import { PhoneChannel } from "./phone-channel.ts";
 import { Phones, type PairRequest, type Phone } from "./phones.ts";
 import { Features, type FeatureMap } from "./features.ts";
 import { Box, type BoxOptions } from "./box.ts";
+import { Announce } from "./announce.ts";
 import { boxRoute, phoneBoxRoute, type BoxRoutes } from "./routes/box.ts";
 import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
 import { aiModelRoutes } from "./routes/ai-models.ts";
@@ -201,6 +202,9 @@ export interface DaemonOptions {
   discover?: DiscoverOptions;
   // The box check (ADR-061): stand-ins for the machine it reads, for tests.
   box?: Omit<BoxOptions, "state">;
+  // The file root writes for Avahi when the TV announces itself, for tests:
+  // /etc/avahi/services/origaitv.service on the box.
+  announceFile?: string;
 }
 
 // The box's address on the home network: its first wired or Wi-Fi IPv4
@@ -313,6 +317,9 @@ export class Daemon {
   readonly features: Features;
   // What the box is (ADR-061).
   readonly box: Box;
+  // The box id, and what the TV announces on the home network, behind the
+  // announce switch (daemon/announce.ts).
+  readonly announce: Announce;
   // The TV's size (ADR-062): /api/display and the screen daemon's asks.
   readonly displayRoutes: DisplayRoutes;
   // Settings, controllers (ADR-084): Bluetooth game controllers.
@@ -543,6 +550,7 @@ export class Daemon {
     this.country = new CountryPlace({ state: options.state, ...options.country, log: this.log });
     this.features = new Features({ state: options.state, channel: () => this.channel() });
     this.box = new Box({ state: options.state, ...options.box });
+    this.announce = new Announce({ state: options.state, file: options.announceFile });
     this.controllerRoutes = new ControllerRoutes({ pads: () => this.box.pads(), json: (q, status, data) => this.json(q, status, data), body: (q) => this.body(q), broadcast: (event, data) => this.boxKit().broadcast(event, data), log: (line) => this.log(line), adult: async (q, s, what) => this.guarded(q, s, what) && (await this.adult(q, s, what)) });
     this.displayRoutes = new DisplayRoutes({
       state: options.state,
@@ -678,6 +686,8 @@ export class Daemon {
         new Promise((resolve) => {
           this.server.listen(this.options.port, this.options.host ?? "127.0.0.1", () => {
             this.port = (this.server.address() as { port: number }).port;
+            // Now that the phones' port is known: what the TV announces.
+            void this.features.on("announce").then((on) => this.announced(on), () => {});
             resolve(this.port);
           });
         }),
@@ -997,6 +1007,31 @@ export class Daemon {
     return true;
   }
 
+  // Hands root what the TV announces on the home network, as the daemon
+  // starts and when the announce switch changes. It never stops the daemon:
+  // a TV that can't be found by name still answers at its address.
+  private announced(on: boolean): void {
+    try {
+      const handed = this.announce.sync(on, this.lanPort);
+      if (handed) this.log(handed.on ? `announcing the tv on the home network, on port ${handed.port}` : "the tv isn't announced on the home network any more");
+    } catch (error) {
+      this.log(`error: couldn't hand over what the tv announces: ${(error as Error).message}`);
+    }
+  }
+
+  // The box id for a phone, while the announce switch is on: the id the TV
+  // also announces, so the phone finds its TV again at a new address. With
+  // the switch off, or if the id can't be read or made, there's none, and
+  // the answer it would have gone in is as it was.
+  private async boxId(): Promise<{ boxId?: string }> {
+    try {
+      return (await this.features.on("announce")) ? { boxId: this.announce.id() } : {};
+    } catch (error) {
+      this.log(`error: no box id: ${(error as Error).message}`);
+      return {};
+    }
+  }
+
   // Tells every page that's listening what changed, and the phones too.
   private broadcast(event: string, data: unknown): void {
     this.toPages(event, data);
@@ -1110,6 +1145,8 @@ export class Daemon {
       ok: true,
       version,
       phone,
+      // The box id, while the TV announces itself (track 25).
+      ...(await this.boxId()),
       // The feature switches the phone draws by.
       features: { remote2, askbuilds },
       // What the Ask box waits on, for an adult's ok on the phone (ADR-068).
@@ -1533,7 +1570,9 @@ export class Daemon {
       }
       this.log(`${paired.phone.name} is paired`);
       this.broadcast("phones", { paired: paired.phone.name });
-      this.json(response, 200, { ok: true, ...paired });
+      // With the announce switch on, the phone learns the box id here, to
+      // find its TV by afterwards. The state has it too, sealed.
+      this.json(response, 200, { ok: true, ...paired, ...(await this.boxId()) });
       return;
     }
 
@@ -2120,15 +2159,17 @@ export class Daemon {
       this.broadcast(event, data);
       if (event === "box") void this.displayRoutes.follow();
     };
-    return { box: this.box, json: (response, status, data) => this.json(response, status, data), body: (request) => this.body(request), broadcast, log: this.log };
+    return { box: this.box, json: (response, status, data) => this.json(response, status, data), body: (request) => this.body(request), broadcast, log: this.log, announce: () => this.features.on("announce") };
   }
 
   // What the switches' routes need of the daemon.
   private featureKit(): FeatureRoutes {
     // The TV's size follows the sizes switch at once (ADR-062).
+    // What the TV announces follows the announce switch too (track 25).
     const changed = (all: FeatureMap) => {
       this.broadcast("features", all);
       void this.displayRoutes.switched(all.sizes);
+      this.announced(all.announce);
     };
     return { features: this.features, body: (request) => this.body(request), json: (response, status, data) => this.json(response, status, data), changed, log: this.log };
   }

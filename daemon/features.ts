@@ -3,9 +3,12 @@
 // design was signed off. Each switch's default lives here, and a box's own
 // changes live in features.json in the daemon's state.
 //
-// - Every switch is on now, so a box shows the new screens as 1.0 will.
-//   Turning one off brings back the screen it replaced. The switches and
-//   those older screens come out after the couch test, before 1.0.
+// - Every switch for a screen is on now, so a box shows the new screens as
+//   1.0 will. Turning one off brings back the screen it replaced. The
+//   switches and those older screens come out after the couch test, before
+//   1.0.
+// - What the iPhone app needs from the TV lands off, and goes on once it's
+//   been checked and reviewed.
 // - Turning one on is for edge boxes only. On stable, a switch is on only
 //   when its default is, so a box that goes back to stable shows stable.
 // - Turning one off works everywhere.
@@ -15,8 +18,8 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-// Every switch, and its default: all on. The track that built each one is
-// in PHASE-2-PLAN.md's tracks table.
+// Every switch, and its default. The track that built each one is in
+// PHASE-2-PLAN.md's tracks table.
 export const FEATURES = {
   boxcheck: true, // the box check (track 3)
   sizes: true, // sizes on any TV (track 4)
@@ -27,6 +30,7 @@ export const FEATURES = {
   starter: true, // the streaming starter pack (track 9)
   discover: true, // servers on your network (track 10)
   askbuilds: true, // the Ask box builds (track 11)
+  announce: false, // the TV found and woken (track 25)
 } as const satisfies Record<string, boolean>;
 
 export type Feature = keyof typeof FEATURES;

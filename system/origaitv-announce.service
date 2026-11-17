@@ -1,0 +1,36 @@
+# Writes the file Avahi announces the TV from, or takes it away
+# (bin/origaitv-announce-set). origaitv-announce.path starts it when the
+# daemon hands over what to say.
+#
+# It's root so it can write Avahi's folder, and it reads a file left by the
+# daemon, which faces the network. So it gets those two folders to write and
+# nothing else: no network, no devices, no home folders, and of root's
+# powers only the one that lets it into the daemon's private folder.
+
+[Unit]
+Description=OrigaiTV announcement
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/origaitv-announce-set
+ProtectSystem=strict
+ReadWritePaths=-/var/lib/origaitv/daemon/announce-drop -/etc/avahi/services
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_DAC_OVERRIDE
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+SystemCallArchitectures=native

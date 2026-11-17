@@ -1,0 +1,106 @@
+#!/bin/bash
+
+# origaitv:summary=Say on the home network that the TV is here, or stop saying it
+# origaitv:hidden=true
+# origaitv:requires-sudo=true
+
+# The TV says it's there, so a paired phone finds it again when the router
+# gives it a new address. Avahi does the saying, from a service file only
+# root writes. The daemon faces the network and isn't root, so it leaves what
+# to say in a drop in its private state, and origaitv-announce.path starts
+# this as root.
+#
+# The drop says whether to, the box id and the port phones use. This takes
+# an id of 32 hex digits and a port number and nothing else, adds the
+# version from the package's own settings, and writes Avahi's file. Avahi
+# watches its folder and picks the file up by itself. The name in the record
+# is the box's own name, which Avahi fills in.
+#
+# Told to stop, or handed anything it doesn't take, it removes the file: a
+# TV that says nothing is the safe way to be wrong. The drop goes either way.
+#
+# What it writes is all anyone on the network learns: the name, the version
+# and the id. The id is random, and the hardware address is never in it.
+
+set -euo pipefail
+umask 022
+
+DROP=${ORIGAITV_ANNOUNCE_DROP:-/var/lib/origaitv/daemon/announce-drop/announce.json}
+FILE=${ORIGAITV_ANNOUNCE_FILE:-/etc/avahi/services/origaitv.service}
+ORIGAITV_PATH=${ORIGAITV_PATH:-/usr/share/origaitv}
+
+[[ -e $DROP || -L $DROP ]] || exit 0
+
+# The drop is moved aside before it's read, so one the daemon leaves while
+# this runs isn't lost: it's still there afterwards, and starts this again.
+# It has to be a plain file, and only its first kilobyte is read: the folder
+# is the daemon's, so nothing in it is taken on trust.
+taken="$DROP.taken"
+rm -rf -- "$taken"
+mv -f -- "$DROP" "$taken" 2>/dev/null || rm -rf -- "$DROP"
+said=""
+if [[ -f $taken && ! -L $taken ]]; then
+  said=$(head -c 1024 -- "$taken" 2>/dev/null || true)
+fi
+rm -rf -- "$taken"
+
+# One of the drop's values, when it's there and of the right kind.
+field() {
+  jq -r "if type == \"object\" and (.$1 | type) == \"$2\" then .$1 else empty end" <<<"$said" 2>/dev/null || true
+}
+on=$(field on boolean)
+id=$(field id string)
+port=$(field port number)
+
+quiet() {
+  if [[ -e $FILE || -L $FILE ]]; then
+    rm -f -- "$FILE"
+    echo "origaitv-announce-set: the TV isn't announced on the home network any more"
+  fi
+}
+
+if [[ $on == "false" ]]; then
+  quiet
+  exit 0
+fi
+if [[ $on != "true" || ! $id =~ ^[0-9a-f]{32}$ || ! $port =~ ^[1-9][0-9]{0,4}$ ]] || (( port > 65535 )); then
+  quiet
+  echo "origaitv-announce-set: the drop isn't an id and a port, so the TV announces nothing" >&2
+  exit 1
+fi
+
+# The version comes from the package, not from the drop. A checkout has no
+# settings, and says dev.
+version=$(sed -n 's/^ORIGAITV_VERSION=//p' "$ORIGAITV_PATH/settings" 2>/dev/null | head -n 1 || true)
+[[ $version =~ ^[0-9A-Za-z][0-9A-Za-z.+_~-]{0,63}$ ]] || version=dev
+
+folder=$(dirname -- "$FILE")
+if [[ ! -d $folder ]]; then
+  echo "origaitv-announce-set: Avahi's folder $folder isn't there, so the TV announces nothing" >&2
+  exit 1
+fi
+
+# Every value below is from a short list of characters, checked above, so
+# none of them can end a tag. The phones' port answers on IPv4.
+next="$folder/.origaitv.service.next"
+cat >"$next" <<XML
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!-- Written by origaitv-announce-set, each time OrigaiTV's daemon starts. -->
+<service-group>
+  <name replace-wildcards="yes">%h</name>
+  <service protocol="ipv4">
+    <type>_origaitv._tcp</type>
+    <port>$port</port>
+    <txt-record>id=$id</txt-record>
+    <txt-record>version=$version</txt-record>
+  </service>
+</service-group>
+XML
+chmod 644 "$next"
+if [[ -f $FILE && ! -L $FILE ]] && cmp -s "$next" "$FILE"; then
+  rm -f -- "$next"
+  exit 0
+fi
+mv -f -- "$next" "$FILE"
+echo "origaitv-announce-set: the TV is announced on the home network, on port $port"

@@ -15,6 +15,8 @@
 // - the TV's modes, HDR and audio formats, from its EDID in sysfs;
 // - the network the box is on and its link speed, from sysfs or nmcli;
 // - Bluetooth adapters and gamepads, from sysfs and udev's database;
+// - the wired port's hardware address and its network's broadcast address,
+//   which a paired phone needs to wake the box (wake(), below);
 // - Widevine, which only the TV session can see in the services' Chromium,
 //   so the screen daemon tells the daemon (WidevineWatch, below).
 //
@@ -666,6 +668,46 @@ async function readNetwork(root: string, run: Exec, interfaces: () => ReturnType
   return { kind: "wifi", speed: speed?.trim() || null };
 }
 
+// What a phone needs to wake the box while it sleeps: the wired port's
+// hardware address, and the broadcast address of the network that port is
+// on, which is where a wake packet is sent. The box listens for the packet
+// on every wired port (system/networkmanager/90-origaitv-wol.conf), and on
+// no other, so with no wired port on a network there's nothing to say.
+//
+// The hardware address is the same for the life of the port, and it names
+// the machine. It goes to paired phones only (routes/box.ts), never into
+// what the box announces.
+export interface Wake {
+  mac: string; // "94:c6:91:1a:2b:3c"
+  broadcast: string; // "192.168.1.255"
+}
+
+const MAC = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/;
+
+// The last address of an IPv4 network, which reaches every machine on it.
+export function broadcastAddress(address: string, netmask: string): string | null {
+  const octets = (text: string) => {
+    const parts = text.split(".").map((part) => (/^\d{1,3}$/.test(part) ? Number(part) : -1));
+    return parts.length === 4 && parts.every((part) => part >= 0 && part <= 255) ? parts : null;
+  };
+  const [ip, mask] = [octets(address), octets(netmask)];
+  // A network of one or two addresses has no broadcast address.
+  if (!ip || !mask || mask[3] >= 254) return null;
+  return ip.map((part, i) => part | (~mask[i] & 255)).join(".");
+}
+
+export function wake(interfaces: ReturnType<typeof networkInterfaces>): Wake | null {
+  for (const [name, addresses] of Object.entries(interfaces).sort(([a], [b]) => a.localeCompare(b))) {
+    if (!/^(en|eth)/.test(name)) continue;
+    const found = addresses?.find((a) => a.family === "IPv4" && !a.internal && a.address !== HOTSPOT_ADDRESS);
+    const mac = found?.mac.toLowerCase() ?? "";
+    if (!found || !MAC.test(mac) || mac === "00:00:00:00:00:00") continue;
+    const broadcast = broadcastAddress(found.address, found.netmask);
+    if (broadcast) return { mac, broadcast };
+  }
+  return null;
+}
+
 // Gamepads: the input devices udev marked as joysticks, each with how it's
 // connected, which the kernel keeps as the device's bus (3 is USB, 5 is
 // Bluetooth).
@@ -832,6 +874,15 @@ export class Box {
   async report(): Promise<BoxReport> {
     const [readings, saved] = await Promise.all([this.readings(), this.saved()]);
     return report(readings, saved.smooth);
+  }
+
+  // What a paired phone needs to wake the box, or null when no wired port
+  // is on a network. Read each time, since a cable can go in or come out.
+  // A stand-in machine has no ports of its own, and the tests' own computer
+  // isn't it.
+  wake(): Wake | null {
+    if (this.options.machine && !this.options.interfaces) return null;
+    return wake((this.options.interfaces ?? networkInterfaces)());
   }
 
   // The 4K test: whether it should run (the TV is 4K and there's no result
