@@ -45,7 +45,7 @@ state="$SCRATCH/home/.local/state/origaitv"
 # --- origaitv-session ---------------------------------------------------------
 
 run "$ROOT/bin/origaitv-session" 2>/dev/null || true
-grep -q "^start-hyprland --path origaitv-hyprland -- --config $ROOT/session/hypr.lua tv=tv no-sd-target=1 desktop=OrigaiTV:Hyprland" "$calls" ||
+grep -q "^start-hyprland --path /usr/bin/origaitv-hyprland -- --config $ROOT/session/hypr.lua tv=tv no-sd-target=1 desktop=OrigaiTV:Hyprland" "$calls" ||
   fail "with no note it starts the TV session with OrigaiTV's Hyprland setup" "$(cat "$calls")"
 grep -qx "systemctl --user stop origaitv-tv.target" "$calls" || fail "the TV session's units stop with it" "$(cat "$calls")"
 pass "S1.1 with no note, the log-in starts the TV session, without graphical-session.target"

@@ -89,7 +89,7 @@ tv() {
   # origaitv-hyprland keeps it out of Hyprland's safe mode, which only a
   # mouse or a keyboard gets out of.
   if omarchy-cmd-present start-hyprland; then
-    start-hyprland --path origaitv-hyprland -- --config "$ORIGAITV_PATH/session/hypr.lua"
+    start-hyprland --path /usr/bin/origaitv-hyprland -- --config "$ORIGAITV_PATH/session/hypr.lua"
   else
     Hyprland --config "$ORIGAITV_PATH/session/hypr.lua"
   fi
