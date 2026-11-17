@@ -23,7 +23,7 @@ if [[ $status == "403" && -n ${ORIGAITV_PIN:-} ]]; then
   exit 1
 fi
 if [[ $status == "403" ]]; then
-  echo "This TV has an adult PIN set. Run it again with the PIN: ORIGAITV_PIN=<the PIN> origaitv setup reset" >&2
+  echo "This TV has a PIN set. Run it again with the PIN: ORIGAITV_PIN=<the PIN> origaitv setup reset" >&2
   exit 1
 fi
 if [[ $status != "200" ]]; then

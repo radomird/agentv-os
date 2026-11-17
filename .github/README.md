@@ -45,7 +45,7 @@ I built it because I wanted a TV I could just ask for things, and one I could ch
 - **Type on your phone, see it on the TV.** When the TV needs words, your phone's keyboard comes up by itself, and the TV shows each letter as you type it.
 - **Pick up where you stopped.** Home has what you were watching, one press away.
 - **Just ask.** "Play Sintel." "Continue my show." "What's new this week?" Type it or say it into your phone, and the answer shows on the TV.
-- **A profile for everyone.** An adult picks which apps each child sees. Set an adult PIN and it guards the grown-up things: adding apps, updates, your AI and the Linux desktop.
+- **A profile for everyone.** An adult picks which apps each child sees. Set a PIN and it guards the grown-up things: adding apps, updates, your AI and the Linux desktop.
 - **Setup from the couch.** It runs on your phone, from the first screen to home. On the way it looks at your box and tells you what it's good for, in a line or two.
 - **Settings from the couch too.** Wi-Fi, sound, game controllers and updates are all there, and your phone types the passwords.
 - **Hold OK on an app** to see who made it and what it connects to, or to quit it.

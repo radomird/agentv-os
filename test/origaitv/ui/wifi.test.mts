@@ -465,7 +465,7 @@ test("T16.1 with a PIN set, changing the Wi-Fi asks for it first, and a child's 
   assert.equal((await send("DELETE", "/api/pin", undefined, held)).status, 200);
 });
 
-test("the hotspot's page after setup: the same page as setup's, with the adult PIN asked where one is set, and nothing about a new code", async () => {
+test("the hotspot's page after setup: the same page as setup's, with the PIN asked where one is set, and nothing about a new code", async () => {
   const captive = `http://127.0.0.1:${daemon.setupPort}`;
   online = false;
   rootSays({ on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n", wifi: null, watch: true });
@@ -489,11 +489,11 @@ test("the hotspot's page after setup: the same page as setup's, with the adult P
   page = await hand();
   await page.locator('button.network[data-ssid="Home"]').tap();
   await page.waitForSelector('[data-field="pin"]');
-  assert.equal(await page.locator('[data-field="pin"]').getAttribute("placeholder"), "Adult PIN");
+  assert.equal(await page.locator('[data-field="pin"]').getAttribute("placeholder"), "PIN");
   const sent = asked.filter((request) => request.join).length;
   await page.locator('input[type="password"]:not([data-field="pin"])').fill(PASSWORD);
   await page.locator('[data-action="join"]').tap();
-  await page.waitForFunction(() => /The adult PIN has 4 digits/.test(document.getElementById("toast")?.textContent ?? ""));
+  await page.waitForFunction(() => /The PIN has 4 digits/.test(document.getElementById("toast")?.textContent ?? ""));
   await page.locator('[data-field="pin"]').fill("0000");
   await page.locator('[data-action="join"]').tap();
   await page.waitForFunction(() => /Wrong PIN/.test(document.getElementById("toast")?.textContent ?? ""));

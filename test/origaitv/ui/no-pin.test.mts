@@ -360,7 +360,7 @@ async function walk(b: Box, screen: Page, hand: Page, who: { child?: string; was
   }
   // The PIN's row says it's off, and its page says what a PIN is for, once.
   await go(screen, "settings/profiles");
-  assert.match(await screen.locator('.settings-panel [data-action="pin"]').innerText(), /^adult pin\s+off$/i);
+  assert.match(await screen.locator('.settings-panel [data-action="pin"]').innerText(), /^pin\s+off$/i);
   await go(screen, "settings/pin");
   await screen.waitForSelector('.settings-panel[data-page="pin"]');
   assert.match(await screen.locator(".settings-panel").innerText(), /^set a pin\s+4 digits, for settings, new apps and the desktop$/i);
@@ -637,7 +637,7 @@ for (const screens of SCREENS) {
       await clean(screen, "the tv, before there's a pin");
       await clean(hand, "the phone, before there's a pin");
 
-      // Settings → Adult PIN sets it, on its pad, twice.
+      // Settings → Profiles → PIN sets it, on its pad, twice.
       await watching(screen, false);
       await watching(hand, false);
       await go(screen, "settings/pin");
@@ -663,7 +663,7 @@ for (const screens of SCREENS) {
         // so the menu closes before Cancel can be tapped.
         await hand.locator(`[data-viewer="${ana}"]`).tap();
         await hand.waitForSelector(".pin-keys");
-        assert.match(await hand.locator('.overlay:not(#tv-pin)[aria-label="Adult PIN"]').innerText(), /Enter the adult PIN\n+For watching as ana\n/);
+        assert.match(await hand.locator('.overlay:not(#tv-pin)[aria-label="PIN"]').innerText(), /Enter the PIN\n+For watching as ana\n/);
         await hand.locator('[data-action="close-sheet"]').tap({ position: { x: 8, y: 8 } });
         await hand.locator('.overlay [data-action="cancel"]').tap();
       } else {
@@ -726,7 +726,7 @@ for (const screens of SCREENS) {
       await page.waitForSelector('.settings-panel [data-action="tonight"]');
       await page.locator('.settings-panel [data-action="tonight"]').click();
       await padUp(page, true);
-      assert.match(await page.locator("#pin").innerText(), /enter the adult pin/);
+      assert.match(await page.locator("#pin").innerText(), /enter the pin/);
       await page.keyboard.press("Escape");
       await padUp(page, false);
       assert.equal((await send(b, "GET", "/api/updates")).tonight, null);
@@ -753,7 +753,7 @@ for (const screens of SCREENS) {
       await page.fill('[data-action="country-field"]', "port");
       await page.click('.country-list [data-code="PT"]');
       await padUp(page, true);
-      assert.match(await page.locator("#pin").innerText(), /enter the adult pin[\s\S]*for changing location/);
+      assert.match(await page.locator("#pin").innerText(), /enter the pin[\s\S]*for changing location/);
       await page.keyboard.press("Escape");
       await padUp(page, false);
       assert.notEqual((await send(b, "GET", "/api/country")).code, "PT");
@@ -769,7 +769,7 @@ for (const screens of SCREENS) {
       await page.waitForSelector('.settings-panel[data-page="tv"]');
       await go(page, "settings/profiles");
       await page.waitForSelector('.settings-panel[data-page="profiles"] [data-action="pin"]');
-      assert.match(await page.locator('.settings-panel [data-action="pin"]').innerText(), /^adult pin\s+on$/i);
+      assert.match(await page.locator('.settings-panel [data-action="pin"]').innerText(), /^pin\s+on$/i);
       assert.equal(await page.locator(".settings-panel .panel-note").count(), 0);
       await go(page, "profile/radomir");
       await page.waitForSelector('[data-action="lock"]');
@@ -785,7 +785,7 @@ for (const screens of SCREENS) {
       assert.deepEqual(await hand.locator('[data-action="tonight"], [data-action="install"]').allInnerTexts(), ["Install tonight", "Install now"]);
       await hand.locator('[data-action="tonight"]').tap();
       await hand.waitForSelector(".pin-keys");
-      assert.match(await hand.locator('.overlay:not(#tv-pin)[aria-label="Adult PIN"]').innerText(), /Enter the adult PIN\n+For installing tonight\n/);
+      assert.match(await hand.locator('.overlay:not(#tv-pin)[aria-label="PIN"]').innerText(), /Enter the PIN\n+For installing tonight\n/);
       await hand.locator('.overlay [data-action="cancel"]').tap();
       assert.equal((await send(b, "GET", "/api/updates")).tonight, null);
       await hand.close();

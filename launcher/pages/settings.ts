@@ -214,7 +214,7 @@ export function settings(ctx: Ctx, open?: string): View {
     ].filter((el): el is HTMLElement => el !== null);
   };
 
-  // Profiles, adult PIN (ADR-009, S4.5): the adult PIN, chosen twice on its
+  // Profiles, PIN (ADR-009, S4.5): the PIN, chosen twice on its
   // pad, changed or removed past the one before, and the TV locked now.
   const pinSet = () => ctx.state.pin?.set === true;
   const choosePin = async () => {
@@ -223,7 +223,7 @@ export function settings(ctx: Ctx, open?: string): View {
     let first = "";
     const chosen = await ctx.pad({
       command: "tv settings · pin",
-      title: pinSet() ? "Choose a new PIN" : "Set an adult PIN",
+      title: pinSet() ? "Choose a new PIN" : "Set a PIN",
       note: "4 digits, for settings, new apps and the desktop",
       submit: async (pin) => {
         first = pin;
@@ -548,7 +548,7 @@ export function settings(ctx: Ctx, open?: string): View {
     {
       key: "profiles",
       label: "Profiles",
-      rows: () => [...profileRows(ctx), row("pin", "Adult PIN", onOff(pinSet()), () => openPage("pin"))],
+      rows: () => [...profileRows(ctx), row("pin", "PIN", onOff(pinSet()), () => openPage("pin"))],
     },
     {
       key: "phones",

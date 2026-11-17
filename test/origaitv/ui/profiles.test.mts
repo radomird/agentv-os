@@ -94,8 +94,8 @@ test("S4.2 Settings → Profiles lists who watches, and a profile's page switche
   await go(page, "settings/profiles");
   await page.waitForSelector('.settings-panel[data-page="profiles"]');
   assert.equal(await page.locator(".panel .profile-row").count(), 2);
-  // One row a person, with adult or child, then adding one and the adult PIN.
-  assert.match(await page.locator(".panel").innerText(), /^R\s+radomir\s+adult · watching\s+A\s+ana\s+adult\s+add a profile\s+adult pin\s+off$/);
+  // One row a person, with adult or child, then adding one and the PIN.
+  assert.match(await page.locator(".panel").innerText(), /^R\s+radomir\s+adult · watching\s+A\s+ana\s+adult\s+add a profile\s+pin\s+off$/);
   await page.keyboard.press("Enter");
   await page.keyboard.press("ArrowDown");
   const ana = await byName("ana");
@@ -147,7 +147,7 @@ test("S4.2 a profile is added on the TV: a typed name, then its role and colour 
   assert.equal(await page.locator(".profile-head .avatar.avatar-yellow").innerText(), "L");
   // With no PIN, a child's profile can't be added, and the TV says why.
   await page.locator('[data-action="save"]').click();
-  await page.waitForFunction(() => /adult pin/i.test(document.querySelector(".toast")?.textContent ?? ""));
+  await page.waitForFunction(() => /set a pin first/i.test(document.querySelector(".toast")?.textContent ?? ""));
   assert.equal((await viewers()).length, 2);
 
   // With one, it asks for it first.
@@ -275,7 +275,7 @@ test("ADR-034 an adult locks their profile on its page: a lock on its row, the P
   started.on("pageerror", (error) => errors.push(error.message));
   await started.goto(`${url}/`);
   await waitPad(started, true);
-  assert.match(await started.locator("#pin").innerText(), /tv locked[\s\S]*enter the adult pin[\s\S]*to open ana's profile$/m);
+  assert.match(await started.locator("#pin").innerText(), /tv locked[\s\S]*enter the pin[\s\S]*to open ana's profile$/m);
   await type(started, PIN);
   await waitPad(started, false);
   await started.close();

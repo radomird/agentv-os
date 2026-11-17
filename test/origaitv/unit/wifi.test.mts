@@ -298,7 +298,7 @@ test("after setup, setup's own Wi-Fi routes on the TV are closed: a lost network
   rootSays({ wifi: "cafe", radio: true });
 });
 
-test("the hotspot's page, after setup, asks for the adult PIN when one is set, and its wrong tries are its own", async () => {
+test("the hotspot's page, after setup, asks for the PIN when one is set, and its wrong tries are its own", async () => {
   rootSays({ on: true, ssid: "OrigaiTV-3f9a", password: "k7m2xpqr4n", radio: true, watch: true });
   const listed = await send(captive, "GET", "/api/setup/networks");
   assert.equal(listed.data.after, true);

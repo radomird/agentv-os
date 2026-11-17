@@ -41,12 +41,12 @@ export function askPin(what: string): Promise<string | null> {
     };
     const overlay = h(
       "div",
-      { class: "overlay", role: "dialog", "aria-label": "Adult PIN" },
+      { class: "overlay", role: "dialog", "aria-label": "PIN" },
       h(
         "div",
         { class: "page" },
         prompt("tv pin"),
-        h("h1", {}, "Enter the adult PIN"),
+        h("h1", {}, "Enter the PIN"),
         message,
         h("div", { class: "pin-boxes" }, ...boxes),
         h(

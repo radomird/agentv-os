@@ -13,7 +13,7 @@ const USAGE = `Usage: origaitv-phone-call pair <code> [<name>]
        origaitv-phone-call [--errors] <key-file> <METHOD> <path> [<json> | @<file> <content-type>]
 
 pair takes the code on the TV. pair-new has the box show a new code first,
-as Settings → Phones does, with the adult PIN from ORIGAITV_PIN when one is
+as Settings → Phones does, with the PIN from ORIGAITV_PIN when one is
 set. Both print the path of a key file. The last form sends one request as
 that phone and prints the answer. It exits 22 when the box answers 400 or more,
 and prints that answer only with --errors.`;
@@ -32,7 +32,7 @@ async function newCode(): Promise<string> {
   let asked = await post("/api/phones/pair", {});
   if (asked.status === 403 && asked.data.pin) {
     const pin = process.env.ORIGAITV_PIN;
-    if (!pin) throw new Error("the box has an adult PIN set, so a new pairing code needs it: give it in ORIGAITV_PIN");
+    if (!pin) throw new Error("the box has a PIN set, so a new pairing code needs it: give it in ORIGAITV_PIN");
     const checked = await post("/api/pin/check", { pin });
     if (!checked.data.grant) throw new Error(`the box didn't take the PIN in ORIGAITV_PIN: ${checked.data.error ?? checked.status}`);
     asked = await post("/api/phones/pair", {}, checked.data.grant);

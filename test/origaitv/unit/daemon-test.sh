@@ -62,7 +62,7 @@ tries=$(jq -r '.fails' "$SCRATCH/state/pin.json")
 out=$(ORIGAITV_PORT=$port ORIGAITV_PIN=4826 "$ROOT/bin/origaitv-setup-reset") || fail "origaitv setup reset works with the PIN" "$out"
 [[ $(curl -fsS "$url/health" | jq -r '.screen') == "welcome" ]] || fail "with the PIN, the TV is on the welcome page"
 [[ $(jq -r '.fails' "$SCRATCH/state/pin.json") == "$tries" ]] || fail "origaitv setup reset's PIN leaves the pad's wrong tries as they were" "$(jq -c 'del(.hash)' "$SCRATCH/state/pin.json")"
-pass "with an adult PIN set, origaitv setup reset needs it, and its PIN does nothing else"
+pass "with a PIN set, origaitv setup reset needs it, and its PIN does nothing else"
 
 kill "$pid"
 wait "$pid" 2>/dev/null || true

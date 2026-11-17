@@ -17,3 +17,4 @@
 \x{21B5}                                    # a key in a button's words: Install now
 \besc\b                                     # a key in the words: Back is the remote's
 \bmount(?:ed|ing|s)?\b                      # Connecting…, Couldn't open that folder
+\badult(?:['\x{2019}]s)? pin\b              # the PIN

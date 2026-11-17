@@ -221,7 +221,7 @@ const ctx: Ctx = {
     let grant: string | null = null;
     const ok = await openPad({
       command: "tv setup · pin",
-      title: "Enter the adult PIN",
+      title: "Enter the PIN",
       note: `For ${what}`,
       cancel: true,
       submit: async (pin) => {

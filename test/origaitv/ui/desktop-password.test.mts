@@ -153,7 +153,7 @@ test("Q225 the first switch to Omarchy's desktop asks for a password, typed twic
   }
 });
 
-test("Q225 with the adult PIN on, setting it asks for the PIN, and root and the switch get the grant", async () => {
+test("Q225 with the PIN on, setting it asks for the PIN, and root and the switch get the grant", async () => {
   switchOn(true);
   note(false);
   handed.length = 0;

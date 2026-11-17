@@ -1025,7 +1025,7 @@ export class Daemon {
       const pin = change.pin as Record<string, unknown>;
       if (typeof pin.for === "string") {
         next.pin = {
-          title: typeof pin.title === "string" ? pin.title.slice(0, 60) : "Enter the adult PIN",
+          title: typeof pin.title === "string" ? pin.title.slice(0, 60) : "Enter the PIN",
           for: pin.for.slice(0, 120),
           digits: Math.max(0, Math.min(4, Number(pin.digits) || 0)),
           error: typeof pin.error === "string" ? pin.error.slice(0, 120) : null,
@@ -2932,7 +2932,7 @@ export class Daemon {
       return;
     }
 
-    // Settings → Adult PIN: a PIN, or another one, which needs a grant from
+    // Settings → Profiles → PIN: a PIN, or another one, which needs a grant from
     // the one before.
     if ((method === "PUT" || method === "DELETE") && path === "/api/pin") {
       const body = (await this.body(request)) as { pin?: unknown } | undefined;
@@ -2951,7 +2951,7 @@ export class Daemon {
       return;
     }
 
-    // The TV locks: by hand from Settings → Adult PIN, whoever's watching,
+    // The TV locks: by hand from Settings → Profiles → PIN, whoever's watching,
     // and from the screen daemon once the TV has been off long enough for its
     // apps to close ("tv-off"), for a profile that asks for the PIN to open.
     if (method === "POST" && path === "/api/pin/lock") {
@@ -3270,11 +3270,11 @@ export class Daemon {
       if (!this.guarded(request, response, "changing profiles")) return;
       const body = ((await this.body(request)) ?? {}) as Record<string, unknown>;
       if (method !== "DELETE" && body.role === "child" && !this.pin.status().set) {
-        this.json(response, 400, { ok: false, error: "Set an adult PIN first. A child's profile needs one." });
+        this.json(response, 400, { ok: false, error: "Set a PIN first. A child's profile needs one." });
         return;
       }
       if (method !== "DELETE" && body.locked === true && !this.pin.status().set) {
-        this.json(response, 400, { ok: false, error: "Set an adult PIN first. A locked profile needs one." });
+        this.json(response, 400, { ok: false, error: "Set a PIN first. A locked profile needs one." });
         return;
       }
       const locked = (await this.pinStatus()).locked;
