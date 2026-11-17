@@ -77,7 +77,13 @@ export function same(a: Uint8Array, b: Uint8Array): boolean {
 const PKCS8 = Buffer.from("302e020100300506032b656e04220420", "hex");
 const SPKI = Buffer.from("302a300506032b656e032100", "hex");
 
-export function x25519Pair(): { secret: Buffer; public: Buffer } {
+// A test gives the private key, so the same pairing comes out each time.
+export function x25519Pair(given?: Uint8Array): { secret: Buffer; public: Buffer } {
+  if (given) {
+    const secret = Buffer.from(given);
+    const key = createPrivateKey({ key: Buffer.concat([PKCS8, secret]), format: "der", type: "pkcs8" });
+    return { secret, public: createPublicKey(key).export({ format: "der", type: "spki" }).subarray(SPKI.length) };
+  }
   const pair = generateKeyPairSync("x25519");
   return {
     secret: pair.privateKey.export({ format: "der", type: "pkcs8" }).subarray(PKCS8.length),
@@ -130,8 +136,8 @@ export const requestExtra = (method: string, address: string, counter: number | 
 // An answer is tied to its request and to its own status.
 export const answerExtra = (method: string, address: string, counter: number | string, status: number): Buffer => Buffer.from(`${method}\n${address}\n${counter}\n${status}`);
 
-export function seal(key: Uint8Array, plain: Uint8Array, extra: Uint8Array): Buffer {
-  const nonce = randomBytes(NONCE);
+// The nonce is random, unless a test gives one.
+export function seal(key: Uint8Array, plain: Uint8Array, extra: Uint8Array, nonce: Uint8Array = randomBytes(NONCE)): Buffer {
   const cipher = createCipheriv("chacha20-poly1305", key, nonce, { authTagLength: TAG });
   cipher.setAAD(extra, { plaintextLength: plain.length });
   return Buffer.concat([nonce, cipher.update(plain), cipher.final(), cipher.getAuthTag()]);
@@ -167,16 +173,20 @@ export interface ChannelOptions<P> {
   // A paired phone and its key, by its id, or null once it's forgotten.
   phone: (id: string) => { phone: P; key: Buffer } | null;
   now?: () => number;
+  // Random bytes of a test's own, in place of the system's.
+  random?: (length: number) => Buffer;
 }
 
 export class PhoneChannel<P> {
   private sessions = new Map<string, Session>();
   private now: () => number;
+  private random: (length: number) => Buffer;
   private options: ChannelOptions<P>;
 
   constructor(options: ChannelOptions<P>) {
     this.options = options;
     this.now = options.now ?? Date.now;
+    this.random = options.random ?? randomBytes;
   }
 
   // A phone opening a session: its id and a number of its own. The answer
@@ -188,8 +198,8 @@ export class PhoneChannel<P> {
     const phoneNonce = unb64u(nonce, 16);
     const known = typeof id === "string" && phoneNonce ? this.options.phone(id) : null;
     if (!known || !phoneNonce || typeof id !== "string") return null;
-    const boxNonce = randomBytes(16);
-    const session: Session = { id: b64u(randomBytes(16)), phone: id, keys: sessionKeys(known.key, phoneNonce, boxNonce), newest: 0, seen: new Set(), used: false, at: this.now() };
+    const boxNonce = this.random(16);
+    const session: Session = { id: b64u(this.random(16)), phone: id, keys: sessionKeys(known.key, phoneNonce, boxNonce), newest: 0, seen: new Set(), used: false, at: this.now() };
     this.sessions.set(session.id, session);
     this.trim(id);
     return { session: session.id, nonce: b64u(boxNonce), proof: b64u(hmac(known.key, INFO.helloBox, phoneNonce, boxNonce)) };
@@ -301,7 +311,7 @@ export class PhoneChannel<P> {
     session.used = true;
     session.at = this.now();
 
-    sealAnswers(response, (status, plain) => seal(session.keys.down, plain, answerExtra(method, address, counter, status)));
+    sealAnswers(response, (status, plain) => seal(session.keys.down, plain, answerExtra(method, address, counter, status), this.random(NONCE)));
     if (!sealed) return { phone: known.phone, request };
 
     const plain = open(session.keys.up, body, requestExtra(method, address, counter));

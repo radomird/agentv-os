@@ -2,7 +2,8 @@
 
 # Guards paired phones (daemon/phones.ts), the daemon's phone listener, how
 # a phone's requests are signed and sealed (daemon/phone-channel.ts and the
-# page's own companion-web/seal.ts and channel.ts), and
+# page's own companion-web/seal.ts and channel.ts), the channel's test vectors
+# replayed through both sides (docs/phone-api.md), and
 # the screen daemon's side of the phone's keys and text (daemon/remote.ts).
 
 set -euo pipefail
@@ -12,4 +13,5 @@ node_test "$ROOT/test/origaitv/unit/phones.test.mts"
 node_test "$ROOT/test/origaitv/unit/seal.test.mts"
 node_test "$ROOT/test/origaitv/unit/phone-channel.test.mts"
 node_test "$ROOT/test/origaitv/unit/companion-channel.test.mts"
+node_test "$ROOT/test/origaitv/unit/phone-channel-vectors.test.mts"
 node_test "$ROOT/test/origaitv/unit/remote.test.mts"

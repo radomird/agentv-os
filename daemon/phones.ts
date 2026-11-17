@@ -52,6 +52,10 @@ export interface Paired {
 export interface PhonesOptions {
   path: string; // <state>/phones.json
   now?: () => number;
+  // Random bytes and a random whole number below `max` of a test's own, in
+  // place of the system's.
+  random?: (length: number) => Buffer;
+  randomInt?: (max: number) => number;
 }
 
 const usable = (phone: Stored) => typeof phone?.id === "string" && typeof phone.key === "string" && Buffer.from(phone.key, "base64").length === 32;
@@ -59,12 +63,18 @@ const usable = (phone: Stored) => typeof phone?.id === "string" && typeof phone.
 export class Phones {
   private path: string;
   private now: () => number;
+  private given: ((length: number) => Buffer) | undefined;
+  private random: (length: number) => Buffer;
+  private randomInt: (max: number) => number;
   private pending: { code: string; secret: Buffer; until: number; tries: number } | null = null;
   private seen = new Map<string, string>();
 
   constructor(options: PhonesOptions) {
     this.path = options.path;
     this.now = options.now ?? Date.now;
+    this.given = options.random;
+    this.random = options.random ?? randomBytes;
+    this.randomInt = options.randomInt ?? randomInt;
   }
 
   private read(): Stored[] {
@@ -94,8 +104,8 @@ export class Phones {
 
   // A new code for the TV to show, in place of any before it.
   code(): { code: string; until: string } {
-    const code = Array.from({ length: CODE_LENGTH }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
-    this.pending = { code, secret: randomBytes(16), until: this.now() + CODE_MS, tries: 0 };
+    const code = Array.from({ length: CODE_LENGTH }, () => ALPHABET[this.randomInt(ALPHABET.length)]).join("");
+    this.pending = { code, secret: this.random(16), until: this.now() + CODE_MS, tries: 0 };
     return { code, until: new Date(this.pending.until).toISOString() };
   }
 
@@ -133,14 +143,14 @@ export class Phones {
     const bySecret = same(proof, hmac(pending.secret, INFO.pair, theirs));
     const byCode = same(proof, hmac(Buffer.from(pending.code), INFO.pair, theirs));
     if (!bySecret && !byCode) return wrong();
-    const ours = x25519Pair();
+    const ours = x25519Pair(this.given?.(32));
     const shared = x25519Shared(ours.secret, theirs);
     if (!shared) return wrong();
     const key = phoneKey(shared, bySecret ? pending.secret : Buffer.from(pending.code), theirs, ours.public);
     this.pending = null;
     const name = request?.name;
     const label = (typeof name === "string" && name.replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, NAME_MAX)) || "a phone";
-    const phone: Phone = { id: `p-${randomBytes(4).toString("hex")}`, name: label, pairedAt: new Date(this.now()).toISOString() };
+    const phone: Phone = { id: `p-${this.random(4).toString("hex")}`, name: label, pairedAt: new Date(this.now()).toISOString() };
     this.write([...this.read(), { ...phone, key: key.toString("base64") }]);
     return { id: phone.id, key: b64u(ours.public), confirm: b64u(hmac(key, INFO.pairBox, theirs, ours.public)), phone };
   }
