@@ -2,7 +2,7 @@
 
 This is how a paired phone talks to an OrigaiTV box. The phone's page in `companion-web/` speaks it today. If you're writing another client, this is what you build against.
 
-It's written from the code as it is. The TV's side is `daemon/phone-channel.ts`, `daemon/phones.ts`, `daemon/pin.ts` and the phone routes in `daemon/server.ts` and `daemon/routes/`. The phone's side is `companion-web/channel.ts`, and `daemon/phone-client.ts` is the same thing in Node for tests.
+It's written from the code as it is. The TV's side is `daemon/phone-channel.ts`, `daemon/phones.ts`, `daemon/pin.ts` and the phone routes in `daemon/server.ts` and `daemon/routes/`. How the TV says it's there is `daemon/announce.ts` and `bin/origaitv-announce-set`. The phone's side is `companion-web/channel.ts`, and `daemon/phone-client.ts` is the same thing in Node for tests.
 
 There are test vectors in `test/origaitv/fixtures/phone-channel/vectors.json`: fixed keys, nonces and counters, and the exact bytes they give. The fast gate replays them through the daemon and through the phone's page, so a client that reproduces them agrees with both. See [Test vectors](#test-vectors).
 
@@ -13,6 +13,7 @@ There are test vectors in `test/origaitv/fixtures/phone-channel/vectors.json`: f
 - After that the phone says hello to open a session, and both sides derive three session keys.
 - Every request past that is signed with HMAC-SHA256. JSON bodies and JSON answers are sealed with ChaCha20-Poly1305. A photo or a video goes as it is, with its length signed.
 - Sessions live in the daemon's memory. When the daemon restarts, the phone says hello again and carries on. It doesn't pair again.
+- With the `announce` switch on, the TV also says it's there over mDNS, so a phone finds it again when the router gives it a new address. See [Finding the TV](#finding-the-tv).
 
 Two conventions for the rest of this doc:
 
@@ -30,6 +31,54 @@ For every method but `GET`: if the request has an `Origin` header, it has to be 
 There are no CORS headers, so a page from anywhere else can't read an answer.
 
 A few things on this port need no pairing: `GET /` (the phone's page), `GET /companion-web/...` and a few files under `/launcher/` (its code, styles and fonts), and `GET /api/theme.css` (the TV's theme colours as CSS).
+
+## Finding the TV
+
+The QR code holds the TV's address as it was on the day the phone paired. Routers hand out new addresses, and then that one is wrong. So the TV announces itself on the home network, and a phone looks for it by an id that doesn't change.
+
+This is behind the `announce` switch, which is off for now. While it's off the TV announces nothing, and nothing in this section is in any answer. `GET /api/phone/features` says whether it's on.
+
+### The record
+
+The TV publishes one DNS-SD service over mDNS, through Avahi:
+
+| | |
+| --- | --- |
+| Type | `_origaitv._tcp`, in `local` |
+| Name | The TV's name. Today that's the machine's own name, which the installer sets to `origaitv` on every TV. When two on one network have the same name, Avahi calls the second `origaitv #2`. |
+| Port | The phones' port, 3001 |
+| TXT `id` | The box id: 32 lower-case hex digits |
+| TXT `version` | The OrigaiTV version that's installed, such as `1.0.0` or `1.0.0.r12.gabc1234` |
+
+That's all of it. The record is on IPv4 only, because the phones' port answers on IPv4.
+
+To see it from a Mac or from Linux:
+
+```bash
+dns-sd -B _origaitv._tcp
+avahi-browse --resolve --terminate _origaitv._tcp
+```
+
+Anyone on the network can read the record, paired or not. So it has nothing in it that I'd mind a guest on the Wi-Fi reading: a name, a version and a random id. It also proves nothing. Anyone on the network can publish a record with your TV's id in it. What proves a TV is yours is the hello: only the TV you paired with can answer it with the right `proof`. So find the address by the id, say hello there, and if the proof is wrong, it isn't your TV.
+
+### The box id
+
+The TV makes the id once, from 16 random bytes, and keeps it. It isn't made from a key, from the hardware or from the network, so it says nothing about the TV but "the same one as before". A TV that's installed again gets a new one, and its phones pair again anyway.
+
+A phone learns the id in two places, both only while the switch is on:
+
+- **When it pairs.** The answer to `POST /api/phone/pair` has `boxId`.
+- **In the state.** `GET /api/phone/state` has `boxId`.
+
+The one in the state is sealed. The one in the pairing answer isn't covered by `confirm`, so someone in the middle could change it. All that would do is make the phone look for a TV that isn't there, but there's no reason to allow it: keep the pairing's `boxId` to start with, and replace it with the state's the first time you read the state.
+
+A phone that paired before the switch went on has no id yet. It gets one from the state the next time it reaches the TV at the address it knows.
+
+### Waking the TV
+
+`GET /api/phone/box` has what a phone needs to wake a TV that's asleep. See [State](#state) for the field. It goes to paired phones only, sealed. It's never in the record above, because a hardware address names the machine for good.
+
+A wake packet is 102 bytes: six of `0xFF`, then the hardware address's six bytes sixteen times over. Send it over UDP to `wake.broadcast`, port 9. The TV listens for it on its cable only, so `wake` is `null` when the TV is on Wi-Fi alone. Ask while the TV is awake and keep the answer: a sleeping TV can't tell you.
 
 ## Pairing
 
@@ -106,6 +155,8 @@ confirm = HMAC-SHA256(key: phoneKey, message: "origaitv pair box v1" || phonePub
 ```
 
 If `confirm` doesn't match, whoever answered didn't see the secret. Throw the key away and treat it as the TV not answering. If it matches, keep `id` and `phoneKey`. That's the whole pairing.
+
+With the `announce` switch on, the answer has one more field, `"boxId": "<32 hex digits>"`, after `phone`. See [The box id](#the-box-id) for what to do with it. The test vectors are a pairing with the switch off, so they don't have it.
 
 When it doesn't work, the answer is `403` with one of two sentences in `error`:
 
@@ -317,7 +368,9 @@ Unless a row says otherwise, a body is sealed JSON and an answer is sealed JSON 
 | --- | --- | --- | --- |
 | `GET /api/phone/state?since=<version>` | None | The state. See [The long poll](#the-long-poll). | Anyone |
 | `GET /api/phone/features` | None | Every feature switch and whether it's on, such as `{"remote2":true,"askbuilds":true}`. There's no `ok` field. | Anyone |
-| `GET /api/phone/box` | None | `{ok, line, box}`: what the box check found, as a line and in full. | Anyone |
+| `GET /api/phone/box` | None | `{ok, line, box}`: what the box check found, as a line and in full. With the `announce` switch on, also `wake`. | Anyone |
+
+`wake` is `{"mac": "94:c6:91:1a:2b:3c", "broadcast": "192.168.1.255"}`: the hardware address of the TV's wired port, in lower case, and the broadcast address of the network that port is on. It's `null` when no wired port is on a network. [Waking the TV](#waking-the-tv) has what to send. The TV's own pages get the same `box` from `GET /api/box` on the TV's port, without `wake`.
 
 ### The remote
 
@@ -463,6 +516,7 @@ A few things to know:
 | `ok` | `true`. |
 | `version` | The count described above. |
 | `phone` | This phone, as the TV knows it: `{id, name, pairedAt}`. |
+| `boxId` | The box id, as the TV announces it: 32 hex digits. Only there while the `announce` switch is on. See [The box id](#the-box-id). |
 | `features` | The two switches the remote draws by: `{remote2, askbuilds}`. |
 | `ask` | What the Ask box is waiting on for an adult's OK, or `null`. Only there while `askbuilds` is on, and always `null` on a child's profile. `daemon/routes/ask.ts` has its shape. |
 | `look` | The id of the look the TV is in, such as `"terminal"`, or `null` while the looks switch is off. |
