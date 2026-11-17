@@ -252,7 +252,7 @@ function session(phoneId: string, phoneKey: Buffer) {
     { name: "the right answer with a byte of its tag changed", status: 200, type: SEALED, body: b64u(spoiled(good)) },
     { name: "the right answer under another status", status: 403, type: SEALED, body: first.answer.body },
     { name: "the answer to the second request", status: 200, type: SEALED, body: steps[1].answer.body },
-    { name: "the phone's own sealed request, played back as the answer", status: 200, type: SEALED, body: first.body },
+    { name: "the phone's own sealed request, played back as the answer", status: 200, type: SEALED, body: first.body! },
     { name: "the same JSON, not sealed", status: 200, type: JSON_TYPE, body: b64u(Buffer.from(first.answer.text)) },
     { name: "a refusal that isn't sealed", status: 403, type: JSON_TYPE, body: b64u(Buffer.from(JSON.stringify({ ok: false, error: "That needs the PIN", pin: true }))) },
   ];
