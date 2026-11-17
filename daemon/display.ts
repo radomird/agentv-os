@@ -518,6 +518,16 @@ export class DisplayWatch {
     if (was !== this.fitted()) this.o.fitted(this.fitted());
   }
 
+  // Fit to screen's margin as Hyprland keeps it, left and top, from the
+  // monitor's reserved area, or what this set last when Hyprland doesn't
+  // say. A monitor that comes back, as a TV does from standby, has its rule
+  // set again by Hyprland, and this is where it shows if it didn't. The
+  // bottom can have the sign-in bar's own zone in it too.
+  private reservedOf(monitor: Monitor | null): [number, number] {
+    const area = monitor?.reserved;
+    return Array.isArray(area) && area.length === 4 && area.every((n) => Number.isFinite(n)) ? [area[0], area[1]] : this.reserved;
+  }
+
   private async monitor(): Promise<Monitor | null> {
     const monitors = (await this.o.hyprland.monitors()).filter((m) => !m.disabled);
     return monitors.find((m) => m.focused) ?? monitors[0] ?? null;
@@ -534,7 +544,7 @@ export class DisplayWatch {
       const response = await this.o.fetch(`${this.o.url}api/display/tv`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ output: monitor.name, modes, live: { ...liveOf(monitor), reserved: this.reserved } }),
+        body: JSON.stringify({ output: monitor.name, modes, live: { ...liveOf(monitor), reserved: this.reservedOf(monitor) } }),
         signal: AbortSignal.timeout(3000),
       });
       said = (await response.json()) as typeof said;
@@ -582,7 +592,7 @@ export class DisplayWatch {
       while (!runs((monitor = await this.monitor())) && Date.now() < until) await new Promise((done) => setTimeout(done, 50));
       if (!runs(monitor)) return { ok: false, error: `the tv runs at ${monitor ? `${liveOf(monitor).mode}, scale ${liveOf(monitor).scale}` : "nothing"}`, ...(monitor ? { live: liveOf(monitor) } : {}) };
       this.o.log(`display: ${target.output} at ${modeText(mode)}, scale ${target.scale}, margin ${reserved.join(" by ")}`);
-    } else if (reserved[0] !== this.reserved[0] || reserved[1] !== this.reserved[1]) {
+    } else if (reserved[0] !== this.reservedOf(monitor)[0] || reserved[1] !== this.reservedOf(monitor)[1]) {
       try {
         await this.o.hyprland.eval(monitorRule(wanted));
       } catch (error) {

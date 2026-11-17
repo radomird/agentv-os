@@ -1042,22 +1042,20 @@ export class Screen {
 
   private async toFront(address: string): Promise<void> {
     // With no monitor it's in front for the daemon now, and on the TV once
-    // there's one.
-    if (!(await this.onScreen())) {
-      this.stack = this.stack.filter((a) => a !== address);
-      this.stack.push(address);
-      const known = this.windows.get(address);
-      this.log(`${known ? describe(known) : address} goes in front once the TV's output is back`);
-      return;
-    }
+    // there's one. The output can go between one step and the next, as a TV
+    // switching input does, so each step asks again.
+    if (!(await this.onScreen())) return this.frontLaterOn(address);
     const window = lua(`address:${address}`);
     await this.hypr.dispatch(`hl.dsp.window.move({ window = ${window}, workspace = ${lua(TV_WORKSPACE)}, follow = false })`);
+    if (!(await this.onScreen())) return this.frontLaterOn(address);
     await this.focus(address);
+    if (!(await this.onScreen())) return this.frontLaterOn(address);
     await this.place(address);
     // Whatever else is on the TV goes out of sight, after the new one is
     // covering it.
     for (const client of await this.hypr.clients()) {
       if (client.address !== address && client.workspace.name === TV_WORKSPACE) {
+        if (!(await this.onScreen())) return this.frontLaterOn(address);
         await this.hold(client.address);
       }
     }
@@ -1066,6 +1064,15 @@ export class Screen {
     void this.corner(this.windows.get(address)?.role !== "home");
     // Home's moving background pauses under an app (ADR-064).
     void this.inHome(`window.origaitvFront?.(${this.windows.get(address)?.role !== "home"})`);
+  }
+
+  // In front for the daemon, and on the TV when a monitor comes
+  // (outputAdded), which puts it there from the start.
+  private frontLaterOn(address: string): void {
+    this.stack = this.stack.filter((a) => a !== address);
+    this.stack.push(address);
+    const known = this.windows.get(address);
+    this.log(`${known ? describe(known) : address} goes in front once the TV's output is back`);
   }
 
   // The mouse's Home in the overlay, on while an app is in front. Said once
