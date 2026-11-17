@@ -140,6 +140,24 @@ PATH="$SCRATCH/racing:$PATH" run || fail "a hand-over left as root reads one" "$
 [[ ! -e $ORIGAITV_SETUP_APPS_DROP && ! -e $ORIGAITV_SETUP_APPS_DROP.taken ]] || fail "and nothing is left behind"
 pass "a hand-over the daemon leaves while root reads the one before is taken next, not lost"
 
+# The hand-over's folder is the daemon's, so root follows no link in it. One
+# where the hand-over is taken aside would move it into the folder it names.
+mkdir -p "$SCRATCH/elsewhere"
+ln -s "$SCRATCH/elsewhere" "$ORIGAITV_SETUP_APPS_DROP.taken"
+printf '%s' '{"apps":["origaitv.linked"]}' >"$ORIGAITV_SETUP_APPS_DROP"
+: >"$SCRATCH/queued"
+! run || fail "a link where the hand-over is taken aside is refused" "$(cat "$SCRATCH/out")"
+[[ -z $(ls -A "$SCRATCH/elsewhere") ]] || fail "and nothing lands in the folder it names" "$(ls -A "$SCRATCH/elsewhere")"
+[[ ! -s $SCRATCH/queued ]] || fail "and nothing installs" "$(cat "$SCRATCH/queued")"
+rm -f "$ORIGAITV_SETUP_APPS_DROP.taken" "$ORIGAITV_SETUP_APPS_DROP"
+# Nor a link in the hand-over's own place.
+printf '%s' '{"apps":["origaitv.linked"]}' >"$SCRATCH/elsewhere/hand-over.json"
+ln -s "$SCRATCH/elsewhere/hand-over.json" "$ORIGAITV_SETUP_APPS_DROP"
+! run || fail "a link in the hand-over's place is refused" "$(cat "$SCRATCH/out")"
+[[ ! -s $SCRATCH/queued ]] || fail "and what it names isn't read" "$(cat "$SCRATCH/queued")"
+rm -f "$ORIGAITV_SETUP_APPS_DROP" "$SCRATCH/elsewhere/hand-over.json"
+pass "a link in the hand-over's folder is refused, not followed"
+
 # Each install has a limit of its own: one that hangs fails with why, and
 # the rest of the queue goes on.
 cat >"$ORIGAITV_APP_INSTALL" <<'STUB'

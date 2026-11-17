@@ -163,7 +163,19 @@ while [[ -f $DROP ]]; do
   # Taken aside first, then read. A hand-over the daemon leaves meanwhile is
   # a new file in its place, taken on the next turn, never lost.
   taken="$DROP.taken"
-  mv -f "$DROP" "$taken" || break
+  # The folder is the daemon's, so root follows no link in it. One where the
+  # hand-over is taken aside would move it into the folder the link names,
+  # and -T keeps mv from doing that if one turns up after this look.
+  if [[ -L $DROP || -L $taken ]]; then
+    echo "origaitv-setup-apps: a link in the hand-over's folder; nothing taken" >&2
+    exit 1
+  fi
+  mv -fT "$DROP" "$taken" || break
+  if [[ -L $taken ]]; then
+    rm -f "$taken"
+    echo "origaitv-setup-apps: the hand-over was a link; nothing taken" >&2
+    exit 1
+  fi
   mapfile -t apps < <(jq -r '.apps[]? | strings' "$taken" 2>/dev/null || true)
   mapfile -t gone < <(jq -r '.remove[]? | strings' "$taken" 2>/dev/null || true)
   driver=$(jq -r 'if .driver == "xpadneo" then "xpadneo" else empty end' "$taken" 2>/dev/null || true)
