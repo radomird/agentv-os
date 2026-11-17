@@ -1,0 +1,11 @@
+# gitleaks' own rules, with one file left out: the phone channel's test
+# vectors. They're made-up keys, worked out from fixed labels by the script
+# next to them, and a client checks itself against them by name. Nothing
+# else is excepted. Keep it that way.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "The phone channel's test vectors: made-up keys, from make-vectors.mts"
+paths = ['''(^|/)test/origaitv/fixtures/phone-channel/vectors\.json$''']

@@ -50,7 +50,7 @@ test("vectors.json is what make-vectors.mts makes", () => {
 for (const [n, p] of V.pairings.entries()) {
   test(`the TV's side: pairing ${p.name}`, () => {
     const letters = [...p.tv.code].map((letter) => V.alphabet.indexOf(letter));
-    const random = drawn(un(p.tv.qr), un(p.tv.x25519Private), Buffer.from(p.tv.phoneId.slice(2), "hex"));
+    const random = drawn(un(p.tv.secret), un(p.tv.x25519Private), Buffer.from(p.tv.phoneId.slice(2), "hex"));
     const phones = new Phones({
       path: join(dir, `phones-${n}.json`),
       now: () => Date.parse(p.tv.now),
@@ -61,22 +61,22 @@ for (const [n, p] of V.pairings.entries()) {
       },
     });
     assert.equal(phones.code().code, p.tv.code);
-    assert.equal(phones.secret(), p.tv.qr);
+    assert.equal(phones.secret(), p.tv.secret);
     assert.equal(p.tv.qrAddress, `http://${V.host}/#pair=${phones.secret()}`);
     // One wrong try doesn't end the code.
     assert.equal(JSON.stringify({ ok: false, ...phones.pair(JSON.parse(V.pairingRefused.request.text)) }), V.pairingRefused.answer.text);
     const paired = phones.pair(JSON.parse(p.request.text));
     assert.equal(JSON.stringify({ ok: true, ...paired }), p.answer.text);
     assert.equal(random.left(), 0);
-    assert.deepEqual(phones.key(p.tv.phoneId)?.key, un(p.paired), "the key the TV keeps");
+    assert.deepEqual(phones.key(p.tv.phoneId)?.key, un(p.phoneKey), "the key the TV keeps");
     assert.equal(phones.showing(), null, "a code pairs one phone");
 
     // The same arithmetic, a step at a time.
     assert.deepEqual(x25519Pair(un(p.phone.x25519Private)).public, un(p.phone.x25519Public));
     assert.deepEqual(x25519Shared(un(p.tv.x25519Private), un(p.phone.x25519Public)), un(p.x25519Shared));
     assert.deepEqual(x25519Shared(un(p.phone.x25519Private), un(p.tv.x25519Public)), un(p.x25519Shared));
-    assert.deepEqual(un(p.k), p.by === "secret" ? un(p.tv.qr) : Buffer.from(p.tv.code));
-    assert.deepEqual(phoneKey(un(p.x25519Shared), un(p.k), un(p.phone.x25519Public), un(p.tv.x25519Public)), un(p.paired));
+    assert.deepEqual(un(p.k), p.by === "secret" ? un(p.tv.secret) : Buffer.from(p.tv.code));
+    assert.deepEqual(phoneKey(un(p.x25519Shared), un(p.k), un(p.phone.x25519Public), un(p.tv.x25519Public)), un(p.phoneKey));
   });
 }
 
@@ -111,7 +111,7 @@ let base = "";
 const reached = new Map<string, { type: string; body: Buffer }>();
 const phone = V.pairings[0];
 const channel = new PhoneChannel({
-  phone: (id) => (id === phone.tv.phoneId ? { phone: { id }, key: un(phone.paired) } : null),
+  phone: (id) => (id === phone.tv.phoneId ? { phone: { id }, key: un(phone.phoneKey) } : null),
   now: () => Date.parse(phone.tv.now),
   // The hello's two, then a nonce for each answer that goes out sealed.
   random: drawn(un(S.hello.tvNonce), un(S.hello.session), ...SENT.flatMap(({ answer }) => (answer.nonce ? [un(answer.nonce)] : []))),
@@ -156,7 +156,7 @@ async function send(wire: Wire): Promise<{ status: number; type: string; body: B
 test("the TV's side: a hello gives the session and its keys", () => {
   assert.equal(channel.hello(JSON.parse(S.hello.unknown.request.text)), null, "a phone the TV doesn't know");
   assert.equal(JSON.stringify({ ok: true, ...channel.hello(JSON.parse(S.hello.request.text)) }), S.hello.answer.text);
-  const keys = sessionKeys(un(phone.paired), un(S.hello.phoneNonce), un(S.hello.tvNonce));
+  const keys = sessionKeys(un(phone.phoneKey), un(S.hello.phoneNonce), un(S.hello.tvNonce));
   assert.deepEqual({ sign: b64u(keys.sign), up: b64u(keys.up), down: b64u(keys.down) }, S.derived);
 });
 
@@ -293,7 +293,7 @@ test("the phone's page: an answer to a pairing that doesn't prove the TV's key p
     // answer.
     tv = { "/api/phone/pair": V.pairings[1].answer };
     const channel = await page();
-    await assert.rejects(channel.pair({ secret: p.tv.qr }, p.phone.name), /Couldn't reach your TV/);
+    await assert.rejects(channel.pair({ secret: p.tv.secret }, p.phone.name), /Couldn't reach your TV/);
     assert.equal(channel.paired(), false);
   } finally {
     browserGone();
@@ -306,7 +306,7 @@ test("the phone's page: the hello, then each request and each answer, as the vec
   try {
     tv = { "/api/phone/pair": p.answer, "/api/phone/hello": S.hello.answer };
     const channel = await page();
-    await channel.pair({ secret: p.tv.qr }, p.phone.name);
+    await channel.pair({ secret: p.tv.secret }, p.phone.name);
     let last: Signed | null = null;
     for (const r of S.requests) {
       const body = "json" in r ? { json: JSON.parse(r.json.text) } : "upload" in r ? { type: r.upload.type, length: r.upload.length } : undefined;

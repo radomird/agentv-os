@@ -84,7 +84,7 @@ function pairing(tag: string, name: string, phoneName: string, typed?: string) {
     by: typed === undefined ? "secret" : "code",
     tv: {
       code,
-      qr: b64u(secret),
+      secret: b64u(secret),
       qrAddress: `http://${HOST}/#pair=${b64u(secret)}`,
       x25519Private: b64u(boxPrivate),
       x25519Public: b64u(boxPublic),
@@ -102,7 +102,7 @@ function pairing(tag: string, name: string, phoneName: string, typed?: string) {
     answer: { status: 200, type: JSON_TYPE, text: JSON.stringify({ ok: true, id, key: b64u(boxPublic), confirm: b64u(confirm), phone: { id, name: phoneName, pairedAt: NOW } }) },
     x25519Shared: b64u(dh),
     // The 32 bytes both sides now hold: the phone's key.
-    paired: b64u(phoneKey),
+    phoneKey: b64u(phoneKey),
     // The phone's key as the page keeps it, under "origaitv-phone-key".
     kept: JSON.stringify({ id, key: b64u(phoneKey) }),
   };
@@ -295,7 +295,7 @@ export function make() {
       answer: { status: 403, type: JSON_TYPE, text: JSON.stringify({ ok: false, error: "That isn't the code on your TV" }) },
     },
     // The session is the first pairing's phone.
-    session: session(bySecret.tv.phoneId, Buffer.from(bySecret.paired, "base64url")),
+    session: session(bySecret.tv.phoneId, Buffer.from(bySecret.phoneKey, "base64url")),
   };
 }
 

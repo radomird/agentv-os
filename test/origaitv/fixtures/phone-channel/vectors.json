@@ -16,7 +16,7 @@
       "by": "secret",
       "tv": {
         "code": "JHFRFW",
-        "qr": "x4vF5LT-AMSvfzzb7UAGkw",
+        "secret": "x4vF5LT-AMSvfzzb7UAGkw",
         "qrAddress": "http://192.168.1.20:3001/#pair=x4vF5LT-AMSvfzzb7UAGkw",
         "x25519Private": "WdBZayI6YK-1Uu1lCykDyHOkt1peJ1EJwm5WL3FXK5Y",
         "x25519Public": "UJ8O8f8M6V1Mewf_aYL-TJcbdeNjIV6GNmcErzY8Kjs",
@@ -41,7 +41,7 @@
         "text": "{\"ok\":true,\"id\":\"p-6bc96675\",\"key\":\"UJ8O8f8M6V1Mewf_aYL-TJcbdeNjIV6GNmcErzY8Kjs\",\"confirm\":\"UJ5hZrxVPkc2Er3RJWTq2dXKVDEO5TEtRFa8Nk3nfro\",\"phone\":{\"id\":\"p-6bc96675\",\"name\":\"Ana's iPhone\",\"pairedAt\":\"2026-01-01T00:00:00.000Z\"}}"
       },
       "x25519Shared": "hHdIGn3zN7Z_CU8p9cEcrLWsKwHw7fmTGfMosVYr5hQ",
-      "paired": "G1lLwGmfyOryGsdYXqCl1Y5fOo5_3fT4SYTwmsowwbk",
+      "phoneKey": "G1lLwGmfyOryGsdYXqCl1Y5fOo5_3fT4SYTwmsowwbk",
       "kept": "{\"id\":\"p-6bc96675\",\"key\":\"G1lLwGmfyOryGsdYXqCl1Y5fOo5_3fT4SYTwmsowwbk\"}"
     },
     {
@@ -49,7 +49,7 @@
       "by": "code",
       "tv": {
         "code": "Y48FUJ",
-        "qr": "DajVBRkAv111MI1e8gBq7A",
+        "secret": "DajVBRkAv111MI1e8gBq7A",
         "qrAddress": "http://192.168.1.20:3001/#pair=DajVBRkAv111MI1e8gBq7A",
         "x25519Private": "pU7KGc5jIhAljByajS4yXDlMJWBxSwU7QijLOIn-Y18",
         "x25519Public": "zxHSX0dEGA36unWpQ5Z6DjlYHXIlFqk_My4y0d6aBCg",
@@ -75,7 +75,7 @@
         "text": "{\"ok\":true,\"id\":\"p-4238e226\",\"key\":\"zxHSX0dEGA36unWpQ5Z6DjlYHXIlFqk_My4y0d6aBCg\",\"confirm\":\"w2lBThabFIkAYzlR63YK9L4JF8tFK7dod6H8G5sTEnk\",\"phone\":{\"id\":\"p-4238e226\",\"name\":\"Living room iPad\",\"pairedAt\":\"2026-01-01T00:00:00.000Z\"}}"
       },
       "x25519Shared": "G8IPa8pcc8DM-OUJD5D8KK6lpLwPrIyXYioXS9gO_i4",
-      "paired": "iWhk0jwTB2EA5hqE-CcbHSE74jNCt7MPWW8rqtSKR0U",
+      "phoneKey": "iWhk0jwTB2EA5hqE-CcbHSE74jNCt7MPWW8rqtSKR0U",
       "kept": "{\"id\":\"p-4238e226\",\"key\":\"iWhk0jwTB2EA5hqE-CcbHSE74jNCt7MPWW8rqtSKR0U\"}"
     }
   ],
