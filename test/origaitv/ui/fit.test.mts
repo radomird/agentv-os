@@ -131,6 +131,19 @@ function marks(page: Page): Promise<Record<string, [number, number]>> {
 
 const everyMark = (x: number, y: number) => ({ "top-left": [x, y], "top-right": [x, y], "bottom-left": [x, y], "bottom-right": [x, y] });
 
+// The marks once they're where a step puts them. A step can draw the page
+// again a frame or two after its value changes, so this looks for up to
+// three seconds before it gives what it sees.
+async function marksAt(page: Page, x: number, y: number): Promise<Record<string, [number, number]>> {
+  const want = JSON.stringify(everyMark(x, y));
+  for (let tries = 0; tries < 30; tries++) {
+    const seen = await marks(page);
+    if (JSON.stringify(seen) === want) return seen;
+    await page.waitForTimeout(100);
+  }
+  return marks(page);
+}
+
 for (const look of LOOKS) {
   test(`T22.1 Fit to screen in Settings, Appearance in ${look}: the corner marks at the margin at each size, nothing cut off, and left and right change it`, async () => {
     await fetch(`${url}/api/look`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ look }) });
@@ -148,7 +161,7 @@ for (const look of LOOKS) {
         await rest(page);
         const x = Math.round((canvas[0] * 3) / 100);
         const y = Math.round((canvas[1] * 3) / 100);
-        assert.deepEqual(await marks(page), everyMark(x, y), `${look} at ${size}: 3 percent in from each edge`);
+        assert.deepEqual(await marksAt(page, x, y), everyMark(x, y), `${look} at ${size}: 3 percent in from each edge`);
         for (const line of await cutOff(page, undefined, true)) problems.push(`${look} at ${size}: ${line}`);
         if (size !== "standard") continue;
 
@@ -158,12 +171,12 @@ for (const look of LOOKS) {
         await page.waitForFunction(() => document.querySelector(".fit-value")?.textContent === "92%");
         assert.equal(await kept(4), 4);
         assert.deepEqual(reserved.at(-1), [77, 43], "the screen daemon is asked for the new margin");
-        assert.deepEqual(await marks(page), everyMark(77, 43));
+        assert.deepEqual(await marksAt(page, 77, 43), everyMark(77, 43));
         // Bigger, all the way: no margin at all, and no further.
         for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowRight");
         await page.waitForFunction(() => document.querySelector(".fit-value")?.textContent === "Whole screen");
         assert.equal(await kept(0), 0);
-        assert.deepEqual(await marks(page), everyMark(0, 0));
+        assert.deepEqual(await marksAt(page, 0, 0), everyMark(0, 0));
         assert.equal(await page.locator(".fit-size.biggest").count(), 1);
         // Done goes back to Appearance, on its row, which says so.
         await page.locator('[data-action="fit-done"]').click();
@@ -236,12 +249,12 @@ test("T22.1 setup shows Fit to screen right after the size, in Terminal's style,
     await settled(page);
     assert.match(await page.locator(".setup-fit").innerText(), /can you see all four corners\?[\s\S]*overscan in your tv's picture menu/i);
     assert.equal(await page.evaluate(() => document.documentElement.dataset.look), undefined, "setup never loads a look");
-    assert.deepEqual(await marks(page), everyMark(58, 32));
+    assert.deepEqual(await marksAt(page, 58, 32), everyMark(58, 32));
     for (const line of await cutOff(page, ".setup-fit *", true)) assert.fail(line);
     // Smaller by one, then Continue: the theme, with the margin kept.
     await page.keyboard.press("ArrowLeft");
     await page.waitForFunction(() => document.querySelector(".fit-value")?.textContent === "93%");
-    assert.deepEqual(await marks(page), everyMark(67, 38));
+    assert.deepEqual(await marksAt(page, 67, 38), everyMark(67, 38));
     assert.equal(await kept(3.5), 3.5);
     await page.keyboard.press("Enter");
     await page.waitForFunction(async () => ((await (await fetch("/api/setup")).json()) as { setup: { step: string } }).setup.step === "theme");
