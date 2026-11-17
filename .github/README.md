@@ -14,10 +14,6 @@
   <a href="#install-it">Install it</a> · <a href="#what-you-get">What you get</a> · <a href="#questions">Questions</a>
 </p>
 
-<p align="center">
-  <img alt="OrigaiTV's home in the Glass look: your apps and a row of games over a big picture of the film you were watching" src="../branding/readme/home-glass.jpg">
-</p>
-
 ---
 
 OrigaiTV turns a small PC into the box under your TV.
@@ -26,7 +22,7 @@ OrigaiTV turns a small PC into the box under your TV.
 
 **It's yours to change.** Pick how home looks, how big things are, the colours and the background. And when an app is missing, you don't wait for someone to write it. You ask for it, and your TV makes it. That's the agentic part.
 
-**It's good for games.** Steam runs full screen for the games you own. Or ask for a small game of your own, and it's on home when it's done.
+**It's good for games.** Steam is here, and so is every other gaming platform Omarchy has, for the games you own. Or ask for a small game of your own, and it's on home when it's done.
 
 It works with any TV that has HDMI, because OrigaiTV runs on the box and not on the TV. A projector or an old monitor works too.
 
@@ -34,9 +30,18 @@ I built it because I wanted a TV I could just ask for things, and one I could ch
 
 ## What you get
 
+<p align="center">
+  <img alt="Home in the Glass look: the films you were watching on Jellyfin up top, and a frosted top row of six apps under them" src="../branding/readme/home-glass.jpg" width="49%">
+  <img alt="Glass home after pressing down: the top row stays up top, and the rest of your apps and a row of games slide in under it" src="../branding/readme/home-glass-apps.jpg" width="49%">
+</p>
+
+<p align="center"><i>Glass home. Press down, or Apps, and the rest of your apps slide in.</i></p>
+
 ### Easy to use
 
-- **Your phone is the remote.** Scan the code on the TV and that's it. There's no app to install. Swipe to move, tap for OK, and Back, Home and Play stay in the same place.
+- **Your phone is the remote.** Scan the code on the TV and that's it. There's no app to install. Swipe to move, tap for OK, and two fingers scroll the page. In the Glass look it's a round clickpad, and pressing its edge moves up, down, left or right. In Terminal and Cinema it's one big area to swipe.
+- **The arrows reach everything.** Up, down, left and right get to every button and poster on a page, even in an app that was made for a mouse. When there's nothing further, the page scrolls.
+- **Fits your TV.** Lots of TVs cut off the edges of the picture. Fit to screen is on from the start, so home and your apps sit inside a small margin. Setup shows four corner marks so you can fit the picture to your TV, and you can change it later in _Settings > Appearance_.
 - **Type on your phone, see it on the TV.** When the TV needs words, your phone's keyboard comes up by itself, and the TV shows each letter as you type it.
 - **Pick up where you stopped.** Home has what you were watching, one press away.
 - **Just ask.** "Play Sintel." "Continue my show." "What's new this week?" Type it or say it into your phone, and the answer shows on the TV.
@@ -46,25 +51,26 @@ I built it because I wanted a TV I could just ask for things, and one I could ch
 - **Hold OK on an app** to see who made it and what it connects to, or to quit it.
 
 <p align="center">
-  <img alt="The phone as the remote: a big area to swipe, with Back, Home, Play and Ask under it" src="../branding/readme/phone-remote.png" width="240">
-  <img alt="The phone while a film plays: what's on, pause, and the same buttons" src="../branding/readme/phone-playing.png" width="240">
+  <img alt="The phone as the remote in the Glass look: a round clickpad, with Back, Home, Play and Ask under it. Terminal and Cinema keep a big area to swipe" src="../branding/readme/phone-remote.png" width="240">
+  <img alt="The Glass remote while a film plays: what's on and how long is left, pause, and the same buttons" src="../branding/readme/phone-playing.png" width="240">
   <img alt="Typing a search on the phone: what you type shows on the TV as you type" src="../branding/readme/phone-typing.png" width="240">
 </p>
 
 ### Yours to change
 
-- **Three looks for home.** Terminal is tiles like windows, in a mono font. Glass puts frosted tiles over a big picture from one of your apps. Cinema has something to watch up top, then rows of your apps and shows. Change it whenever you like in _Settings > Appearance_.
+- **Three looks for home.** Terminal is tiles like windows, in a mono font. Glass is like the home on a TV box: a frosted top row of your favourite apps, with the films and shows of the one you're on above it. Cinema has something to watch up top, then rows of your apps and shows. Change it whenever you like in _Settings > Appearance_.
 - **Three sizes,** so it reads well from your couch. A 4K TV gets all three, and a 1080p TV gets two.
 - **Every Omarchy theme,** with its backgrounds, the moving ones too. Or use your own photos, or art from museums' open archives.
 - **A screen saver** that shows those pictures when the TV's idle.
 - **Build your own.** Can't find an app? Ask for it: a puzzle game, a better weather page, a slideshow of your photos. Your TV makes it while you keep watching, then puts it on home.
 - **Keep changing it.** Anything you made has "Change it". Say what you'd like different.
 - **What you make is yours.** It stays on your TV unless you save a copy.
-- **Edit home** on the TV, in any of the three looks, or from your phone. Put the apps you use first.
+- **Edit home** on the TV, in any of the three looks, or from your phone. Put the apps you use first. In Glass, you pick what goes in the top row, up to six.
+- **No limit on apps.** Glass and Cinema show every app you put on home. Terminal shows the first 12 and says where the rest are.
 
 | | | |
 | --- | --- | --- |
-| <img alt="Home in the Terminal look: tiles like windows, in a mono font" src="../branding/readme/home-terminal.jpg"> | <img alt="Home in the Glass look, with a light theme and a row of games" src="../branding/readme/home-glass-light.jpg"> | <img alt="Home in the Cinema look: a new film up top, then your apps and games" src="../branding/readme/home-cinema.jpg"> |
+| <img alt="Home in the Terminal look: tiles like windows, in a mono font" src="../branding/readme/home-terminal.jpg"> | <img alt="Home in the Glass look, with a light theme: films up top and the frosted top row of apps" src="../branding/readme/home-glass-light.jpg"> | <img alt="Home in the Cinema look: a new film up top, then your apps and games" src="../branding/readme/home-cinema.jpg"> |
 
 <p align="center"><i>Terminal, Glass and Cinema. Each one follows your theme.</i></p>
 
@@ -75,9 +81,10 @@ I built it because I wanted a TV I could just ask for things, and one I could ch
 
 ### Good for games
 
-- **Steam, full screen,** in Big Picture. Go back to home and your game keeps running.
+- **Every gaming platform Omarchy has.** Steam, RetroArch, Moonlight and the rest: [the list is in origaitv-apps](https://github.com/radomird/origaitv-apps#games). Pick them in setup, or later in _Settings > Home and apps > Games_. A few are made for a computer, so they need a mouse and keyboard.
+- **Full screen, and still there when you come back.** Steam opens in Big Picture. Go back to home and your game keeps running, even if the TV goes off.
 - **Games you ask for.** "Make me a puzzle game."
-- **A place for games on home.** In Glass and Cinema it's a row named Games, with Steam and the games you've made. In Terminal each game is a tile of its own.
+- **A place for games on home.** In Glass and Cinema it's a row named Games, with your gaming platforms and the games you've made. In Terminal each game is a tile of its own.
 - **Controllers.** Pair a Bluetooth controller in _Settings > Phones and controllers_. Hold its guide button to get from a game back to home.
 - **You'll know what your box can play.** Setup says it plainly. My little NUC gets "light games".
 
@@ -95,6 +102,7 @@ A few things I'd want to know first:
 
 - **Streaming won't be 4K.** The TV's own screens are, on a 4K TV. But the streaming apps play in a browser on Linux, and the services hold that to somewhere between SD and 1080p, with no HDR. If an app only plays in SD, [its entry in origaitv-apps](https://github.com/radomird/origaitv-apps#what-you-get) says so.
 - **Asking and making need an AI you already pay for.** Sign in with your Claude, ChatGPT or Grok plan during setup, or later in _Settings > AI_. Or add an API key: Claude, ChatGPT, Gemini, Grok and Muse all take one. It works for both as soon as it's connected. Everything else works without an AI.
+- **You pick the model.** _Settings > AI_ has one for asking and one for building, and you can pick another for each app before it's made. If you signed in with a plan, it also shows how much of the plan you've used, in %.
 - **It has no voice of its own.** Answers show on the TV. If you add an API key for an AI that has a voice (ChatGPT, Gemini or Grok), it says them too.
 - **I've tested it on one box,** mine. It should run on other x86_64 PCs, and I'd love to hear how it goes on yours.
 - **Installing erases the disk you pick.**
@@ -108,7 +116,7 @@ You'll need:
 - your phone
 - a keyboard, just long enough to tell the box to start from the stick
 
-1. Download the ISO from the newest release on [origaitv-iso's releases page](https://github.com/radomird/origaitv-iso/releases). Until 1.0 is out, that's a release candidate. Its notes have the download link. The file is named after its version, like `origaitv-1.0.0-rc3-x86_64.iso`, and it's about 6.7 GB. Want to be sure the download is mine? [origaitv-iso's README](https://github.com/radomird/origaitv-iso#getting-the-iso) has the four commands that check it.
+1. Download the ISO from [origai.tv/download](https://origai.tv/download). It's always the newest release. Until 1.0 is out, that's a release candidate. Right now it's 1.0.0-rc3 (`origaitv-1.0.0-rc3-x86_64.iso`, about 6.8 GB). Want to be sure the download is mine? origai.tv shows its checksum, and [origaitv-iso's README](https://github.com/radomird/origaitv-iso#getting-the-iso) has the four commands that check it.
 2. Write it to the stick with [balenaEtcher](https://etcher.balena.io/) on a Mac or Windows, or [caligula](https://github.com/ifd3f/caligula) on Linux.
 3. Start the box from the stick. On my NUC that's F10 as it powers on. Omarchy needs Secure Boot off, so turn it off in your box's firmware first if it's on. [Omarchy's manual](../manual/02-getting-started.md) has more on that.
 4. The TV shows a code. Scan it with your phone, pick the disk and tap "Erase and install". No phone to hand? Pick the disk with the keyboard and press Enter.
@@ -119,7 +127,7 @@ Want every question Omarchy's own installer asks (your keyboard layout, disk enc
 
 After that:
 
-- **Updates** are in _Settings > System > Updates_. See what's new, install it now or let it install overnight. If an update goes wrong, you can go back to the version before.
+- **Updates** are in _Settings > System > Updates_. See what's new, install it now or let it install overnight. If an update goes wrong, you can go back to the version before, and it tells you which one first.
 - **On a release candidate,** your TV gets early updates, each new build as it's made. To move it to the releases, run `origaitv channel stable` and then `origaitv update`.
 - **The Linux desktop** is Omarchy's, and it's still there. Super+Ctrl+Home takes you to it and back.
 - **Start setup again** with `origaitv setup reset`. Your profiles, phones and PIN stay.
@@ -144,6 +152,8 @@ Tried it on another box? [Tell me how it went](https://github.com/radomird/origa
 **Do I need an AI subscription?** Only to ask for things and to make apps. The remote, your apps, profiles and everything else work without one.
 
 **Which streaming services does it have?** Six: three now, and three coming soon. The list, and what each app can do, is in [origaitv-apps](https://github.com/radomird/origaitv-apps#what-you-get).
+
+**The edges of the picture are cut off. Can I fix that?** Yes. Many TVs zoom in a little. Fit to screen keeps everything inside a margin you set, in setup or in _Settings > Appearance_. If your TV has a setting to turn that zoom off (it's often called overscan), turning it off gives you the whole screen back.
 
 **Does it run on a Raspberry Pi?** No. It needs an x86_64 PC.
 
@@ -212,4 +222,4 @@ The films in the pictures are the Blender Foundation's open movies ([studio.blen
 
 ## Whose names these are
 
-Steam, Jellyfin, Immich and Plex are trademarks of their owners. So are the AI products named above, and the names and logos of the [streaming apps](https://github.com/radomird/origaitv-apps#what-you-get). I only name them to say what OrigaiTV works with. OrigaiTV isn't made or endorsed by any of them, and the code for the streaming apps is in `origaitv-apps`, not in this repo.
+Steam, RetroArch, Moonlight, Jellyfin, Immich and Plex are trademarks of their owners. So are the AI products named above, and the names and logos of the [streaming apps](https://github.com/radomird/origaitv-apps#what-you-get) and the [other gaming platforms](https://github.com/radomird/origaitv-apps#games). I only name them to say what OrigaiTV works with. OrigaiTV isn't made or endorsed by any of them, and the code for the streaming apps is in `origaitv-apps`, not in this repo.
