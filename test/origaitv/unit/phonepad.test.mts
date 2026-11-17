@@ -12,6 +12,7 @@
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import { connect, createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -20,6 +21,7 @@ import { acceptKey, buttons, CLOSED, closeFrame, frame, Frames, OP, packState, p
 import { type PadLink, Pads, PADS_MOST, type PadWire, QUIET_MS } from "../../../daemon/pads.ts";
 import { streamMessage } from "../../../daemon/phone-channel.ts";
 import { PadRefused, type PhonePad } from "../../../daemon/phone-client.ts";
+import { PadRoutes } from "../../../daemon/routes/pad.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import { HARNESS } from "../harness.mts";
 import { FIXTURES, makeBox, ROOT } from "../ui/box.mts";
@@ -719,6 +721,29 @@ test("T26.1 with phonepad off, game mode's addresses answer as ones that aren't 
   await b.helper.line((line) => line.gone === 1);
   assert.equal((await phone.call("GET", "/api/phone/pad")).status, 404);
   assert.equal("controllers" in (await state(phone)), false);
+});
+
+test("a switch that goes off without a word, as on a box back on stable, takes game mode with it", async (t) => {
+  // The switch as the daemon reads it, which a channel change moves with no
+  // request to the daemon.
+  let on = false;
+  const pads = new Pads();
+  const helper = standIn();
+  helper.attach(pads);
+  const wire = helper.wire();
+  const server = createHttpServer();
+  const nowhere = async () => {};
+  const routes = new PadRoutes<{ id: string; name: string }>({ pads, on: async () => on, open: async () => null, phone: nowhere, local: nowhere, allowed: () => true, json: () => {}, log: () => {}, followMs: 20 });
+  t.after(() => routes.close());
+  routes.watch(undefined, server);
+  assert.equal(server.listenerCount("upgrade"), 0);
+  on = true;
+  await until(() => server.listenerCount("upgrade") === 1, "the address is there once the switch is on");
+  assert.ok("slot" in (await pads.open({ id: "p-1", name: "a phone" }, wire.wire)));
+  on = false;
+  await until(() => server.listenerCount("upgrade") === 0, "and gone once it's off");
+  assert.deepEqual(wire.got.ended, { code: CLOSED.away, why: "game mode was turned off" });
+  assert.equal(pads.ready(), false, "the helper's connection went too");
 });
 
 test("the TV's own port: only the input helper holds the controllers' connection", async (t) => {

@@ -32,6 +32,10 @@ export const PADS_PROTOCOL = "origaitv-pads";
 // that isn't.
 const PHONE_HELD = 64 * 1024;
 const LINK_HELD = 256 * 1024;
+// How often the switch is read again. A change through the daemon is heard
+// at once, but a box that goes from edge back to stable turns a switch off
+// without one.
+const FOLLOW_MS = 15_000;
 
 type Handler = (request: IncomingMessage, response: ServerResponse) => Promise<void>;
 
@@ -50,6 +54,8 @@ export interface PadRoutesKit<P extends { id: string; name: string }> {
   allowed: (request: IncomingMessage) => boolean;
   json: (response: ServerResponse, status: number, data: unknown) => void;
   log: (line: string) => void;
+  // How often to read the switch again, for tests.
+  followMs?: number;
 }
 
 const header = (request: IncomingMessage, name: string): string => {
@@ -77,6 +83,7 @@ export class PadRoutes<P extends { id: string; name: string }> {
   private kit: PadRoutesKit<P>;
   private listeners: { server: Server; listener: (request: IncomingMessage, socket: Duplex, head: Buffer) => void }[] = [];
   private listening = false;
+  private following?: NodeJS.Timeout;
   // Every connection these routes hold, which the servers no longer count
   // as theirs.
   private sockets = new Set<Duplex>();
@@ -99,6 +106,8 @@ export class PadRoutes<P extends { id: string; name: string }> {
     };
     if (lan) this.listeners.push({ server: lan, listener: guard((request, socket, head) => this.fromPhone(request, socket, head)) });
     this.listeners.push({ server: local, listener: guard((request, socket) => this.fromHelper(request, socket)) });
+    this.following = setInterval(() => void this.kit.on().then((on) => this.switched(on), () => {}), this.kit.followMs ?? FOLLOW_MS);
+    this.following.unref();
   }
 
   // The switch, as the daemon starts and each time it changes.
@@ -121,6 +130,7 @@ export class PadRoutes<P extends { id: string; name: string }> {
   }
 
   close(): void {
+    clearInterval(this.following);
     this.kit.pads.close();
     for (const socket of this.sockets) socket.destroy();
   }
