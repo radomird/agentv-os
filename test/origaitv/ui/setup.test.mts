@@ -790,7 +790,7 @@ async function pinGrant(): Promise<string | undefined> {
   return (await (await post("/api/pin/check", { pin: "2468" })).json()).grant;
 }
 
-test("who watches: a child's profile asks for the adult PIN first, chosen twice on its pad, which the phone's remote shows too", async () => {
+test("who watches: a child's profile asks for the PIN first, chosen twice on its pad, which the phone's remote shows too", async () => {
   await toPeople();
   const page = await tv();
   await page.waitForSelector(".people");
@@ -819,8 +819,8 @@ test("who watches: a child's profile asks for the adult PIN first, chosen twice 
 
   // The PIN first, twice.
   await page.waitForSelector(".pin-pad");
-  assert.equal(await textOf(page, ".pin-pad h1"), "set an adult pin");
-  await waitFor(async () => (await phoneTv()).pin?.title === "Set an adult PIN");
+  assert.equal(await textOf(page, ".pin-pad h1"), "set a pin");
+  await waitFor(async () => (await phoneTv()).pin?.title === "Set a PIN");
   assert.equal((await phoneTv()).view, "pin");
   await page.keyboard.type("2468");
   await page.waitForFunction(() => document.querySelector(".pin-pad h1")?.textContent === "Enter it again");
@@ -859,7 +859,7 @@ test("who watches: an adult's profile asks for the PIN to open and shows a lock,
   assert.equal(await textOf(page, '[data-action="lock"] .button-value'), "yes");
   await page.locator('[data-action="save"]').click();
   await page.waitForSelector(".pin-pad");
-  assert.equal(await textOf(page, ".pin-pad h1"), "enter the adult pin");
+  assert.equal(await textOf(page, ".pin-pad h1"), "enter the pin");
   await page.keyboard.type("2468");
   await page.waitForSelector(".people");
   await page.waitForFunction(() => document.querySelectorAll(".person-lock").length === 1);

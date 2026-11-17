@@ -129,12 +129,12 @@ async function send(method: string, path: string, body?: unknown, grant?: string
 
 const grant = async () => (await send("POST", "/api/pin/check", { pin: "4826" })).data.grant as string;
 
-test("S4.2 S4.5 a child's profile needs an adult PIN, and changing profiles needs it once there is one", async () => {
+test("S4.2 S4.5 a child's profile needs a PIN, and changing profiles needs it once there is one", async () => {
   assert.deepEqual((await send("GET", "/api/viewers")).data, { ok: true, viewers: [{ id: "radomir", name: "radomir", role: "adult", avatar: "blue", locked: false }], active: "radomir" });
   const ana = await send("POST", "/api/viewers", { name: "ana", role: "adult" });
   assert.equal(ana.status, 200, "with no pin, an adult's profile is added");
   const child = await send("POST", "/api/viewers", { name: "mila", role: "child" });
-  assert.deepEqual(child, { status: 400, data: { ok: false, error: "Set an adult PIN first. A child's profile needs one." } });
+  assert.deepEqual(child, { status: 400, data: { ok: false, error: "Set a PIN first. A child's profile needs one." } });
   assert.equal((await send("PUT", `/api/viewers/${ana.data.profile.id}`, { role: "child" })).status, 400, "nor can an adult become a child");
 
   assert.equal((await send("PUT", "/api/pin", { pin: "4826" })).status, 200);

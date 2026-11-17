@@ -356,7 +356,7 @@ function tvPad(pin: NonNullable<Tv["pin"]>): HTMLElement {
   };
   return h(
     "div",
-    { class: "overlay", id: "tv-pin", role: "dialog", "aria-label": "Adult PIN" },
+    { class: "overlay", id: "tv-pin", role: "dialog", "aria-label": "PIN" },
     h(
       "div",
       { class: "page" },

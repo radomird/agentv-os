@@ -262,7 +262,7 @@ test("theme and background shows each of the theme's own pictures as a card, and
   }
 });
 
-test("Q226 who watches is one headline and the row, with no adult pin switch, and done at the row's end moves on", async () => {
+test("Q226 who watches is one headline and the row, with no PIN switch, and done at the row's end moves on", async () => {
   switches(true);
   at("people");
   const page = await tv();

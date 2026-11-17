@@ -270,7 +270,7 @@ One more plain answer to know about: if a sealed body is bigger than the limit, 
 
 ## The PIN grant
 
-Some routes are an adult's, and need the adult PIN once one is set. The flow:
+Some routes are an adult's, and need the PIN once one is set. The flow:
 
 1. Send the request. Without a good grant, the answer is `403`, sealed: `{"ok":false,"error":"That needs the PIN","pin":true}`.
 2. Ask for the PIN on the phone and send it: `POST /api/phone/pin` with `{"pin":"1234"}`. Four digits, as text.

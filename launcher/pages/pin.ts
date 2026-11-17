@@ -2,7 +2,7 @@
 // as the digits come, and a pad of 1 to 9, 0 and delete, picked with the
 // arrows or typed with a keyboard's number keys, which the phone's keyboard
 // sends too. It's drawn over everything but the Updating screen, and asks for
-// the PIN before an adult action, chooses a new one in Settings → Adult PIN,
+// the PIN before an adult action, chooses a new one in Settings → Profiles → PIN,
 // and locks the TV after the box starts and after the TV has been off.
 
 import { h } from "../dom.ts";
@@ -11,7 +11,7 @@ import type { Action } from "../input.ts";
 
 export interface PadOptions {
   command: string; // the prompt: "tv settings · pin"
-  title: string; // "Enter the adult PIN"
+  title: string; // "Enter the PIN"
   note: string; // what it's for
   // Four digits, checked: null when they're right, else what to say.
   submit(pin: string): Promise<string | null>;

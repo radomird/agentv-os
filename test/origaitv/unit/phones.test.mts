@@ -367,7 +367,7 @@ test("ADR-037 S4.10 the phone hears what's on the TV within a second: its ask wa
   const started = Date.now();
   const waiting = send(phone, "GET", `/api/phone/state?since=${first.version}`, { token });
   await sleep(100);
-  const pin = { title: "enter the adult pin", for: "for omarchy's desktop.", digits: 0, error: null };
+  const pin = { title: "enter the pin", for: "for omarchy's desktop.", digits: 0, error: null };
   assert.equal((await send(tv, "POST", "/api/tv/context", { body: { pin } })).status, 200);
   const woke = (await waiting).data;
   assert.ok(Date.now() - started < 1000, `${Date.now() - started} ms`);

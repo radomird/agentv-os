@@ -89,7 +89,8 @@ What stays, because it's someone else's word or a name: "API key" and "plan" (th
 | share, mount (a network folder) | network folder, Connecting…, "Couldn't open that folder" |
 | nas | network drive, or just "drive" |
 | shared, a share (from a phone) | From your phones, "Sent from Ana's phone" |
-| pin, unpin (a tile) | Add to home, Remove from home. "PIN" is only the adult PIN |
+| pin, unpin (a tile) | Add to home, Remove from home. "PIN" only ever means the TV's 4-digit PIN |
+| adult PIN | PIN: "Enter the PIN", "Set a PIN". "Adult" stays for the person: an adult's profile |
 | take X off, forget, is gone | Remove, Removed |
 | is kept, keep it, kept for later | Saved, Save, Saved for later |
 | didn't set, didn't take it, didn't mount | Couldn't (verb) (thing) |

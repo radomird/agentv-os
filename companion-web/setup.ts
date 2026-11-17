@@ -95,14 +95,14 @@ function form(network: Network | null): void {
       ? null
       : (h("input", { class: "field", type: "password", autocapitalize: "none", autocomplete: "off", spellcheck: "false", maxlength: "64", placeholder: "Password", "aria-label": "Wi-Fi password" }) as HTMLInputElement);
   const pin = needsPin
-    ? (h("input", { class: "field", type: "password", inputmode: "numeric", autocomplete: "off", maxlength: "4", placeholder: "Adult PIN", "aria-label": "Adult PIN", "data-field": "pin" }) as HTMLInputElement)
+    ? (h("input", { class: "field", type: "password", inputmode: "numeric", autocomplete: "off", maxlength: "4", placeholder: "PIN", "aria-label": "PIN", "data-field": "pin" }) as HTMLInputElement)
     : null;
   const join = async () => {
     const ssid = network?.ssid ?? name!.value.trim();
     const typed = password?.value ?? "";
     if (!ssid) return toast("Type the network's name");
     if (password && network?.secure && typed.length < 8) return toast("Wi-Fi passwords have at least 8 characters");
-    if (pin && !/^\d{4}$/.test(pin.value)) return toast("The adult PIN has 4 digits");
+    if (pin && !/^\d{4}$/.test(pin.value)) return toast("The PIN has 4 digits");
     let ask: string | undefined;
     try {
       ({ ask } = await call<{ ask?: string }>("POST", "/api/setup/wifi", { ssid, password: typed, ...(pin ? { pin: pin.value } : {}) }));

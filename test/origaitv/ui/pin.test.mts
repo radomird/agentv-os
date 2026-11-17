@@ -1,5 +1,5 @@
 // The adult PIN on the TV in a real Chromium (ADR-019, layer 4; ADR-009,
-// S4.5): Settings → Adult PIN sets it on its pad, chosen twice, from the
+// S4.5): Settings → Profiles → PIN sets it on its pad, chosen twice, from the
 // arrows or number keys; each adult action asks for it and is refused
 // without it; the TV locked shows only the pad; and origaitv-pin-check's ask
 // on the TV hands back a grant. What the screen daemon and the daemon refuse
@@ -83,19 +83,19 @@ async function type(page: Page, digits: string): Promise<void> {
   for (const digit of digits) await page.keyboard.press(digit);
 }
 
-test("S4.5 Settings → Adult PIN sets a PIN on its pad, chosen twice, with the arrows or number keys", async () => {
+test("S4.5 Settings → Profiles → PIN sets a PIN on its pad, chosen twice, with the arrows or number keys", async () => {
   removePin();
   const page = await tv();
   await home(page);
   await go(page, "settings/pin");
   await page.waitForSelector('.settings-panel[data-page="pin"]');
-  assert.equal(await page.locator(".menu-item.open").innerText(), "profiles", "the adult PIN is a row in Profiles");
+  assert.equal(await page.locator(".menu-item.open").innerText(), "profiles", "the PIN is a row in Profiles");
   assert.match(await page.locator(".panel").innerText(), /set a pin\s+4 digits, for settings, new apps and the desktop/);
   await page.keyboard.press("Enter");
   assert.equal(await focused(page), "set-pin");
   await page.keyboard.press("Enter");
   await waitPad(page, true);
-  assert.match(await padText(page), /tv settings · pin[\s\S]*set an adult pin[\s\S]*4 digits, for settings, new apps and the desktop/);
+  assert.match(await padText(page), /tv settings · pin[\s\S]*set a pin[\s\S]*4 digits, for settings, new apps and the desktop/);
   assert.equal(await focused(page), "1", "the pad starts on 1");
 
   // The remote's arrows and OK: 4 is under 1.
@@ -125,7 +125,7 @@ test("S4.5 Settings → Adult PIN sets a PIN on its pad, chosen twice, with the 
   // The row says it's on, and nothing in Settings is marked "[pin]".
   await page.keyboard.press("Escape");
   await page.waitForSelector('.settings-panel[data-page="profiles"]');
-  assert.match(await page.locator('.panel [data-action="pin"]').innerText(), /adult pin\s+on/);
+  assert.match(await page.locator('.panel [data-action="pin"]').innerText(), /pin\s+on/);
   assert.equal(await focused(page), "pin", "Back from the page lands on its row");
   await go(page, "settings/tv");
   await page.waitForSelector('.settings-panel[data-page="tv"]');
@@ -143,7 +143,7 @@ test("S4.5 each adult action asks for the PIN on its pad, and nothing goes witho
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
   await waitPad(page, true);
-  assert.match(await padText(page), /enter the adult pin[\s\S]*for omarchy's desktop$/m);
+  assert.match(await padText(page), /enter the pin[\s\S]*for omarchy's desktop$/m);
   await page.keyboard.press("Escape");
   await waitPad(page, false);
   assert.deepEqual(await sent(page, "desktop"), []);
@@ -184,7 +184,7 @@ test("S4.5 each adult action asks for the PIN on its pad, and nothing goes witho
   await page.close();
 });
 
-test("S4.5 the TV locked shows only the pad until the PIN, from Settings → Adult PIN and at start", async () => {
+test("S4.5 the TV locked shows only the pad until the PIN, from Settings → Profiles → PIN and at start", async () => {
   setPin();
   const page = await tv();
   await home(page);
@@ -192,7 +192,7 @@ test("S4.5 the TV locked shows only the pad until the PIN, from Settings → Adu
   await page.waitForSelector('.panel [data-action="lock"]');
   await page.locator('.panel [data-action="lock"]').click();
   await waitPad(page, true);
-  assert.match(await padText(page), /tv locked[\s\S]*enter the adult pin[\s\S]*this tv is locked$/m);
+  assert.match(await padText(page), /tv locked[\s\S]*enter the pin[\s\S]*this tv is locked$/m);
   // Back and Home don't get past it.
   await page.keyboard.press("Escape");
   await page.keyboard.press("Home");

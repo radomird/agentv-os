@@ -64,8 +64,8 @@ function approver(from: string, yes: boolean): (manifest: Manifest) => Promise<b
     const sudoer = /^\d+$/.test(process.env.SUDO_UID ?? "") && !process.env.XDG_RUNTIME_DIR;
     const env = sudoer ? { ...process.env, XDG_RUNTIME_DIR: `/run/user/${process.env.SUDO_UID}` } : process.env;
     const pin = spawnSync(pinCheck, ["app-install"], { stdio: "inherit", env });
-    if (pin.error) throw new IndexError(`couldn't ask for the adult PIN (${pin.error.message})`);
-    if (pin.status !== 0) throw new IndexError("That needs the adult PIN, so nothing was installed");
+    if (pin.error) throw new IndexError(`couldn't ask for the PIN (${pin.error.message})`);
+    if (pin.status !== 0) throw new IndexError("That needs the PIN, so nothing was installed");
     return true;
   };
 }

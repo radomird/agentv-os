@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# origaitv:summary=Ask for the adult PIN before an adult action
+# origaitv:summary=Ask for the PIN before an adult action
 # origaitv:args=<action>
 # origaitv:hidden=true
 
@@ -55,7 +55,7 @@ fi
 
 if [[ -t 0 && -t 2 ]]; then
   for _ in 1 2 3; do
-    read -rsp "The adult PIN, for $action: " pin
+    read -rsp "PIN for $action: " pin
     echo >&2
     reply=$(jq -Rc '{pin: .}' <<<"$pin" | post /api/pin/check)
     [[ $(jq -r '.ok // false' <<<"$reply" 2>/dev/null) == "true" ]] && exit 0
@@ -70,5 +70,5 @@ fi
 if reply=$(ORIGAITV_SCREEN_TIMEOUT=150 "${ORIGAITV_SCREEN:-$ORIGAITV_BIN_DIR/origaitv-screen}" pin "$action" 2>/dev/null); then
   allowed "$(jq -r '.grant // empty' <<<"$reply")" && exit 0
 fi
-echo "That needs the adult PIN." >&2
+echo "That needs the PIN." >&2
 exit 1

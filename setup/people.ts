@@ -37,7 +37,7 @@ export async function choosePin(ctx: Ctx, why: string): Promise<boolean> {
   let first = "";
   const chosen = await ctx.pad({
     command: "tv setup · pin",
-    title: "Set an adult PIN",
+    title: "Set a PIN",
     note: why,
     submit: async (pin) => {
       first = pin;
@@ -132,7 +132,7 @@ export async function people(ctx: Ctx, phase2 = false): Promise<View> {
         { class: "setup-page" },
         h("div", {}, ...heading("tv setup · who's watching", "Who's watching?", ctx.reduced())),
         row,
-        h("div", { class: "setup-foot" }, h("span", { class: "pin-line" }, h("span", {}, "Adult PIN"), pinButton, h("span", { class: "setup-note" }, "Needed for children")), go),
+        h("div", { class: "setup-foot" }, h("span", { class: "pin-line" }, h("span", {}, "PIN"), pinButton, h("span", { class: "setup-note" }, "Needed for children")), go),
       );
   return {
     el,

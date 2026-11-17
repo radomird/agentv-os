@@ -538,7 +538,7 @@ test("origaitv-phone-call pairs with a code, sends a request as that phone, and 
     await local("POST", "/api/setup", { done: true });
     const needs = await run("pair-new");
     assert.deepEqual([needs.code, needs.out], [1, ""]);
-    assert.match(needs.err, /adult PIN set.*ORIGAITV_PIN/);
+    assert.match(needs.err, /a PIN set.*ORIGAITV_PIN/);
     assert.equal((await run("pair-new", "x", "y")).code, 2);
     process.env.ORIGAITV_PIN = "0000";
     assert.match((await run("pair-new")).err, /didn't take the PIN/);

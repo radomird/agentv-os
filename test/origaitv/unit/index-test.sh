@@ -129,11 +129,11 @@ out=$(local_app "$SCRATCH/built" --yes </dev/null 2>&1) || fail "ADR-039 origait
   fail "it says what the app is, where it's from and what it can reach, before it asks" "$out"
 [[ $(tail -n 1 <<<"$out") == "Installed Sample 1.0.0. Open Apps on your TV to add it to home." ]] ||
   fail "it says what it installed, and where to find it on the TV" "$out"
-[[ $(cat "$PIN_LOG") == "app-install" ]] || fail "--yes answers the question, and the adult PIN is still asked for" "$(cat "$PIN_LOG")"
+[[ $(cat "$PIN_LOG") == "app-install" ]] || fail "--yes answers the question, and the PIN is still asked for" "$(cat "$PIN_LOG")"
 [[ -f $SCRATCH/state/apps/local.sample/manifest.json && ! -e $SCRATCH/state/apps/local.sample/fixtures ]] ||
   fail "the app lands in the box's apps folder, without its fixtures" "$(ls -R "$SCRATCH/state/apps")"
 [[ $(app list) == "local.sample 1.0.0 local" ]] || fail "origaitv app list shows it as a local app" "$(app list)"
-pass "ADR-039 origaitv app install --local installs an app built on this box as a local app, after the adult PIN"
+pass "ADR-039 origaitv app install --local installs an app built on this box as a local app, after the PIN"
 
 out=$(app remove local.sample 2>&1) || fail "origaitv app remove removes a local app" "$out"
 [[ ! -e $SCRATCH/state/apps/local.sample && -z $(app list) ]] || fail "origaitv app remove leaves nothing of the local app"
@@ -142,11 +142,11 @@ pass "ADR-039 origaitv app remove takes a local app off the box"
 touch "$PIN_NO"
 status=0
 out=$(local_app "$SCRATCH/built" --yes </dev/null 2>&1) || status=$?
-(( status == 1 )) || fail "ADR-039 without the adult PIN, nothing is installed" "exit $status: $out"
-[[ $(tail -n 1 <<<"$out") == "That needs the adult PIN, so nothing was installed." ]] || fail "it says the PIN was needed" "$out"
+(( status == 1 )) || fail "ADR-039 without the PIN, nothing is installed" "exit $status: $out"
+[[ $(tail -n 1 <<<"$out") == "That needs the PIN, so nothing was installed." ]] || fail "it says the PIN was needed" "$out"
 [[ ! -e $SCRATCH/state/apps/local.sample && -z $(app list) ]] || fail "nothing of the app is on the box without the PIN"
 rm -f "$PIN_NO"
-pass "ADR-039 origaitv app install --local installs nothing without the adult PIN"
+pass "ADR-039 origaitv app install --local installs nothing without the PIN"
 
 # Through sudo with no terminal, the PIN is asked for on the TV of whoever ran
 # sudo, since root has no TV session of its own.
@@ -154,7 +154,7 @@ pass "ADR-039 origaitv app install --local installs nothing without the adult PI
 out=$(SUDO_UID=4242 local_app "$SCRATCH/built" --yes </dev/null 2>&1) || fail "an install through sudo works" "$out"
 [[ $(cat "$PIN_LOG") == "app-install in /run/user/4242" ]] || fail "the PIN is asked for in sudo's person's TV session" "$(cat "$PIN_LOG")"
 app remove local.sample >/dev/null
-pass "ADR-039 through sudo, the adult PIN is asked for on the TV of the person who ran it"
+pass "ADR-039 through sudo, the PIN is asked for on the TV of the person who ran it"
 
 : >"$PIN_LOG"
 status=0

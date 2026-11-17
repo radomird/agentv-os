@@ -105,7 +105,7 @@ export interface Ctx {
   grant(what: string): Promise<string | null>;
   // Drops that grant, as when the daemon refused it.
   forgetGrant(): void;
-  // A PIN pad over the page, as Settings → Adult PIN chooses a new PIN with.
+  // A PIN pad over the page, as Settings → Profiles → PIN chooses a new PIN with.
   // True once submit took the digits.
   pad(options: Omit<PadOptions, "cancel">): Promise<boolean>;
 }
@@ -392,7 +392,7 @@ async function grantFor(what: string, options: { idleMs?: number; one?: boolean 
   if (!ctx.state.pin?.set) return "";
   let grant: string | null = null;
   const ok = await openPad(
-    { command: "tv pin", title: "Enter the adult PIN", note: `For ${what}`, cancel: true, idleMs: options.idleMs, submit: checkPin(!options.one, (g) => (grant = g)) },
+    { command: "tv pin", title: "Enter the PIN", note: `For ${what}`, cancel: true, idleMs: options.idleMs, submit: checkPin(!options.one, (g) => (grant = g)) },
     undefined,
     options.one ? undefined : holding,
   );
@@ -400,7 +400,7 @@ async function grantFor(what: string, options: { idleMs?: number; one?: boolean 
   return grant ?? held?.token ?? null;
 }
 
-// The lock: by hand from Settings → Adult PIN, and after the box starts and
+// The lock: by hand from Settings → Profiles → PIN, and after the box starts and
 // after the TV has been off, for a profile that asks for the PIN to open
 // (ADR-034). The pad has no way past it but the PIN, or the phone switching
 // to someone else. Unlocking is all it does: an adult action after it still
@@ -411,7 +411,7 @@ function setLock(locked: boolean): void {
     held = null;
     const viewer = ctx.state.viewer;
     void openPad(
-      { command: "tv locked", title: "Enter the adult PIN", note: viewer.locked ? `To open ${viewer.name}'s profile` : "This TV is locked", cancel: false, submit: checkPin(false) },
+      { command: "tv locked", title: "Enter the PIN", note: viewer.locked ? `To open ${viewer.name}'s profile` : "This TV is locked", cancel: false, submit: checkPin(false) },
       (pad) => (lockPad = pad),
       // Unlocked elsewhere while it waited its turn.
       () => ctx.state.pin?.locked !== true,
