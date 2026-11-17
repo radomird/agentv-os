@@ -98,11 +98,11 @@ refused origaitv.later "Update OrigaiTV in Settings first, then add the app agai
 touch "$ORIGAITV_PACMAN_SYNC/multilib.db"
 pass "a box without its package lists says to update it, and fetches none on the side"
 
-app origaitv.broken official "$(native pacman broken-game)"
+app origaitv.broken official '{"name":"Broken Game","tv":{"runtime":"native","package":{"pacman":"broken-game"},"exec":["broken-game"]}}'
 if package origaitv.broken; then
   fail "a program that doesn't install fails"
 fi
-[[ $(cat "$ORIGAITV_APP_PACKAGE_ERRORS/origaitv.broken.error") == "Couldn't install broken-game" ]] || fail "and says so" "$(cat "$ORIGAITV_APP_PACKAGE_ERRORS/origaitv.broken.error")"
+[[ $(cat "$ORIGAITV_APP_PACKAGE_ERRORS/origaitv.broken.error") == "Couldn't install Broken Game. Try again later." ]] || fail "and says so, with the app's own name" "$(cat "$ORIGAITV_APP_PACKAGE_ERRORS/origaitv.broken.error")"
 package origaitv.game || fail "a later one"
 [[ ! -e $ORIGAITV_APP_PACKAGE_ERRORS/origaitv.game.error ]] || fail "leaves no reason behind when it worked"
 pass "a program that doesn't install says so for the TV"
@@ -207,3 +207,14 @@ echo com.nvidia.geforcenow >"$SCRATCH/flatpaks"
 package origaitv.geforcenow || fail "GeForce NOW again" "$(cat "$SCRATCH/out")"
 [[ $(cat "$calls") == "flatpak info --system -- com.nvidia.geforcenow" ]] || fail "is left as it is once it's there" "$(cat "$calls")"
 pass "and one that's there already is left as it is"
+
+# Its download can't be reached: the TV says so with the app's name.
+cat >"$OMARCHY_PATH/bin/flatpak" <<STUB
+#!/bin/bash
+echo "flatpak \$*" >>"$calls"
+[[ \$1 != info && \$1 != remote-add ]]
+STUB
+app origaitv.geforcenow official '{"name":"GeForce NOW","tv":{"runtime":"native","package":{"flatpak":"com.nvidia.geforcenow"},"exec":["flatpak","run","com.nvidia.geforcenow"]}}'
+package origaitv.geforcenow && fail "a download that can't be reached fails"
+[[ $(cat "$ORIGAITV_APP_PACKAGE_ERRORS/origaitv.geforcenow.error") == "Couldn't reach GeForce NOW's download. Try again later." ]] || fail "and says which app, not which tool" "$(cat "$ORIGAITV_APP_PACKAGE_ERRORS/origaitv.geforcenow.error")"
+pass "a flatpak whose download can't be reached says so in the app's own name"

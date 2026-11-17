@@ -582,11 +582,13 @@ body:has(#offline) .glass-bar .bar-hint {
   opacity: 1;
 }
 
-/* What an app in the list is doing, under its name: open, or running. */
+/* What an app in the list is doing, under its name: open, or running, or
+   that it needs a mouse and keyboard, which wraps to fit the tile's width. */
 .glass-tile .glass-label small {
   display: block;
   font-size: 0.75em;
   font-weight: 600;
+  white-space: normal;
 }
 
 /* A build's tile in the row: its logo and the ring of its progress. */

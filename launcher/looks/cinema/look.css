@@ -393,6 +393,34 @@ body.with-backdrop {
   text-overflow: ellipsis;
 }
 
+/* A game that needs a mouse and keyboard says so in full, on two lines,
+   with a smaller logo and name to make room, as larger text has them. */
+.cinema-card-state.cinema-card-wrap {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  font-size: 0.8em;
+  line-height: 1.15;
+}
+
+.cinema-card:has(.cinema-card-wrap) {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.cinema-card:has(.cinema-card-wrap) .logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  font-size: 22px;
+}
+
+.cinema-card:has(.cinema-card-wrap) .cinema-card-name {
+  font-size: 32px;
+  line-height: 1.1;
+}
+
 /* A built-in with content says it in the card, and its name goes under. */
 .card-clock ~ .cinema-card-name,
 .card-weather-on ~ .cinema-card-name {

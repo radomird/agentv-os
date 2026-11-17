@@ -57,6 +57,10 @@ tier=$(jq -r --arg id "$id" '.[$id].tier // empty' "$APPS/installed.json" 2>/dev
 [[ $tier == "official" ]] || fail "only an official app installs a program"
 manifest="$APPS/$id/manifest.json"
 [[ $(jq -r '.tv.runtime // empty' "$manifest" 2>/dev/null) == "native" ]] || fail "it isn't a native app"
+# The app's own name, for what the TV says when something goes wrong: what
+# you were getting, never the tools that get it.
+name=$(jq -r '.name // empty' "$manifest" 2>/dev/null | tr -d '[:cntrl:]' | cut -c1-60 || true)
+[[ -n $name ]] || name="it"
 pkg=$(jq -r '.tv.package.pacman // empty' "$manifest" 2>/dev/null || true)
 flatpak=$(jq -r '.tv.package.flatpak // empty' "$manifest" 2>/dev/null || true)
 [[ -n $pkg || -n $flatpak ]] || fail "it names no package"
@@ -116,13 +120,13 @@ if [[ -n $flatpak ]]; then
   fi
   if [[ -n $(missing flatpak) ]]; then
     synced
-    omarchy-pkg-add flatpak || fail "Couldn't install Flatpak"
+    omarchy-pkg-add flatpak || fail "Couldn't install $name. Try again later."
   fi
   # Its runtime comes from Flathub, and the app from its maker's own
   # repository, which flatpak checks against the key it names.
-  flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || fail "Couldn't reach Flathub. Try again later."
-  flatpak remote-add --system --if-not-exists "$remote" "$repo" || fail "Couldn't reach its download. Try again later."
-  flatpak install --system --noninteractive -y "$remote" "$flatpak" || fail "Couldn't install it. Try again later."
+  flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo || fail "Couldn't reach $name's download. Try again later."
+  flatpak remote-add --system --if-not-exists "$remote" "$repo" || fail "Couldn't reach $name's download. Try again later."
+  flatpak install --system --noninteractive -y "$remote" "$flatpak" || fail "Couldn't install $name. Try again later."
   echo "origaitv-app-package: installed $flatpak for $id"
   exit 0
 fi
@@ -183,7 +187,7 @@ else
   if $lib32; then
     omarchy-install-gaming-gpu-lib32 || fail "Couldn't install this app's graphics drivers"
   fi
-  omarchy-pkg-add "${wanted[@]}" || fail "Couldn't install $pkg"
+  omarchy-pkg-add "${wanted[@]}" || fail "Couldn't install $name. Try again later."
   echo "origaitv-app-package: installed ${wanted[*]} for $id"
 fi
 

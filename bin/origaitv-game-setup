@@ -69,7 +69,7 @@ battlenet() {
     update-desktop-database "$HOME/.local/share/applications" 2>/dev/null || true
   fi
   if [[ ! -s $cache/Battle.net-Setup.exe ]]; then
-    curl --fail --silent --show-error --location --retry 3 --max-time 600 --output "$cache/Battle.net-Setup.exe.part" "$BATTLENET_SETUP_URL"
+    curl --fail --silent --show-error --location --proto =https --proto-redir =https --retry 3 --max-time 600 --output "$cache/Battle.net-Setup.exe.part" "$BATTLENET_SETUP_URL"
     mv -f "$cache/Battle.net-Setup.exe.part" "$cache/Battle.net-Setup.exe"
   fi
   echo "origaitv-game-setup: Battle.net's setup is ready for its first start"

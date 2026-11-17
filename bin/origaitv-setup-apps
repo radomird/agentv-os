@@ -16,7 +16,9 @@
 #
 # It's a queue (ADR-103): while it installs, the daemon can leave more, and
 # it takes each new hand-over once it's done with the one before, until none
-# is left. A hand-over can also name official apps to remove, which takes
+# is left. Each step has a time limit of its own, so a queue of every game
+# platform can take as long as it needs, and one step that hangs ends
+# without holding up the rest. A hand-over can also name official apps to remove, which takes
 # the app off the TV and leaves its program, its games and its saves where
 # they are, and the Xbox controller driver from Settings, Phones and
 # controllers, which origaitv-xbox-driver.service installs. The removals go
@@ -34,6 +36,10 @@ APPS=${ORIGAITV_APPS:-/var/lib/origaitv/apps}
 PACKAGE=${ORIGAITV_APP_PACKAGE:-}
 DRIVER=${ORIGAITV_XBOX_DRIVER:-}
 PACKAGE_ERRORS=${ORIGAITV_APP_PACKAGE_ERRORS:-/run/origaitv-app-package}
+# How long fetching one app, or taking one off, may take. A program has its
+# unit's own limit, and so does the driver.
+INSTALL_LIMIT=${ORIGAITV_APP_INSTALL_LIMIT:-20m}
+REMOVE_LIMIT=${ORIGAITV_APP_REMOVE_LIMIT:-10m}
 ID='^[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)+$'
 
 [[ -f $DROP ]] || exit 0
@@ -85,9 +91,10 @@ install_program() {
 
 # install_app <id>
 install_app() {
-  local id=$1 out why
+  local id=$1 out why status=0
   set_state "$id" installing
-  if out=$("$INSTALL" "$id" 2>&1); then
+  out=$(timeout --kill-after=1m "$INSTALL_LIMIT" "$INSTALL" "$id" 2>&1) || status=$?
+  if (( status == 0 )); then
     echo "origaitv-setup-apps: installed $id"
     if needs_program "$id"; then
       echo "origaitv-setup-apps: installing the program $id opens"
@@ -100,6 +107,10 @@ install_app() {
       fi
     fi
     set_state "$id" installed
+  elif (( status == 124 || status == 137 )); then
+    why="It took too long. Try again later."
+    set_state "$id" failed "$why"
+    echo "origaitv-setup-apps: $id didn't install within $INSTALL_LIMIT" >&2
   else
     # The installer's own last line says why. A lone sentence loses its
     # full stop, as a notice on the TV has none.
@@ -122,7 +133,7 @@ remove_app() {
     return
   fi
   set_state "$id" removing
-  if "$REMOVE" "$id" >/dev/null 2>&1; then
+  if timeout --kill-after=1m "$REMOVE_LIMIT" "$REMOVE" "$id" >/dev/null 2>&1; then
     write 'del(.apps[$id])' --arg id "$id"
     echo "origaitv-setup-apps: removed $id, and left its program and its saves"
   else
@@ -149,10 +160,13 @@ install_driver() {
 
 # Each hand-over, until the daemon has left no more.
 while [[ -f $DROP ]]; do
-  mapfile -t apps < <(jq -r '.apps[]? | strings' "$DROP" 2>/dev/null || true)
-  mapfile -t gone < <(jq -r '.remove[]? | strings' "$DROP" 2>/dev/null || true)
-  driver=$(jq -r 'if .driver == "xpadneo" then "xpadneo" else empty end' "$DROP" 2>/dev/null || true)
-  rm -f "$DROP"
+  # Taken aside first, then read. A hand-over the daemon leaves meanwhile is
+  # a new file in its place, taken on the next turn, never lost.
+  taken="$DROP.taken"
+  mv -f "$DROP" "$taken" || break
+  mapfile -t apps < <(jq -r '.apps[]? | strings' "$taken" 2>/dev/null || true)
+  mapfile -t gone < <(jq -r '.remove[]? | strings' "$taken" 2>/dev/null || true)
+  driver=$(jq -r 'if .driver == "xpadneo" then "xpadneo" else empty end' "$taken" 2>/dev/null || true)
 
   wanted=()
   for id in "${apps[@]}"; do
@@ -167,8 +181,12 @@ while [[ -f $DROP ]]; do
   for id in "${gone[@]}"; do
     [[ $id =~ $ID ]] || continue
     removing+=("$id")
+    set_state "$id" removing
   done
   [[ -z $driver ]] || driver_state queued
+  # Each one marked first: until then, the daemon counts the hand-over
+  # taken aside as still waiting.
+  rm -f "$taken"
 
   for id in "${removing[@]}"; do remove_app "$id"; done
   for id in "${wanted[@]}"; do install_app "$id"; done

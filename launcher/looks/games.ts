@@ -16,6 +16,14 @@ export function isGame(app: App): boolean {
   return app.category === "games";
 }
 
+// What the four desktop launchers (Minecraft, Lutris, Heroic, Battle.net)
+// say on their tile (ADR-103), from what their description says after its
+// first sentence, as the Games page's line over the list reads it.
+export const NEEDS_KEYBOARD = "Needs a mouse and keyboard";
+export function needsKeyboard(app: { description?: string }): boolean {
+  return /^Needs a mouse and keyboard\.?$/.test((app.description ?? "").split(/(?<=\.)\s+/).slice(1).join(" "));
+}
+
 // Home's apps in two rows: the apps, and the games. Each keeps its order.
 export function shelves(all: App[]): { apps: App[]; games: App[] } {
   return { apps: all.filter((app) => !isGame(app)), games: all.filter(isGame) };

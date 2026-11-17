@@ -123,6 +123,8 @@ test("S6.9 a build walks its recipe's steps in order, each offered only that ste
   assert.equal(manifest.id, "local.blocks");
   assert.equal(manifest.name, "Blocks");
   assert.deepEqual(status.approval?.reaches.declared, ["a tile on home"]);
+  // And what it runs as, which root compares again before it installs it.
+  assert.deepEqual(status.approval?.runs, { runtime: "page", exec: [] });
   // And what it filled the recipe in with is kept for repairs and changes.
   const filled = JSON.parse(readFileSync(join(b.dir, "filled.json"), "utf8"));
   assert.equal(filled.recipe, "game");

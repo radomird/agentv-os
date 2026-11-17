@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import type { Client, Hyprland, Layer, Monitor } from "../../../daemon/hyprland.ts";
 import type { DevTools } from "../../../daemon/cdp.ts";
-import { PAUSE, RESUME } from "../../../daemon/media.ts";
+import { MUTE, PAUSE, RESUME, UNMUTE } from "../../../daemon/media.ts";
 import { BACK_TAP, FOCUS_BINDING, navigationPage, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, WHEEL_AT } from "../../../daemon/remote-page.ts";
 import { FIELD } from "../../../daemon/remote-text.ts";
 import type { Cli } from "../../../daemon/ai.ts";
@@ -245,8 +245,15 @@ class FakeBrowser implements DevTools {
       this.playing.set(targetId, true);
       return 1;
     }
+    if (expression === MUTE && this.playing.get(targetId) && !this.muted.has(targetId)) {
+      this.muted.add(targetId);
+      return 1;
+    }
+    if (expression === UNMUTE && this.muted.delete(targetId)) return 1;
     return 0;
   }
+  // Pages the TV going off muted.
+  muted = new Set<string>();
   // What runs in each page as it loads, in which world.
   scripts: { targetId: string; source: string; world: string }[] = [];
   async addScriptIn(targetId: string, source: string, world: string) {
@@ -317,8 +324,8 @@ class FakeLauncher implements Launcher {
   // Each native game started, with its command and the mode it was given.
   games: Array<{ exec: string[]; mode: MonitorMode; app: FakeApp }> = [];
   game(exec: string[], mode: MonitorMode, name?: string) {
-    if (exec[0] === "steam" && !this.steamInstalled) throw new Error(`${name ?? "Steam"} isn't installed. Add it again in Settings, under Games.`);
-    if (exec[0] !== "steam" && !this.installed.has(exec[0])) throw new Error(`${name ?? exec[0]} isn't installed. Add it again in Settings, under Games.`);
+    if (exec[0] === "steam" && !this.steamInstalled) throw new Error(`${name ?? "Steam"} isn't installed. Add it again in Settings, under Home and apps, then Games.`);
+    if (exec[0] !== "steam" && !this.installed.has(exec[0])) throw new Error(`${name ?? exec[0]} isn't installed. Add it again in Settings, under Home and apps, then Games.`);
     const app = this.launch("game");
     this.games.push({ exec, mode, app });
     return app;
@@ -2826,7 +2833,7 @@ test("T23.1 a native game whose program isn't there says so, and nothing is left
   t.launcher.targets.set("origaitv.retroarch", RETRO);
   const answer = (await t.screen.fromHome({ cmd: "open-app", app: "origaitv.retroarch" })) as { ok: boolean; error: string };
   assert.equal(answer.ok, false);
-  assert.equal(answer.error, "RetroArch isn't installed. Add it again in Settings, under Games.");
+  assert.equal(answer.error, "RetroArch isn't installed. Add it again in Settings, under Home and apps, then Games.");
   assert.deepEqual(await open(t.screen), []);
 });
 
@@ -2943,6 +2950,48 @@ test("T23.1 a web app that's a game, such as a cloud game, is a game too: not pa
   assert.equal(t.launcher.browser.closed.includes(cloud), false, "the game is still open");
   assert.deepEqual((await open(t.screen)).map((o) => o.id), ["origaitv.cloud"]);
   assert.equal(t.screen.front()?.address, "0xc");
+  t.screen.stop();
+});
+
+test("a cloud game left running under home doesn't keep the idle screen away, and the TV going off mutes it until it's back", async () => {
+  let on = true;
+  const t = await tv({ idleReportMs: 0, ambientSettleMs: 0, tvPoll: () => on, tvPollMs: 20, tvOffCloseMs: 10_000, tvSettleMs: 100 });
+  t.launcher.minutes = 0.003;
+  const url = "https://cloud.example/play";
+  t.launcher.targets.set("origaitv.cloud", { runtime: "web", url, name: "Cloud", category: "games" });
+  await t.screen.fromHome({ cmd: "open-app", app: "origaitv.cloud" });
+  await sleep(20);
+  t.hypr.open("0xc", t.launcher.last("web").pid);
+  await t.screen.idle();
+  const cloud = t.launcher.browser.target(url);
+  t.launcher.browser.playing.set(cloud, true);
+  // In front, its stream is someone playing: no idle screen.
+  t.screen.seatIdle(true);
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, false, "a game being played in front holds it off");
+  t.screen.seatIdle(false);
+  await t.screen.idle();
+  // Under home, still streaming: nobody is playing it, so idle goes on.
+  await t.screen.handle({ cmd: "home", from: "guide-hold" });
+  assert.equal(t.launcher.browser.playing.get(cloud), true, "it keeps running");
+  t.screen.seatIdle(true);
+  await sleep(300);
+  await t.screen.idle();
+  assert.equal(t.screen.ambient, true, "the idle screen starts over home");
+  t.screen.seatIdle(false);
+  await t.screen.idle();
+  // The TV goes off: it stays open, with its sound off, and gets it back
+  // with the TV.
+  on = false;
+  await sleep(150);
+  await t.screen.idle();
+  assert.ok(t.launcher.browser.muted.has(cloud), "muted");
+  assert.equal(t.launcher.browser.closed.includes(cloud), false, "still open");
+  on = true;
+  await sleep(150);
+  await t.screen.idle();
+  assert.equal(t.launcher.browser.muted.has(cloud), false, "its sound is back");
   t.screen.stop();
 });
 

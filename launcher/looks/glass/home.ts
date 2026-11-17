@@ -23,7 +23,7 @@ import { logo, NEW, openApp, openEntry } from "../../pages/home.ts";
 import { bar, HOLD_HINT, togglePin } from "../../pages/parts.ts";
 import { removeShare, sharedTile, shares } from "../../pages/shared.ts";
 import { cardContent, richest, tileData } from "../cards.ts";
-import { GAMES, isGame, openWords, shelves } from "../games.ts";
+import { GAMES, isGame, NEEDS_KEYBOARD, needsKeyboard, openWords, shelves } from "../games.ts";
 
 const PER_ROW = 6;
 export const MOST_PINNED = 6;
@@ -66,7 +66,7 @@ let was: Open = { list: false };
 // An app's tile. In the list, an app open behind home says so under its
 // name, as the shelf does for the pinned row.
 function glassTile(ctx: Ctx, app: App, state = false): HTMLElement {
-  const open = state ? openWords(ctx, app) : "";
+  const open = state ? openWords(ctx, app) || (needsKeyboard(app) ? NEEDS_KEYBOARD : "") : "";
   return h(
     "button",
     { class: "tile glass-tile", "data-focus": true, "data-id": app.id, "data-details": app.id, "aria-label": app.name, onclick: () => void openApp(ctx, app) },

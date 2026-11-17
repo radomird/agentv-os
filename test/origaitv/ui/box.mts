@@ -254,8 +254,9 @@ export const OFFICIAL = [
 // drop once it's done with one, removes an app a drop names (ADR-103), and
 // installs the Xbox controller driver, which here only says it did.
 // APPS_MOVER_MS is how long each takes, which a test can lengthen to see a
-// queue.
-export const APPS_MOVER = { ms: 400, restart: false };
+// queue. With removeFails, a removal leaves the app where it was, as root
+// does when it can't take one off.
+export const APPS_MOVER = { ms: 400, restart: false, removeFails: false };
 function appsMover(state: string, apps: string, status: string, catalog: IndexEntry[]): void {
   const drop = join(state, "apps-drop", "install.json");
   let going = false;
@@ -287,6 +288,10 @@ function appsMover(state: string, apps: string, status: string, catalog: IndexEn
       const installed = JSON.parse(readFileSync(join(apps, "installed.json"), "utf8"));
       const now = read();
       for (const id of gone) {
+        if (APPS_MOVER.removeFails) {
+          now.apps[id] = { state: "installed", error: "Couldn't remove it" };
+          continue;
+        }
         rmSync(join(apps, id), { recursive: true, force: true });
         delete installed[id];
         delete now.apps[id];
@@ -298,7 +303,14 @@ function appsMover(state: string, apps: string, status: string, catalog: IndexEn
         const manifest = JSON.parse(readFileSync(join(target, "manifest.json"), "utf8"));
         manifest.id = id;
         manifest.name = app.name;
+        if (app.description) manifest.description = app.description;
         if (app.category) manifest.tv.category = app.category;
+        // A game has nothing to set up and no sign-in of the TV's: a page
+        // of its own stands in for it.
+        if (app.category === "games") {
+          Object.assign(manifest.tv, { homeUrl: "https://game.example/", origins: ["https://game.example"], setup: [], capabilities: ["launch"] });
+          delete manifest.tv.tiles;
+        }
         writeFileSync(join(target, "manifest.json"), JSON.stringify(manifest, null, 2));
         writeFileSync(join(target, "app.ts"), code(id));
         installed[id] = { id, name: app.name, version: "1.0.0", tier: "official", installedAt: new Date().toISOString() };
@@ -367,6 +379,8 @@ export async function startBox(
     // puts the box on edge (ADR-053).
     channelFile: join(state, "..", "channel"),
     setupAppsStatus,
+    // The stand-in for root's unit runs for as long as it has something going.
+    setupAppsRunning: async () => true,
     setupCatalog: async () => catalog,
     // Omarchy's themes, from this checkout, for setup's look, and the themes
     // your agent made, empty until a test plays root's part in them.

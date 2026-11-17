@@ -15,7 +15,7 @@ import { buildTile, underway } from "../../pages/build.ts";
 import { logo, NEW, openApp, openEntry } from "../../pages/home.ts";
 import { bar, HOLD_HINT } from "../../pages/parts.ts";
 import { cardContent, featured, tileData, type Featured } from "../cards.ts";
-import { GAMES, openWords, shelves } from "../games.ts";
+import { GAMES, NEEDS_KEYBOARD, needsKeyboard, openWords, shelves } from "../games.ts";
 import { ordered } from "../glass/home.ts";
 import { icon } from "../icons.ts";
 import { preview } from "../looks.ts";
@@ -32,6 +32,7 @@ function state(ctx: Ctx, app: App): string {
   if (open) return open;
   if (app.needsSetup) return "Set up";
   if (app.signIn === "needed") return "Sign in";
+  if (needsKeyboard(app)) return NEEDS_KEYBOARD;
   return "";
 }
 
@@ -42,7 +43,7 @@ function appCard(ctx: Ctx, app: App, size: string): HTMLElement {
     { class: `tile cinema-card size-${size}`, "data-focus": true, "data-id": app.id, "data-details": app.id, "aria-label": app.name, onclick: () => void openApp(ctx, app) },
     cardContent(app, logo(app), true),
     h("span", { class: "cinema-card-name" }, app.name),
-    words ? h("span", { class: "cinema-card-state" }, words) : null,
+    words ? h("span", { class: `cinema-card-state${words === NEEDS_KEYBOARD ? " cinema-card-wrap" : ""}` }, words) : null,
   );
 }
 

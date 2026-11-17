@@ -129,6 +129,9 @@ export interface DaemonOptions {
   // the official apps in the index, in place of the signed index itself.
   setupAppsStatus?: string;
   setupAppsWaitMs?: number;
+  // Whether root's origaitv-setup-apps.service is running, for the tests,
+  // which have no root.
+  setupAppsRunning?: () => Promise<boolean | null>;
   setupCatalog?: (source: string) => Promise<IndexEntry[]>;
   // Omarchy's own files, whose themes setup previews: /usr/share/omarchy.
   omarchy?: string;
@@ -608,6 +611,7 @@ export class Daemon {
       source: async () => process.env.ORIGAITV_INDEX_URL || (await this.settings()).ORIGAITV_INDEX_URL || undefined,
       catalog: options.setupCatalog,
       waitMs: options.setupAppsWaitMs,
+      running: options.setupAppsRunning,
       // The setup screens hear each install move on, and home gets each
       // app as it lands.
       onChange: (apps) => {
@@ -2040,8 +2044,6 @@ export class Daemon {
     this.json(response, 404, { ok: false, error: "not found" });
   }
 
-  // The builder for make and change from the Ask box (ADR-068), for who's
-  // watching: adults only, with the AI set up the way a build needs it.
   // What the box check says about games, for setup's games group (ADR-103),
   // or null with the box check off or no answer in a few seconds.
   private async gamesVerdict(): Promise<GamesVerdict> {
@@ -2051,6 +2053,8 @@ export class Daemon {
     return games === "none" || games === "light" || games === "good" ? games : null;
   }
 
+  // The builder for make and change from the Ask box (ADR-068), for who's
+  // watching: adults only, with the AI set up the way a build needs it.
   private execBuilds(viewer: { id: string; role: "adult" | "child" }): ExecBuilds {
     return {
       adult: viewer.role === "adult",

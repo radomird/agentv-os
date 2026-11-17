@@ -89,7 +89,8 @@ PATH="$SCRATCH/bin:$PATH" run || fail "it goes through apps with programs" "$(ca
 [[ $(cat "$SCRATCH/programs") == $'origaitv.game\norigaitv.broken\norigaitv.shell' ]] || fail "every official native app goes through its program's step, which installs only what's missing" "$(cat "$SCRATCH/programs")"
 jq -e '.apps["origaitv.game"].state == "installed" and .apps["origaitv.shell"].state == "installed" and .apps["someone.game"].state == "installed" and .apps["origaitv.web"].state == "installed"' "$ORIGAITV_SETUP_APPS_STATUS" >/dev/null || fail "an app is installed once its program is" "$(cat "$ORIGAITV_SETUP_APPS_STATUS")"
 jq -e '.apps["origaitv.broken"] | .state == "failed" and .error == "broken-game didn'"'"'t install"' "$ORIGAITV_SETUP_APPS_STATUS" >/dev/null || fail "and failed, with why, when its program didn't install" "$(cat "$ORIGAITV_SETUP_APPS_STATUS")"
-grep -qx "TimeoutStartSec=90min" "$ROOT/system/origaitv-setup-apps.service" || fail "origaitv-setup-apps.service waits long enough for a program like Steam"
+grep -qx "TimeoutStartSec=infinity" "$ROOT/system/origaitv-setup-apps.service" || fail "origaitv-setup-apps.service waits as long as a queue of programs takes"
+grep -qx "TimeoutStartSec=60min" "$ROOT/system/origaitv-app-package@.service" || fail "and each program has a limit of its own"
 pass "ADR-042 an official native app's program comes with it, and its tile says when it didn't"
 
 for word in ProtectSystem=strict NoNewPrivileges=yes StateDirectory=origaitv/apps RuntimeDirectory=origaitv-setup-apps ReadWritePaths=-/var/lib/origaitv/daemon; do
@@ -115,6 +116,44 @@ run || fail "a queue of hand-overs" "$(cat "$SCRATCH/out")"
 [[ ! -e $ORIGAITV_SETUP_APPS_DROP ]] || fail "and none is left behind"
 jq -e '.apps["origaitv.first"].state == "installed" and .apps["origaitv.second"].state == "installed"' "$ORIGAITV_SETUP_APPS_STATUS" >/dev/null || fail "both say installed" "$(cat "$SCRATCH/out")"
 pass "ADR-103 apps added while one installs wait their turn, and each gets its own line"
+
+# A hand-over the daemon leaves while root reads the one before isn't lost:
+# root takes the drop aside before it reads it. This jq leaves the next one
+# the first time it's asked, as the daemon might.
+real_jq=$(command -v jq)
+mkdir -p "$SCRATCH/racing"
+cat >"$SCRATCH/racing/jq" <<STUB
+#!/bin/bash
+if [[ ! -e $SCRATCH/raced && \$* == *".apps[]?"* ]]; then
+  touch "$SCRATCH/raced"
+  printf '%s' '{"apps":["origaitv.late"]}' >"$ORIGAITV_SETUP_APPS_DROP.next"
+  mv -f "$ORIGAITV_SETUP_APPS_DROP.next" "$ORIGAITV_SETUP_APPS_DROP"
+fi
+exec "$real_jq" "\$@"
+STUB
+chmod +x "$SCRATCH/racing/jq"
+: >"$SCRATCH/queued"
+printf '%s' '{"apps":["origaitv.early"]}' >"$ORIGAITV_SETUP_APPS_DROP"
+PATH="$SCRATCH/racing:$PATH" run || fail "a hand-over left as root reads one" "$(cat "$SCRATCH/out")"
+[[ -e $SCRATCH/raced ]] || fail "the stand-in left its hand-over"
+[[ $(cat "$SCRATCH/queued") == $'origaitv.early\norigaitv.late' ]] || fail "both install, the one left meanwhile next" "$(cat "$SCRATCH/queued")"
+[[ ! -e $ORIGAITV_SETUP_APPS_DROP && ! -e $ORIGAITV_SETUP_APPS_DROP.taken ]] || fail "and nothing is left behind"
+pass "a hand-over the daemon leaves while root reads the one before is taken next, not lost"
+
+# Each install has a limit of its own: one that hangs fails with why, and
+# the rest of the queue goes on.
+cat >"$ORIGAITV_APP_INSTALL" <<'STUB'
+#!/bin/bash
+echo "$1" >>"${0%/*}/queued"
+[[ $1 == origaitv.slow ]] && sleep 30
+echo "Installed $1 1.0.0 ($1)."
+STUB
+: >"$SCRATCH/queued"
+printf '%s' '{"apps":["origaitv.slow","origaitv.next"]}' >"$ORIGAITV_SETUP_APPS_DROP"
+ORIGAITV_APP_INSTALL_LIMIT=1s run || fail "an install that hangs" "$(cat "$SCRATCH/out")"
+jq -e '.apps["origaitv.slow"] | .state == "failed" and .error == "It took too long. Try again later."' "$ORIGAITV_SETUP_APPS_STATUS" >/dev/null || fail "fails with why" "$(cat "$ORIGAITV_SETUP_APPS_STATUS")"
+jq -e '.apps["origaitv.next"].state == "installed"' "$ORIGAITV_SETUP_APPS_STATUS" >/dev/null || fail "and the next one still installs" "$(cat "$ORIGAITV_SETUP_APPS_STATUS")"
+pass "an install that hangs ends at its own limit, and the queue goes on"
 
 # Removing: only an official app, which goes, and its program stays.
 export ORIGAITV_APP_REMOVE="$SCRATCH/remove"

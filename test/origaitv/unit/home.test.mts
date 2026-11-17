@@ -225,6 +225,48 @@ test("a native app with no logo of its own gets the icon its installed package g
   assert.equal((await fetch(`${url}/api/apps/origaitv.games/icon`)).status, 404);
 });
 
+test("a game platform Omarchy sets up itself has the icon Omarchy keeps for its own app of that name, read on the box", async () => {
+  const byId = async () => Object.fromEntries((await get("/api/home")).apps.map((app: any) => [app.id, app]));
+  const share = join(appsDir, "..", "share");
+  const icons = join(share, "omarchy", "applications", "icons");
+  mkdirSync(icons, { recursive: true });
+  writeFileSync(join(icons, "Games.png"), "Omarchy's icon");
+  try {
+    assert.equal((await byId())["origaitv.games"].icon, "/api/apps/origaitv.games/icon");
+    assert.equal(await (await fetch(`${url}/api/apps/origaitv.games/icon`)).text(), "Omarchy's icon");
+    // The package's own icon comes first, once there is one.
+    mkdirSync(join(share, "icons", "hicolor", "256x256", "apps"), { recursive: true });
+    writeFileSync(join(share, "icons", "hicolor", "256x256", "apps", "steam.png"), "the package's icon");
+    mkdirSync(join(share, "applications"), { recursive: true });
+    writeFileSync(join(share, "applications", "steam.desktop"), "[Desktop Entry]\nName=Steam\nExec=/usr/bin/steam %U\nIcon=steam\n");
+    assert.equal(await (await fetch(`${url}/api/apps/origaitv.games/icon`)).text(), "the package's icon");
+  } finally {
+    rmSync(share, { recursive: true, force: true });
+  }
+});
+
+test("a community app that runs a program, put on the box before the contract refused one, isn't shown and doesn't open", async () => {
+  const dir = join(appsDir, "someone.games");
+  cpSync(join(appsDir, "origaitv.games"), dir, { recursive: true });
+  const manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
+  Object.assign(manifest, { id: "someone.games", author: "someone", name: "Not a game" });
+  manifest.tv.exec = ["bash", "-c", "echo ran"];
+  writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
+  writeFileSync(join(dir, "app.ts"), readFileSync(join(dir, "app.ts"), "utf8").replaceAll("origaitv.games", "someone.games"));
+  const record = join(appsDir, "installed.json");
+  const before = readFileSync(record, "utf8");
+  const installed = JSON.parse(before);
+  installed["someone.games"] = { id: "someone.games", name: "Not a game", version: "1.0.0", tier: "community", installedAt: "2026-10-23T12:00:00Z" };
+  writeFileSync(record, JSON.stringify(installed, null, 2));
+  try {
+    assert.ok(!(await get("/api/home")).apps.some((app: any) => app.id === "someone.games"));
+    assert.equal((await fetch(`${url}/api/apps/someone.games/launch`)).status, 404);
+  } finally {
+    writeFileSync(record, before);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("opening an app means its home address with setup filled in, or its command, and its name for the TV to say, with its category, which says whether it's a game", async () => {
   assert.deepEqual(await get("/api/apps/origaitv.sample/launch"), { ok: true, runtime: "web", url: "http://127.0.0.1:1/web/", name: "Sample", category: "media" });
   assert.deepEqual(await get("/api/apps/origaitv.games/launch"), { ok: true, runtime: "native", exec: ["steam", "-gamepadui"], name: "Games", category: "games" });

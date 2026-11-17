@@ -5,7 +5,7 @@
 // daemon answers the setup screens with.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -47,6 +47,7 @@ before(async () => {
     apps: join(scratch, "apps"),
     setupAppsStatus: status,
     setupAppsWaitMs: 1500,
+    setupAppsRunning: async () => true,
     setupCatalog: async (source) => {
       assert.equal(source, "https://example.invalid/index", "the index from the package's settings");
       catalogCalls++;
@@ -162,7 +163,7 @@ test("the apps picked go to root in a drop only it takes, and only official apps
   const dir = join(scratch, "drop");
   const statusPath = join(scratch, "drop-run", "state.json");
   const heard: unknown[] = [];
-  const apps = new SetupApps({ state: dir, source: async () => "index", catalog: async () => INDEX, status: statusPath, waitMs: 1500, onChange: (now) => heard.push(now) });
+  const apps = new SetupApps({ state: dir, source: async () => "index", catalog: async () => INDEX, status: statusPath, waitMs: 1500, onChange: (now) => heard.push(now), running: async () => true });
   assert.match((await apps.install([])) ?? "", /a list of their ids/);
   assert.match((await apps.install(["../../etc"])) ?? "", /a list of their ids/);
   assert.match((await apps.install(["someone.else"])) ?? "", /isn't one of OrigaiTV's official apps/);
@@ -305,7 +306,7 @@ test("T23.1 Settings' Games page lists every game, on the TV or not, with how ea
   const statusPath = join(dir, "run", "state.json");
   mkdirSync(join(dir, "run"), { recursive: true });
   writeFileSync(statusPath, JSON.stringify({ apps: { "origaitv.retroarch": { state: "installing" }, "origaitv.lutris": { state: "failed", error: "Couldn't install lutris" }, "origaitv.moonlight": { state: "installed" } } }));
-  const apps = new SetupApps({ state: dir, source: async () => "index", catalog: async () => GAMES_INDEX, status: statusPath });
+  const apps = new SetupApps({ state: dir, source: async () => "index", catalog: async () => GAMES_INDEX, status: statusPath, running: async () => true });
   const here: Present[] = [MUSIC, { id: "origaitv.steam", name: "Steam", tier: "official" }, { id: "origaitv.moonlight", name: "Moonlight", tier: "official" }];
   const { apps: games } = await apps.games(here);
   assert.deepEqual(
@@ -321,12 +322,67 @@ test("T23.1 Settings' Games page lists every game, on the TV or not, with how ea
   );
 });
 
+test("a line root left going when it stopped, or going for longer than one install may take, shows as not done", async () => {
+  const dir = join(scratch, "cut-short");
+  const statusPath = join(dir, "run", "state.json");
+  mkdirSync(join(dir, "run"), { recursive: true });
+  const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+  writeFileSync(
+    statusPath,
+    JSON.stringify({
+      apps: {
+        "origaitv.steam": { state: "installing", at: ago(95) },
+        "origaitv.retroarch": { state: "installing", at: ago(5) },
+        "origaitv.lutris": { state: "queued", at: ago(300) },
+      },
+      drivers: { xpadneo: { state: "installing", at: ago(45) } },
+    }),
+  );
+  let running: boolean | null = true;
+  const apps = new SetupApps({ state: dir, source: async () => "index", catalog: async () => GAMES_INDEX, status: statusPath, hasDriver: () => false, running: async () => running });
+  const settle = async () => {
+    apps.status();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  };
+  await settle();
+  // Root is running: past its limit is cut short, and a queued line waits
+  // as long as the queue takes.
+  let now = apps.status();
+  assert.deepEqual([now["origaitv.steam"].state, now["origaitv.steam"].error], ["failed", "Couldn't install it. Try again."]);
+  assert.equal(now["origaitv.retroarch"].state, "installing");
+  assert.equal(now["origaitv.lutris"].state, "queued");
+  assert.deepEqual([apps.driver().state, apps.driver().error], ["failed", "Couldn't install the driver"]);
+  apps.stop();
+
+  // Root has stopped: whatever it left going didn't finish, and a removal
+  // left the app where it was.
+  const later = JSON.parse(readFileSync(statusPath, "utf8"));
+  later.apps["origaitv.moonlight"] = { state: "removing", at: ago(1) };
+  writeFileSync(statusPath, JSON.stringify(later));
+  running = false;
+  const stopped = new SetupApps({ state: dir, source: async () => "index", catalog: async () => GAMES_INDEX, status: statusPath, hasDriver: () => false, running: async () => running });
+  stopped.status();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  now = stopped.status();
+  assert.equal(now["origaitv.retroarch"].state, "failed");
+  assert.equal(now["origaitv.lutris"].state, "failed");
+  assert.deepEqual([now["origaitv.moonlight"].state, now["origaitv.moonlight"].error], ["installed", "Couldn't remove it"]);
+  stopped.stop();
+
+  // And when systemd can't say, root may still be at it.
+  const unsure = new SetupApps({ state: dir, source: async () => "index", catalog: async () => GAMES_INDEX, status: statusPath, hasDriver: () => false, running: async () => null });
+  unsure.status();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(unsure.status()["origaitv.retroarch"].state, "installing");
+  unsure.stop();
+});
+
 // A root that's busy: what it said, and a drop it hasn't taken.
 function busyRoot(dir: string): { statusPath: string; drop: string; apps: SetupApps } {
   const statusPath = join(dir, "run", "state.json");
   mkdirSync(join(dir, "run"), { recursive: true });
   writeFileSync(statusPath, JSON.stringify({ apps: { "origaitv.steam": { state: "installing", at: new Date().toISOString() } } }));
-  const apps = new SetupApps({ state: dir, source: async () => "index", catalog: async () => GAMES_INDEX, status: statusPath, waitMs: 300, hasDriver: () => false });
+  const apps = new SetupApps({ state: dir, source: async () => "index", catalog: async () => GAMES_INDEX, status: statusPath, waitMs: 300, hasDriver: () => false, running: async () => true });
   return { statusPath, drop: join(dir, "apps-drop", "install.json"), apps };
 }
 
@@ -344,8 +400,9 @@ test("T23.1 several games added while one installs go into one hand-over, each q
 
 test("T23.1 removing a game hands it to root, official apps on the TV only, and its line says removing", async () => {
   const { drop, apps } = busyRoot(join(scratch, "remove"));
-  const here: Present[] = [MUSIC, { id: "origaitv.retroarch", name: "RetroArch", tier: "official" }, { id: "local.blocks", name: "Blocks", tier: "local" }];
+  const here: Present[] = [MUSIC, { id: "origaitv.retroarch", name: "RetroArch", tier: "official" }, { id: "origaitv.jellyfin", name: "Jellyfin", tier: "official" }, { id: "local.blocks", name: "Blocks", tier: "local" }];
   assert.equal(await apps.remove("origaitv.lutris", here), "That app isn't on your TV");
+  assert.equal(await apps.remove("origaitv.jellyfin", here), "Only games are removed here", "an official app that isn't a game");
   assert.equal(await apps.remove("local.blocks", here), "Only apps from OrigaiTV are removed here");
   assert.equal(await apps.remove("origaitv.music", here), "Only apps from OrigaiTV are removed here", "not a built-in one");
   assert.equal(await apps.remove("../x", here), "send the app to remove as its id");
@@ -355,6 +412,33 @@ test("T23.1 removing a game hands it to root, official apps on the TV only, and 
   // Another game added meanwhile joins the same hand-over.
   assert.equal(await apps.add("origaitv.xboxcloud", here), null);
   assert.deepEqual(JSON.parse(readFileSync(drop, "utf8")), { apps: ["origaitv.xboxcloud"], remove: ["origaitv.retroarch"] });
+  apps.stop();
+});
+
+test("a removal root finishes before the daemon looks isn't left saying removing", async () => {
+  const { statusPath, drop, apps } = busyRoot(join(scratch, "remove-quick"));
+  const here: Present[] = [MUSIC, { id: "origaitv.retroarch", name: "RetroArch", tier: "official" }, { id: "origaitv.lutris", name: "Lutris", tier: "official" }];
+  assert.equal(await apps.remove("origaitv.retroarch", here), null);
+  assert.equal(await apps.remove("origaitv.lutris", here), null);
+  assert.equal(apps.status()["origaitv.retroarch"].state, "removing", "waiting for root");
+  // Root takes the hand-over and is done with both before the daemon reads
+  // its status again: one gone, one that stayed and says why.
+  rmSync(drop);
+  writeFileSync(statusPath, JSON.stringify({ apps: { "origaitv.lutris": { state: "installed", error: "Couldn't remove it", at: new Date().toISOString() } } }));
+  const now = apps.status();
+  assert.equal(now["origaitv.retroarch"], undefined);
+  assert.deepEqual([now["origaitv.lutris"].state, now["origaitv.lutris"].error], ["installed", "Couldn't remove it"]);
+  apps.stop();
+});
+
+test("a removal root has taken aside, and not marked yet, still says removing while root runs", async () => {
+  const { drop, apps } = busyRoot(join(scratch, "remove-aside"));
+  assert.equal(await apps.remove("origaitv.retroarch", [MUSIC, { id: "origaitv.retroarch", name: "RetroArch", tier: "official" }]), null);
+  // Root has moved the hand-over aside and hasn't written its line yet.
+  renameSync(drop, `${drop}.taken`);
+  apps.status();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(apps.status()["origaitv.retroarch"]?.state, "removing");
   apps.stop();
 });
 

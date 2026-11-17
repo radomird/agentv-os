@@ -215,6 +215,12 @@ update() {
   as_root omarchy-snapshot create || (( $? == 127 )) || echo "Continuing the update without a snapshot." >&2
   as_root omarchy-update-keyring || return 1
   as_root omarchy-update-system-pkgs || return 1
+  # GeForce NOW and its Flathub runtime come from flatpak, which pacman
+  # doesn't update. Only on a box with flatpak, and one that can't update
+  # this time doesn't hold up the rest: the next update tries again.
+  if as_root omarchy-cmd-present flatpak; then
+    as_root flatpak update --system --noninteractive -y || echo "The flatpak apps didn't update this time. The next update tries again." >&2
+  fi
 
   # Migrations call Omarchy's shell, so give them one running the new code.
   as_owner -- 'if omarchy-migrate --pending >/dev/null; then omarchy-restart-shell || true; fi'

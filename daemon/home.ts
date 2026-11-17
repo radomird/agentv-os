@@ -454,7 +454,7 @@ export class Home {
       const signedIn = signIns[manifest.id]?.signedIn;
       const signInStep = (manifest.tv.setup ?? []).some((step) => step.type === "signIn");
       // Its own logo, or else its package's icon or its site's.
-      const has = !!manifest.tv.icon || (manifest.tv.runtime === "native" ? packageIcon(manifest.tv, this.dataDirs) !== null : this.hasSiteIcon(manifest.id, tier));
+      const has = !!manifest.tv.icon || (manifest.tv.runtime === "native" ? packageIcon({ ...manifest.tv, name: manifest.name }, this.dataDirs) !== null : this.hasSiteIcon(manifest.id, tier));
       const icon = has ? `/api/apps/${manifest.id}/icon` : undefined;
       const reach = [...allowedOrigins(manifest, values, this.onBox({ thisBox }))].map((origin) => origin.replace(/^https?:\/\//, ""));
       return {
@@ -831,7 +831,7 @@ export class Home {
     if (!found) return null;
     if (found.manifest.tv.icon) return { path: join(found.dir, found.manifest.tv.icon) };
     if (found.tier === "built-in") return null;
-    if (found.manifest.tv.runtime === "native") return packageIcon(found.manifest.tv, this.dataDirs);
+    if (found.manifest.tv.runtime === "native") return packageIcon({ ...found.manifest.tv, name: found.manifest.name }, this.dataDirs);
     const site = await readJson<{ type?: string } | null>(join(this.state, "icons", `${id}.json`), null);
     return site?.type ? { path: join(this.state, "icons", id), type: site.type } : null;
   }
@@ -851,7 +851,10 @@ export class Home {
     const tv = found.manifest.tv;
     const name = found.manifest.name;
     const category = tv.category;
-    if (tv.runtime === "native") return { runtime: "native", exec: tv.exec ?? [], name, category };
+    // Only an official app's command runs, as the owner and unsandboxed.
+    // The contract refuses a native app of any other tier, so one installed
+    // before it did isn't shown, and this holds even if one were.
+    if (tv.runtime === "native") return found.tier === "official" ? { runtime: "native", exec: tv.exec ?? [], name, category } : null;
     // A page app opens on home, in its frame (ADR-043).
     if (tv.runtime === "page") return { runtime: "page", name, category };
     const values = (await this.appSettings())[id] ?? {};
