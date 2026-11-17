@@ -144,17 +144,33 @@ function capabilities(app: Record<string, unknown>): string[] {
 
 // The contract's optional calls the module has, and any it names that isn't
 // a function, which the loader refuses.
-const OPTIONAL = [["playback", "show"]];
-function optional(app: Record<string, unknown>): { has: string[]; broken: string[] } {
+const OPTIONAL = [
+  ["playback", "show"],
+  ["playback", "previous"],
+  ["playback", "seek"],
+];
+// The optional calls from before the loader looked: only counted, for what
+// a phone is offered, so an app that loaded before still loads.
+const COUNTED = [
+  ["playback", "next"],
+  ["playback", "pause"],
+  ["playback", "resume"],
+];
+function optional(app: Record<string, unknown>): { has: string[]; broken: string[]; also: string[] } {
   const has: string[] = [];
   const broken: string[] = [];
-  for (const path of OPTIONAL) {
+  const also: string[] = [];
+  const at = (path: string[]) => {
     const owner = path.slice(0, -1).reduce<unknown>((at, key) => (at && typeof at === "object" ? (at as Record<string, unknown>)[key] : undefined), app);
-    const value = owner && typeof owner === "object" ? (owner as Record<string, unknown>)[path[path.length - 1]] : undefined;
+    return owner && typeof owner === "object" ? (owner as Record<string, unknown>)[path[path.length - 1]] : undefined;
+  };
+  for (const path of OPTIONAL) {
+    const value = at(path);
     if (typeof value === "function") has.push(path.join("."));
     else if (value !== undefined) broken.push(path.join("."));
   }
-  return { has, broken };
+  for (const path of COUNTED) if (typeof at(path) === "function") also.push(path.join("."));
+  return { has, broken, also };
 }
 
 // The app's hints for the phone's d-pad (ADR-103), as plain data, which the
