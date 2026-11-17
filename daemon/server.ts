@@ -85,7 +85,8 @@ import { boxRouter, ROUTER_SOCKETS, usageViaSocket } from "./router-client.ts";
 import { cleanSayAnswer, Say, type SayAnswer, type SayAsk } from "./say.ts";
 import { Listening } from "./listening.ts";
 import { cleanField, type Field } from "./remote-text.ts";
-import { nowPlaying, PhoneRemote } from "./routes/remote.ts";
+import type { PlayingNow } from "./remote-play.ts";
+import { nowPlaying, PhoneRemote, type Picture } from "./routes/remote.ts";
 import { MUSIC as MUSIC_APP } from "./music.ts";
 import type { Grid, Size } from "../launcher/layout.ts";
 import type { Viewer } from "./apps/loader.ts";
@@ -197,6 +198,8 @@ export interface DaemonOptions {
   country?: { zone?: () => Promise<string>; waitMs?: number };
   // How long the listening bar waits for new words before it goes (20 s).
   listenIdleMs?: number;
+  // How often what's playing is read again while something plays (10 s).
+  playingLookMs?: number;
   // Servers and shares on the home network: stand-ins' ports, for tests.
   discover?: DiscoverOptions;
   // The box check (ADR-061): stand-ins for the machine it reads, for tests.
@@ -458,6 +461,15 @@ export class Daemon {
       toPages: (event, data) => this.toPages(event, data),
       json: (response, status, data) => this.json(response, status, data),
       body: (request) => this.body(request),
+      // What's playing, in full, behind its switch (daemon/routes/remote.ts).
+      playing2: {
+        on: () => this.features.on("playing2"),
+        name: (app) => this.playingApp(app),
+        picture: (now) => this.playingPicture(now),
+        changed: () => this.phonesChanged(),
+        send: (response, type, body) => this.send(response, type, body),
+        lookMs: options.playingLookMs,
+      },
     });
     this.listening = new Listening({
       idleMs: options.listenIdleMs,
@@ -1048,8 +1060,11 @@ export class Daemon {
     if (typeof change.playing === "boolean") next.playing = change.playing;
     if (JSON.stringify(next) === JSON.stringify(this.tv)) return;
     const idle = this.idleHome();
+    const steered = next.front !== this.tv.front || next.playing !== this.tv.playing || next.screen !== this.tv.screen;
     this.tv = next;
     this.phonesChanged();
+    // With what's playing in full, where the thing is gets read again.
+    if (steered) this.phoneRemote.tvChanged();
     // A share that waited while something played asks now (ADR-050).
     if (!idle && this.idleHome()) void this.shareWaiting().then((share) => share && this.broadcast("shared", {}));
   }
@@ -1123,7 +1138,8 @@ export class Daemon {
       update: await this.phoneUpdate(),
       tv: { ...tv, view: remoteView(tv, this.signingIn !== null) },
       // What's playing, for the new remote's card.
-      nowPlaying: remote2 && tv.playing ? await this.nowPlaying(viewer.id) : null,
+      // With playing2 on it's what's in front, in full, playing or paused.
+      nowPlaying: (await this.features.on("playing2")) ? this.phoneRemote.nowPlaying() : remote2 && tv.playing ? await this.nowPlaying(viewer.id) : null,
       // TV setup's step, while it's on (stage 5): the phone says where it is,
       // and with setup's own switch on, its number of the 12.
       setup: setup.done ? null : await this.phoneSetup(setup),
@@ -1153,6 +1169,30 @@ export class Daemon {
     } catch {
       return null;
     }
+  }
+
+  // The name a phone is told for where something plays: the app's own, or
+  // "Shared" for something a phone sent, which plays in home's own player
+  // or the browser for shared links.
+  private async playingApp(id: string): Promise<string> {
+    if (id === "home" || id === "share") return "Shared";
+    const found = (await this.home.manifests().catch(() => [])).find(({ manifest }) => manifest.id === id);
+    return found?.manifest.name ?? id;
+  }
+
+  // A picture the TV already has for what's playing: the one its app gave,
+  // the one a tile of the app's holds for the title, or New this week's
+  // poster for it. Each comes through the same door as a tile's picture,
+  // from the app's own origins or TMDB, and is kept on the box.
+  private async playingPicture(now: PlayingNow): Promise<Picture | null> {
+    const same = (title: string) => title.toLowerCase().replace(/\s+/g, " ").trim() === now.title.toLowerCase().replace(/\s+/g, " ").trim();
+    const viewer = await this.profiles.active();
+    const poster = (await this.news.kept(viewer.role, now.id).catch(() => [])).find((title) => same(title.title))?.poster;
+    for (const url of [now.picture, this.home.tilePicture(now.id, now.title), poster]) {
+      const image = url ? await this.home.image(now.id, url).catch(() => null) : null;
+      if (image) return image;
+    }
+    return null;
   }
 
   // A field in an app's page, with the app's name for the phone's keyboard
@@ -2129,6 +2169,8 @@ export class Daemon {
     const changed = (all: FeatureMap) => {
       this.broadcast("features", all);
       void this.displayRoutes.switched(all.sizes);
+      // What's playing is read, or let go, as its switch turns.
+      this.phoneRemote.tvChanged();
     };
     return { features: this.features, body: (request) => this.body(request), json: (response, status, data) => this.json(response, status, data), changed, log: this.log };
   }

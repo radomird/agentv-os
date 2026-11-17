@@ -318,8 +318,10 @@ export interface Playback {
   opened(id: string, page?: PageBroker): void;
   closed(id: string): void;
   play?(id: string, item: unknown): void;
-  // One of the app's playback calls, for the phone's play and pause.
-  call?(id: string, path: string): Promise<unknown>;
+  // One of the app's playback calls, for the phone's play and pause, and
+  // whether its module has one it may leave out.
+  call?(id: string, path: string, ...args: unknown[]): Promise<unknown>;
+  has?(id: string, path: string): Promise<boolean>;
   // The app's hints for the phone's d-pad on its pages (ADR-103).
   navigation?(id: string): Promise<Navigation[]>;
 }
@@ -697,7 +699,13 @@ export class Screen {
     }
     const playback = this.playback;
     const id = front.id;
-    return { kind: "page", id, evaluate: front.evaluate, app: playback?.call ? (path) => playback.call!(id, path) : undefined };
+    return {
+      kind: "page",
+      id,
+      evaluate: front.evaluate,
+      app: playback?.call ? (path, ...args) => playback.call!(id, path, ...args) : undefined,
+      has: playback?.has ? (path) => playback.has!(id, path) : undefined,
+    };
   }
 
   // Two fingers on the phone's pad (ADR-103): the page in front scrolls by
@@ -3504,8 +3512,9 @@ async function main(): Promise<void> {
       if (ask.kind === "text") return typing.text(ask.value, ask.caret, ask.bar);
       if (ask.kind === "done") return typing.done();
       // Play and pause, then the phone's remote hears at once what plays.
-      const answer = ask.action === "next" ? await playing.next() : await playing.toggle();
-      void screen.tellContext();
+      // Where the thing is, and its picture, change nothing on the TV.
+      const answer = await playing.answer(ask);
+      if (ask.action !== "now" && ask.action !== "picture") void screen.tellContext();
       return answer;
     },
   }).start();

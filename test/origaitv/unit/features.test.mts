@@ -31,9 +31,12 @@ function box(channel = "edge", defaults?: Record<string, boolean>): { features: 
   return { features: new Features({ state, channel: async () => current, defaults: defaults as never }), state, set: (c) => (current = c) };
 }
 
-test("T12.1 every track's switch is there, in the plan's names, and on by default, on edge and stable alike", async () => {
-  assert.deepEqual(FEATURE_NAMES, ["boxcheck", "sizes", "looks", "dynamicbg", "setup2", "remote2", "starter", "discover", "askbuilds"]);
-  assert.deepEqual(FEATURES, Object.fromEntries(FEATURE_NAMES.map((name) => [name, true])));
+// The switches that land off and stay off until they're reviewed.
+const LANDS_OFF = ["playing2"];
+
+test("T12.1 every track's switch is there, in the plan's names, and on by default, on edge and stable alike, but for the ones that land off", async () => {
+  assert.deepEqual(FEATURE_NAMES, ["boxcheck", "sizes", "looks", "dynamicbg", "setup2", "remote2", "starter", "discover", "askbuilds", "playing2"]);
+  assert.deepEqual(FEATURES, Object.fromEntries(FEATURE_NAMES.map((name) => [name, !LANDS_OFF.includes(name)])));
   assert.deepEqual(await box().features.read(), FEATURES);
   assert.deepEqual(await box("stable").features.read(), FEATURES);
   assert.equal(isFeature("looks"), true);

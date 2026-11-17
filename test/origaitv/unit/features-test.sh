@@ -50,8 +50,10 @@ channel stable
 start
 out=$("$ROOT/bin/origaitv" feature list) || fail "origaitv feature list works" "$out"
 expected=$(printf '%-12s on\n' boxcheck sizes looks dynamicbg setup2 remote2 starter discover askbuilds)
+# The ones that land off, until they're reviewed.
+expected+=$'\n'$(printf '%-12s off\n' playing2)
 [[ $out == "$expected" ]] || fail "T12.1 origaitv feature list shows every track's switch, on" "$out"
-pass "T12.1 origaitv feature list shows every track's switch, each on by default"
+pass "T12.1 origaitv feature list shows every track's switch, each on by default but the ones that land off"
 
 out=$("$ROOT/bin/origaitv" feature off looks) || fail "on stable, origaitv feature off works" "$out"
 [[ $out == "looks is off." ]] || fail "it says what it did" "$out"
@@ -72,7 +74,7 @@ pass "a switch stays off after a restart and on either channel, and origaitv fea
 
 status=0
 out=$("$ROOT/bin/origaitv" feature on nope 2>&1) || status=$?
-(( status == 1 )) && [[ $out == "There's no switch called \"nope\". The switches are boxcheck, sizes, looks, dynamicbg, setup2, remote2, starter, discover, askbuilds." ]] ||
+(( status == 1 )) && [[ $out == "There's no switch called \"nope\". The switches are boxcheck, sizes, looks, dynamicbg, setup2, remote2, starter, discover, askbuilds, playing2." ]] ||
   fail "a name that isn't a switch is refused, with the names" "$out"
 for wrong in "" "Looks" "looks extra" '../x'; do
   status=0

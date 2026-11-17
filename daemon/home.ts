@@ -1109,6 +1109,24 @@ export class Home {
     }
   }
 
+  // The picture one of an app's tiles holds for a title, as the tile's entry
+  // names it, or null: for what's playing on a phone. Only what's kept is
+  // looked at, so the app isn't asked for anything.
+  tilePicture(id: string, title: string): string | null {
+    const plain = (text: unknown) => (typeof text === "string" ? text.toLowerCase().replace(/\s+/g, " ").trim() : "");
+    const wanted = plain(title);
+    if (!wanted) return null;
+    for (const [key, kept] of this.tiles) {
+      if (!["s", "m", "l"].some((size) => key.endsWith(`:${id}:${size}`))) continue;
+      const tile = kept.tile as { headline?: unknown; entries?: unknown } | null;
+      const entries = [tile?.headline, ...(Array.isArray(tile?.entries) ? tile.entries : [])] as ({ label?: unknown; image?: unknown; item?: { title?: unknown } } | null | undefined)[];
+      for (const entry of entries) {
+        if (typeof entry?.image === "string" && (plain(entry.item?.title) === wanted || plain(entry.label) === wanted)) return entry.image;
+      }
+    }
+    return null;
+  }
+
   // An image a tile shows, from the app's own origins or TMDB, kept on the box.
   async image(id: string, url: string): Promise<{ type: string; body: Buffer } | null> {
     const found = (await this.manifests()).find(({ manifest }) => manifest.id === id);
