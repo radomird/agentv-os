@@ -94,8 +94,10 @@ function baseEnv(run: { home: string; proxy?: string }): Record<string, string> 
 // sandbox, as origaitv-builder: the command that starts it, whether the
 // person pastes a code back into it from the provider's page, and how the
 // CLI says it's signed in. OrigaiTV shows the link the CLI prints and passes
-// on what the person types, and never sees the plan's tokens, which the CLI
-// keeps in its own files. Only the plans OrigaiTV offers have one.
+// on what the person types. The daemon never sees the plan's tokens, which
+// the CLI keeps in its own files. The plan router's service also runs
+// Omarchy's usage check, which reads the sign-in and lets only the numbers
+// out (daemon/plan-usage.ts). Only the plans OrigaiTV offers have one.
 // How the CLI says it's signed in: a status command and what it prints,
 // or, for a CLI with none, its own credentials file in the builder's home.
 export type SignIn = { login: string[]; pastes: boolean } & ({ status: string[]; signedIn: (out: string, code: number) => boolean } | { file: string });

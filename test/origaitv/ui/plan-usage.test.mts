@@ -34,6 +34,7 @@ const errors: string[] = [];
 // What the stand-in check says, and how often it was asked.
 let windows: UsageWindow[] | null = null;
 let signIn: "expired" | "none" | null = null;
+let asOf: string | null = null;
 let asked = 0;
 
 const send = (method: string, path: string, body?: unknown) =>
@@ -45,7 +46,7 @@ async function use(path: "plan" | "key"): Promise<void> {
 }
 
 before(async () => {
-  ({ daemon, url, state } = await startBox(0, FIXTURES, { features: { looks: true }, planUsage: async (): Promise<UsageReply | null> => (asked++, signIn ? { signIn } : windows ? { windows } : null) }));
+  ({ daemon, url, state } = await startBox(0, FIXTURES, { features: { looks: true }, planUsage: async (): Promise<UsageReply | null> => (asked++, signIn ? { signIn } : windows ? { windows, ...(asOf ? { asOf } : {}) } : null) }));
   browser = await chromium.launch({ executablePath: process.env.ORIGAITV_UI_BROWSER });
   const code = (await (await send("POST", "/api/phones/pair", {})).json()).pairing.code;
   phone = await pairPhone(`http://127.0.0.1:${daemon.lanPort}`, code, "pixel");
@@ -121,6 +122,32 @@ for (const look of LOOKS) {
     assert.deepEqual(problems, [], `${look}:\n${problems.join("\n")}`);
   });
 }
+
+test("Q341 while the plan's limits are paused, AI shows the numbers it last read, with how long ago, clear to read", async () => {
+  await send("PUT", "/api/look", { look: "glass" });
+  windows = [
+    { window: "hours", hours: 5, percent: 23, resets: soon(2) },
+    { window: "week", percent: 41, resets: soon(80) },
+  ];
+  asOf = new Date(Date.now() - 8 * 3600_000).toISOString();
+  await daemon.planUsages.get("claude", true);
+  const page = await tv();
+  try {
+    await go(page, "settings/ai");
+    await page.waitForSelector('.settings-panel[data-page="ai"] .plan-age');
+    await rest(page);
+    await page.waitForTimeout(300);
+    assert.equal((await page.locator('[data-action="plan-hours"]').innerText()).replace(/\s+/g, " ").trim(), "5-hour limit 23%");
+    assert.equal(await page.locator(".settings-panel .plan-age").innerText(), "As of 8 hours ago");
+    assert.deepEqual(await shortfalls(page), []);
+    await page.locator('[data-action="plan-hours"]').click();
+    await page.waitForSelector('.settings-panel[data-page="usage"] .plan-age');
+    assert.match(await page.locator(".settings-panel").innerText(), /23% used[\s\S]*41% used[\s\S]*As of 8 hours ago/);
+  } finally {
+    await page.close();
+    asOf = null;
+  }
+});
 
 test("T19.1 where the plan's sign-in ran out, AI says to sign in again, and OK opens the plan's sign-in", async () => {
   await send("PUT", "/api/look", { look: "glass" });

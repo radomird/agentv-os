@@ -7,9 +7,11 @@
 //
 // A plan has its own limits, and shows how much of them is used instead
 // (ADR-103, Q313): a row with a bar for each window the provider says, the
-// 5 hours and the week, and never a dollar amount. Where the TV can't see
-// today's numbers, the row says it's using the plan, and where the plan's
-// sign-in ran out, it offers signing in again. The caps are a key's only.
+// 5 hours and the week, and never a dollar amount. While the plan's limits
+// are paused, the last numbers show with when they were read ("As of 8
+// hours ago"). Where the TV can't see any, the row says it's using the
+// plan, and where the plan's sign-in ran out, it offers signing in again.
+// The caps are a key's only.
 
 import { daemon, type BuilderSettings, type PlanUsageState } from "../api.ts";
 import { h } from "../dom.ts";
@@ -66,8 +68,21 @@ export function startsOver(iso: string | undefined, now = new Date()): string | 
 // What a plan's row says when its sign-in is what's missing.
 const signInSaid = (signIn: "expired" | "none") => (signIn === "expired" ? "Sign in again" : "Sign in");
 
-// A plan's rows: a bar for each window, one that offers signing in where
-// that's what's missing, or one line when there's nothing to show.
+// How long ago kept numbers were read, as a line under them.
+export function asOfLine(iso: string | undefined, now = Date.now()): string | null {
+  const at = iso ? Date.parse(iso) : NaN;
+  if (Number.isNaN(at)) return null;
+  const minutes = Math.max(0, Math.round((now - at) / 60_000));
+  if (minutes < 1) return "As of just now";
+  if (minutes < 60) return `As of ${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `As of ${hours} hour${hours === 1 ? "" : "s"} ago`;
+  return `As of ${Math.round(hours / 24)} days ago`;
+}
+
+// A plan's rows: a bar for each window, with when they were read when
+// they're kept ones, one that offers signing in where that's what's
+// missing, or one line when there's nothing to show.
 function planRows(ctx: Ctx, open: () => void): HTMLElement[] {
   const windows = planState?.usage?.windows ?? [];
   const signIn = planState?.usage?.signIn;
@@ -77,7 +92,9 @@ function planRows(ctx: Ctx, open: () => void): HTMLElement[] {
   if (!windows.length) {
     return [h("button", { class: "button", "data-focus": true, "data-action": "usage", onclick: open }, h("span", {}, "Limits"), h("span", { class: "button-value" }, planState ? "Using your plan" : loadingMark()))];
   }
-  return windows.map((w) => h("button", { class: "button metered", "data-focus": true, "data-action": `plan-${w.window}`, onclick: open }, h("span", {}, windowName(w)), h("span", { class: "button-value" }, `${w.percent}%`), bar(w.percent)));
+  const rows = windows.map((w) => h("button", { class: "button metered", "data-focus": true, "data-action": `plan-${w.window}`, onclick: open }, h("span", {}, windowName(w)), h("span", { class: "button-value" }, `${w.percent}%`), bar(w.percent)));
+  const age = asOfLine(planState?.usage?.asOf);
+  return age ? [...rows, h("p", { class: "panel-note plan-age" }, age)] : rows;
 }
 
 // The caps left and right step through, in dollars.
@@ -177,10 +194,13 @@ export function usagePanel(ctx: Ctx): HTMLElement[] {
               h("button", { class: "button primary", "data-focus": true, "data-action": "usage-sign-in", onclick: () => ctx.go("plan-sign-in") }, "Sign in"),
             ]
           : windows.length
-          ? windows.flatMap((w) => {
-              const over = startsOver(w.resets);
-              return [h("div", { class: "panel-note plan-window" }, windowName(w)), h("div", { class: "panel-big" }, `${w.percent}% used`), h("div", { class: "metered" }, bar(w.percent)), ...(over ? [note(over)] : [])];
-            })
+          ? [
+              ...windows.flatMap((w) => {
+                const over = startsOver(w.resets);
+                return [h("div", { class: "panel-note plan-window" }, windowName(w)), h("div", { class: "panel-big" }, `${w.percent}% used`), h("div", { class: "metered" }, bar(w.percent)), ...(over ? [note(over)] : [])];
+              }),
+              ...[asOfLine(planState?.usage?.asOf)].filter((age): age is string => age !== null).map((age) => h("p", { class: "panel-note plan-age" }, age)),
+            ]
           : [h("div", { class: "panel-big" }, planState ? "Using your plan" : loadingMark()), note("A plan has its own limits")]),
       ]
     : [

@@ -158,11 +158,15 @@ export class Meter {
       if (!usage) return;
       this.seen = true;
       // Of the input, what came from the cache and what was written to it,
-      // each at its own rate (prices.ts).
-      const cached = n(usage.input_tokens_details?.cached_tokens);
-      const written = n(usage.input_tokens_details?.cache_write_tokens);
+      // each at its own rate (prices.ts): a write kept twelve hours costs
+      // twice one kept the default half hour.
+      const details = usage.input_tokens_details;
+      const cached = n(details?.cached_tokens);
+      const written = n(details?.cache_write_tokens);
+      const long = Math.min(written, n(details?.cache_write_tokens_details?.ttl_12h_tokens));
       this.usage.cacheRead = cached;
-      this.usage.cacheWrite5m = written;
+      this.usage.cacheWrite5m = written - long;
+      this.usage.cacheWrite12h = long;
       this.usage.input = Math.max(0, n(usage.input_tokens) - cached - written);
       this.usage.output = n(usage.output_tokens);
       ticks(usage);

@@ -2,8 +2,9 @@
 // usage check, as the plan router's service runs it as the builder
 // (daemon/plan-usage.ts, daemon/router-serve.ts), hands back only the
 // windows: the 5 hours, the week and, for a plan that counts by the month,
-// the month, and only ones it measured just now. Old numbers it kept past a
-// lapsed sign-in aren't today's, and a sign-in that ran out says so. The
+// the month, measured just now, or kept while the limits are paused, with
+// when they were read. Other old numbers aren't shown, and a sign-in that
+// ran out says so. The
 // daemon asks for them now and then and keeps the answer a little while. A
 // build on a plan carries no dollar amount to any screen.
 
@@ -92,19 +93,26 @@ function claudeHome(name: string, o: { access?: number; refresh?: number; keptAg
   return home;
 }
 
-test("T19.1 Omarchy's own check: numbers measured just now are shown; old ones it kept past a lapsed sign-in aren't, and a sign-in that ran out or was never done says so", () => {
+test("T19.1 Omarchy's own check: numbers measured just now are shown, and kept ones while the limits are paused with when they were read; other old ones aren't, and a sign-in that ran out or was never done says so", () => {
   // Measured a moment ago, with a sign-in that's good: the check reuses
   // them rather than ask again, and they're today's.
   const fresh = realCheck("claude", claudeHome("fresh", { access: 3_600_000, keptAgo: 5_000 }));
   assert.equal(JSON.parse(fresh).limitsStale, false);
   assert.deepEqual(usageAnswer(fresh).reply, { windows: [{ window: "hours", hours: 5, percent: 23, resets: "2030-01-01T10:00:00.000Z" }, { window: "week", percent: 41, resets: "2030-01-04T10:00:00.000Z" }] });
   // The token lapsed, the sign-in itself still good: the check prints the
-  // numbers it kept, marked stale, and "Limits paused". Not today's.
+  // numbers it kept, marked stale, and "Limits paused". They're shown, with
+  // when they were read (Q341).
   const paused = realCheck("claude", claudeHome("paused", { access: -3_600_000, keptAgo: 7_200_000 }));
-  assert.equal(JSON.parse(paused).limits.length, 2, "the old numbers are in what it printed");
-  assert.equal(JSON.parse(paused).usageStatusText, "Limits paused");
-  assert.deepEqual(usageAnswer(paused), { reply: null, said: "old numbers" });
-  assert.equal(usageWindows(paused), null);
+  const record = JSON.parse(paused);
+  assert.equal(record.usageStatusText, "Limits paused");
+  assert.equal(record.limitsStale, true);
+  assert.deepEqual(usageAnswer(paused), {
+    reply: { windows: [{ window: "hours", hours: 5, percent: 23, resets: "2030-01-01T10:00:00.000Z" }, { window: "week", percent: 41, resets: "2030-01-04T10:00:00.000Z" }], asOf: new Date(record.limitsFetchedAt).toISOString() },
+    said: "kept numbers, limits paused",
+  });
+  assert.ok(Math.abs(Date.parse((usageAnswer(paused).reply as { asOf: string }).asOf) - (Date.now() - 7_200_000)) < 60_000, "read two hours ago");
+  // Old numbers for any other reason aren't shown.
+  assert.deepEqual(usageAnswer(JSON.stringify({ ...record, usageStatusText: "" })), { reply: null, said: "old numbers" });
   // The sign-in ran out: the same old numbers, and the TV asks to sign in again.
   const expired = realCheck("claude", claudeHome("expired", { access: -3_600_000, refresh: -60_000, keptAgo: 7_200_000 }));
   assert.equal(JSON.parse(expired).limits.length, 2);
@@ -193,6 +201,14 @@ test("T19.1 the daemon keeps an answer two minutes and a missing one half a minu
   answer = { windows: [{ window: "week", percent: 43 }] };
   assert.equal((await usages.get("claude"))?.windows[0].percent, 43, "a sign-in just done shows its numbers soon");
   assert.equal(asks, 5);
+  // Kept numbers, while the limits are paused: shown with when they were
+  // read, and asked again as soon as no answer, for fresh ones.
+  answer = { windows: [{ window: "week", percent: 41 }], asOf: "2026-11-16T01:00:00.000Z" };
+  assert.equal((await usages.get("claude", true))?.asOf, "2026-11-16T01:00:00.000Z");
+  now = 202_000;
+  answer = { windows: [{ window: "week", percent: 44 }] };
+  assert.deepEqual(await usages.get("claude").then((u) => [u?.windows[0].percent, u?.asOf]), [44, undefined]);
+  assert.equal(asks, 7);
 });
 
 test("T19.1 a build on a plan carries no dollar amount, though the CLI wrote its own estimate", async () => {
