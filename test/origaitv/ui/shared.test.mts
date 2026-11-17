@@ -101,6 +101,18 @@ async function tv(): Promise<Page> {
 
 const go = (page: Page, route: string) => page.evaluate((r) => (window as unknown as { origaitvLauncher: { go(route: string): void } }).origaitvLauncher.go(r), route);
 const focused = (page: Page) => page.evaluate(() => document.querySelector<HTMLElement>(".focused")?.dataset.action ?? "");
+
+// The page tells the daemon about an answer in a request of its own, after
+// it has already drawn the next thing, so a read straight after the key can
+// come first. Wait for what the daemon says to be so, and say what wasn't.
+async function until(check: () => Promise<boolean>, what: string, ms = 5000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!(await check())) {
+    if (Date.now() > end) throw new Error(`${what} didn't happen in ${ms} ms`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 const clear = async () => {
   for (const one of (await (await fetch(`${url}/api/shared`)).json()).shares) await fetch(`${url}/api/shared/${one.id}`, { method: "DELETE" });
 };
@@ -206,7 +218,7 @@ test("S5.10 a photo waits for Open on the TV: Not now keeps it in Apps → Share
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => !document.getElementById("notice")?.classList.contains("on"));
     await page.waitForSelector(".grid .tile.focused", { timeout: 2000 });
-    assert.equal((await (await fetch(`${url}/api/shared`)).json()).shares[0].answered, true);
+    await until(async () => (await (await fetch(`${url}/api/shared`)).json()).shares[0]?.answered === true, "the daemon hearing that the photo was answered");
     // Apps → Shared has it, the photo itself on its tile.
     await go(page, "apps");
     await page.waitForSelector(`.tile-shared[data-share="${sent.data.share.id}"] img.tile-shared-photo`);
