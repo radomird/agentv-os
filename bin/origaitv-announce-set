@@ -80,10 +80,13 @@ if [[ ! -d $folder ]]; then
   exit 1
 fi
 
-# Every value below is from a short list of characters, checked above, so
-# none of them can end a tag. The phones' port answers on IPv4.
+# The file's own words are written as they are, with nothing expanded in
+# them, and each value goes in on a line of its own. All three were checked
+# above against a short list of characters, so none of them can end a tag.
+# The phones' port answers on IPv4, so the record is on IPv4.
 next="$folder/.origaitv.service.next"
-cat >"$next" <<XML
+{
+  cat <<'XML'
 <?xml version="1.0" standalone='no'?>
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
 <!-- Written by origaitv-announce-set, each time OrigaiTV's daemon starts. -->
@@ -91,12 +94,15 @@ cat >"$next" <<XML
   <name replace-wildcards="yes">%h</name>
   <service protocol="ipv4">
     <type>_origaitv._tcp</type>
-    <port>$port</port>
-    <txt-record>id=$id</txt-record>
-    <txt-record>version=$version</txt-record>
+XML
+  printf '    <port>%s</port>\n' "$port"
+  printf '    <txt-record>id=%s</txt-record>\n' "$id"
+  printf '    <txt-record>version=%s</txt-record>\n' "$version"
+  cat <<'XML'
   </service>
 </service-group>
 XML
+} >"$next"
 chmod 644 "$next"
 if [[ -f $FILE && ! -L $FILE ]] && cmp -s "$next" "$FILE"; then
   rm -f -- "$next"
