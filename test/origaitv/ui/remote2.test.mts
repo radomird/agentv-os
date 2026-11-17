@@ -712,6 +712,42 @@ test("T21.1 two fingers on the clickpad scroll the page in front, from its middl
   await hand.close();
 });
 
+// What redraws the remote under a finger: the TV's focus landing on a field,
+// which brings the keyboard up, and something starting to play, which puts
+// what's playing above the pad.
+const redraws: [string, (b: Box) => Promise<unknown>, string][] = [
+  ["the keyboard coming up", (b) => context(b, { front: "app", playing: false, appField: { kind: "search", label: "search", value: "", app: "origaitv.tube" } }), "#tv-text"],
+  [
+    "something starting to play",
+    async (b) => {
+      await fetch(`${b.url}/api/ledger`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app: "local.mytv", state: { title: "Sintel", position: 480, duration: 888, playing: true } }) });
+      await context(b, { front: "app", playing: true });
+    },
+    ".r2-card",
+  ],
+];
+
+for (const [what, redraw, drawn] of redraws) {
+  test(`T21.1 a held edge stops when the remote draws itself again under the finger: ${what}`, async () => {
+    const b = await box(true, "glass");
+    const hand = await phone(b, ".cp-pad");
+    const at = await spots(hand);
+    const rights = () => b.keys.filter((k) => k.key === "right").length;
+    await hand.mouse.move(at.right.x, at.right.y);
+    await hand.mouse.down();
+    await until(() => rights() >= 2, 2000);
+    await redraw(b);
+    await hand.waitForSelector(drawn, { timeout: 3000 });
+    const then = rights();
+    await wait(700);
+    assert.equal(rights(), then, "no arrow once the pad it was held on is gone");
+    await hand.mouse.up();
+    await wait(200);
+    assert.equal(rights(), then, "nor as the finger lifts");
+    await hand.close();
+  });
+}
+
 test("T8.3 the remote follows the TV's look: Glass and Cinema with the looks on, Terminal with them off", async () => {
   const b = await box(true);
   const state = join(String((b.daemon as unknown as { options: { state: string } }).options.state));

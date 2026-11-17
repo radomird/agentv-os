@@ -306,6 +306,9 @@ export class Remote2 {
   private okPress: { finger: number; held: boolean; filling: boolean; left: boolean; timer: number } | null = null;
   // Lines the clickpad's keys up under its sides as its size changes.
   private padWatch: ResizeObserver | null = null;
+  // Stops the press under way on a pad: a held edge's repeat and a hold's
+  // timer. Whatever takes the pad away, or the page out of sight, calls it.
+  private stopPress: (() => void) | null = null;
 
   constructor(root: HTMLElement, kit: Kit) {
     this.root = root;
@@ -316,6 +319,11 @@ export class Remote2 {
     const fit = () => document.documentElement.style.setProperty("--r2-height", `${Math.round(viewport?.height ?? innerHeight)}px`);
     viewport?.addEventListener("resize", fit);
     fit();
+    // A phone that locks or leaves the page with a finger down sends nothing
+    // more.
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) this.stopPress?.();
+    });
   }
 
   // Draws the remote for the state, or only what changed when it's still
@@ -354,6 +362,10 @@ export class Remote2 {
   // --- The screen -----------------------------------------------------------
 
   private build(state: Phone): void {
+    // The pad a finger is on is about to go, and its press with it: a held
+    // edge would otherwise go on sending its arrow from the pad that's gone.
+    this.stopPress?.();
+    this.stopPress = null;
     this.notice = null;
     this.playKey = null;
     this.card = null;
@@ -560,6 +572,17 @@ export class Remote2 {
       edge = null;
       feel.edge?.light(null);
     };
+    // The press ends with nothing sent: the pad went, the page was hidden,
+    // or the pad lost the finger some other way.
+    const stop = () => {
+      clearTimeout(hold);
+      letGo();
+      finger = null;
+      from = null;
+    };
+    area.addEventListener("lostpointercapture", (event) => {
+      if (event.pointerId === finger) stop();
+    });
     area.addEventListener("pointerdown", (event) => {
       // A second finger scrolls: no swipe, tap, hold or arrow for the first.
       if (two.down(event)) {
@@ -571,6 +594,7 @@ export class Remote2 {
       }
       if (finger !== null || two.scrolling) return;
       finger = event.pointerId;
+      this.stopPress = stop;
       area.setPointerCapture(event.pointerId);
       from = { x: event.clientX, y: event.clientY, at: Date.now() };
       moved = false;
@@ -579,6 +603,11 @@ export class Remote2 {
         feel.edge?.light(side);
         const press = { arrow: side, repeating: false, timer: 0 };
         const again = () => {
+          // A pad drawn over meanwhile stops, whatever stopped telling it.
+          if (!area.isConnected) {
+            stop();
+            return;
+          }
           press.repeating = true;
           arrow(side);
           press.timer = window.setTimeout(again, EDGE_EVERY_MS);
