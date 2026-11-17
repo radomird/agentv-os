@@ -3408,6 +3408,9 @@ export class Daemon {
       // moved one.
       if (inserted) this.broadcast("ledger", { viewer: viewer.id, app: row.app_id });
       this.json(response, 200, { ok: true, row });
+      // The app was just read, so what's playing in full looks again now:
+      // the TV session hands it this same reading.
+      this.phoneRemote.tvChanged();
       return;
     }
 

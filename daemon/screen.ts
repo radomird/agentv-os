@@ -70,7 +70,7 @@ import { PageAskWatch, type PageAnswer } from "./page-asks.ts";
 import { PageMedia } from "./page-media.ts";
 import { FolderPictures, type FolderSource } from "./picture-folder.ts";
 import { PlaybackWatch } from "./playback.ts";
-import type { Item, Navigation } from "../apps/contract/contract.ts";
+import type { Item, Navigation, PlaybackState } from "../apps/contract/contract.ts";
 import { RemoteInput, sendInput, wheelTurn } from "./remote.ts";
 import { BACK_TAP, FOCUS_BINDING, navigationPage, REMOTE_PAGE, REMOTE_WORLD, SHARED_PAGE, SPATIAL_NAVIGATION, WHEEL_AT } from "./remote-page.ts";
 import { type Bar, FIELD, PhoneTyping, type TypingFront } from "./remote-text.ts";
@@ -322,6 +322,8 @@ export interface Playback {
   // whether its module has one it may leave out.
   call?(id: string, path: string, ...args: unknown[]): Promise<unknown>;
   has?(id: string, path: string): Promise<boolean>;
+  // What the app's last read for the ledger gave, and when.
+  last?(id: string): { state: PlaybackState; at: number } | null;
   // The app's hints for the phone's d-pad on its pages (ADR-103).
   navigation?(id: string): Promise<Navigation[]>;
 }
@@ -705,6 +707,7 @@ export class Screen {
       evaluate: front.evaluate,
       app: playback?.call ? (path, ...args) => playback.call!(id, path, ...args) : undefined,
       has: playback?.has ? (path) => playback.has!(id, path) : undefined,
+      last: playback?.last ? () => playback.last!(id) : undefined,
     };
   }
 

@@ -232,6 +232,24 @@ test("T27.2 a jump reaches the open app's own playback with its seconds, and the
   watch.stop();
 });
 
+test("T27.2 the watch keeps what its last read gave and when, and lets go of it when a read gives nothing", async () => {
+  let state: object | null = { title: "Sintel", position: 42, duration: 888, playing: true };
+  const host = { setPage() {}, call: async () => state, stop() {} } as unknown as AppHost;
+  const recorded: unknown[] = [];
+  const watch = new PlaybackWatch({ host: async () => host, viewer: async () => ({ id: "radomir", role: "adult" }), record: async (_app, read) => void recorded.push(read), first: 5, every: 20 });
+  assert.equal(watch.last("origaitv.tube"), null);
+  watch.opened("origaitv.tube");
+  await new Promise((resolve) => setTimeout(resolve, 15));
+  const last = watch.last("origaitv.tube")!;
+  assert.deepEqual(last.state, state);
+  assert.ok(Math.abs(last.at - Date.now()) < 1000);
+  assert.equal(recorded.length, 1);
+  state = null;
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(watch.last("origaitv.tube"), null, "the app says nothing plays now");
+  watch.stop();
+});
+
 // --- The daemon's ledger requests ---------------------------------------------
 
 let daemon: Daemon;

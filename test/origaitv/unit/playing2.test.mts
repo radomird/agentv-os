@@ -122,6 +122,33 @@ test("T27.2 where the thing is comes from the app's own word, with what it can d
   assert.deepEqual(await playback.answer({ action: "now" }), { ok: true, now: after.now });
 });
 
+test("T27.2 looking again doesn't read the app again: its last read for the ledger does while it's fresh, until something is asked of its player", async () => {
+  const own = player(["playback.pause"], { title: "Sintel", position: 300, duration: 888, playing: false });
+  const shown = page({ position: 130, duration: 918, playing: false });
+  let last: { state: any; at: number } | null = { state: { title: "Sintel", position: 100, duration: 888, playing: true }, at: Date.now() - 4000 };
+  const playback = new PhonePlayback({ front: () => ({ kind: "page", id: "origaitv.tube", evaluate: shown.evaluate, app: own.app, has: own.has, last: () => last }), keys: async () => {} });
+  const first = (await playback.now())!;
+  assert.deepEqual([first.position, first.at, first.playing], [100, last.at, false], "the reading from 4 s back, with when it was read, and the page's word on whether it plays now");
+  assert.deepEqual(own.calls, [], "the app wasn't read for it");
+
+  // A pause from the phone: what was read before it is out of date, so the
+  // app is read for the answer, and again until the ledger has read it anew.
+  const paused = await playback.answer({ action: "pause", now: true });
+  assert.equal(paused.now?.position, 300);
+  assert.equal((await playback.now())!.position, 300);
+  assert.deepEqual(own.calls, [["playback.pause"], ["playback.readPlaybackState"], ["playback.readPlaybackState"]]);
+  last = { state: { title: "Sintel", position: 301, duration: 888, playing: false }, at: Date.now() + 1 };
+  assert.equal((await playback.now())!.position, 301);
+  assert.equal(own.calls.length, 3);
+
+  // One that's gone stale, or gone, isn't used.
+  last = { state: last.state, at: Date.now() - 60_000 };
+  assert.equal((await playback.now())!.position, 300);
+  last = null;
+  assert.equal((await playback.now())!.position, 300);
+  assert.equal(own.calls.length, 5);
+});
+
 test("T27.2 with home in front: a shared video in home's player, then Music, which says what its queue has and can't jump", async () => {
   const music: Record<string, unknown>[] = [];
   let now: object | null = { title: "Night Shift", artist: "Lucy Dacus", album: "Historian", albumId: "a1", position: 31.5, duration: 392, playing: true, index: 0, count: 3 };

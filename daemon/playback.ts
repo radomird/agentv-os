@@ -33,6 +33,9 @@ interface Watching {
   page?: PageBroker;
   busy: boolean;
   quickUntil: number;
+  // The state its last read gave, and when, or none when that read gave
+  // nothing.
+  last?: { state: PlaybackState; at: number };
 }
 
 export class PlaybackWatch {
@@ -132,6 +135,13 @@ export class PlaybackWatch {
     return host ? host.has(path).catch(() => false) : false;
   }
 
+  // What the app's last read gave and when, or null when it gave nothing.
+  // Whoever wants to know where an app's player is every few seconds takes
+  // this, so the app isn't read twice as often for it.
+  last(id: string): { state: PlaybackState; at: number } | null {
+    return this.watching.get(id)?.last ?? null;
+  }
+
   // The app's hints for the phone's d-pad on its pages (ADR-103), once its
   // worker has started, or none.
   async navigation(id: string): Promise<Navigation[]> {
@@ -150,10 +160,12 @@ export class PlaybackWatch {
       if (!host || this.watching.get(id) !== watching) return false;
       host.setPage(watching.page);
       const state = await host.call<PlaybackState | null>(await this.deps.viewer(), "playback.readPlaybackState");
+      watching.last = state ? { state, at: Date.now() } : undefined;
       if (!state || this.watching.get(id) !== watching) return false;
       await this.deps.record(id, state);
       return true;
     } catch (error) {
+      watching.last = undefined;
       this.log(`${id}'s playback state: ${(error as Error).message}`);
       return false;
     } finally {

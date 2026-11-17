@@ -203,9 +203,17 @@ export type PlayAnswer = TextAnswer & { now?: PlayingNow | null; picture?: strin
 // What's in front for play and pause, from the screen daemon. app calls the
 // app's own playback (its worker, through PlaybackWatch); it throws when the
 // app has no such call. has says whether the app's module has one of the
-// calls it may leave out, such as playback.previous.
+// calls it may leave out, such as playback.previous. last is what the app's
+// last read for the ledger gave, and when.
 export type PlaybackFront =
-  | { kind: "page"; id: string; evaluate(expression: string): Promise<unknown>; app?: (path: string, ...args: unknown[]) => Promise<unknown>; has?: (path: string) => Promise<boolean> }
+  | {
+      kind: "page";
+      id: string;
+      evaluate(expression: string): Promise<unknown>;
+      app?: (path: string, ...args: unknown[]) => Promise<unknown>;
+      has?: (path: string) => Promise<boolean>;
+      last?: () => { state: PlaybackState; at: number } | null;
+    }
   | { kind: "home"; evaluate(expression: string): Promise<unknown>; music?: (request: Record<string, unknown>) => Promise<object> }
   | { kind: "native"; id: string }
   | null;
@@ -219,11 +227,15 @@ export interface PhonePlaybackOptions {
 }
 
 const NOTHING: TextAnswer = { ok: false, why: "Nothing is playing" };
-// How long an app has to say where its player is, for what's playing.
+// How long an app has to say where its player is, for what's playing, and
+// how long its last read for the ledger stands in for a new one.
 const APP_READ_MS = 4000;
+const LAST_READ_MS = 15_000;
 
 export class PhonePlayback {
   private o: PhonePlaybackOptions;
+  // When something was last asked of the player.
+  private acted = 0;
 
   constructor(options: PhonePlaybackOptions) {
     this.o = options;
@@ -291,6 +303,8 @@ export class PhonePlayback {
   async answer(ask: PlaybackAsk): Promise<PlayAnswer> {
     if (ask.action === "now") return { ok: true, now: await this.now() };
     if (ask.action === "picture") return this.picture();
+    // What an app's last read said from before this is out of date now.
+    this.acted = Date.now();
     const did =
       ask.action === "toggle"
         ? await this.toggle()
@@ -400,8 +414,13 @@ export class PhonePlayback {
     }
     const state = await this.pageNow(front.evaluate);
     if (front.app) {
-      const read = (await this.within(front.app("playback.readPlaybackState"), APP_READ_MS)) as PlaybackState | null;
-      const at = Date.now();
+      // The app is read every 10 s for the ledger already. That reading
+      // does while it's fresh and nothing was asked of the player since,
+      // so looking again and again doesn't read the app twice as often.
+      const kept = front.last?.() ?? null;
+      const fresh = kept && kept.at > this.acted && Date.now() - kept.at < LAST_READ_MS ? kept : null;
+      const read = fresh ? fresh.state : ((await this.within(front.app("playback.readPlaybackState"), APP_READ_MS)) as PlaybackState | null);
+      const at = fresh ? fresh.at : Date.now();
       if (read && typeof read.title === "string" && read.title.trim() && typeof read.position === "number" && read.position >= 0) {
         const has = async (path: string) => (front.has ? (await this.within(front.has(path))) === true : false);
         const [next, previous, seek] = await Promise.all([has("playback.next"), has("playback.previous"), has("playback.seek")]);
@@ -412,7 +431,9 @@ export class PhonePlayback {
           title: read.title.slice(0, 300),
           position: read.position,
           duration,
-          playing: read.playing === true,
+          // A reading from a few seconds back can't know about a pause
+          // since. The page's video can, when the page can see it.
+          playing: fresh && state ? state.playing : read.playing === true,
           at,
           next: next && read.hasNext !== false,
           previous: previous && read.hasPrevious !== false,

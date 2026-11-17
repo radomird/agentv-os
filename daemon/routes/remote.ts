@@ -350,6 +350,8 @@ export class PhoneRemote {
       }
       const key = JSON.stringify([now.id, now.title, now.picture ?? null, now.cover === true]);
       if (before?.key === key) {
+        // An older reading of the same thing never replaces a newer one.
+        if (now.at < before.now.at) return;
         this.kept = { ...before, now };
         if (moved(before.now, now)) this.o.playing2?.changed();
         return;
