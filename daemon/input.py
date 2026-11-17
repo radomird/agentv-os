@@ -555,7 +555,7 @@ def _pad_link(address, pads, stop, quiet):
                     sock.sendall(b"".join(json.dumps(answer, separators=(",", ":")).encode() + b"\n" for answer in answers))
             if len(held) > 1 << 20:
                 return "a line too long"
-            ready, _, _ = select.select([sock], [], [], pads.wait())
+            ready, _, _ = select.select([sock], [], [], min(pads.wait(), quiet))
             pads.tick()
             if ready:
                 chunk = sock.recv(65536)

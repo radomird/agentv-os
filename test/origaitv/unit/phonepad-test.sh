@@ -236,6 +236,12 @@ def daemon():
                 time.sleep(step)
             else:
                 conn.sendall(step)
+        # Hung up for good: closing alone leaves it open on Linux while the
+        # thread above is still reading it.
+        try:
+            conn.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         conn.close()
 threading.Thread(target=daemon, daemon=True).start()
 
@@ -252,7 +258,7 @@ plan.extend([
     [b'{"open":1}\n', 0.1, b'not json\n{"nope":1}\n{"state":[1,1,0,0],"n":5}\n', 0.1, b'{"open":2}\n{"state":[2,2,', 0.05, b'0,0],"n":1}\n', 0.2],
     # A daemon that connects and then says nothing: it's stuck, and the
     # controller it asked for doesn't outlive it.
-    [b'{"open":3}\n', 1.0],
+    [b'{"open":3}\n', 2.0],
 ])
 link = threading.Thread(target=origaitv_input.pad_link, args=(address, linked, stop), kwargs={"retry": 0.05, "refused": 0.3, "quiet": 0.4, "log": lambda line, flush=False: logged.append(line)})
 link.start()
