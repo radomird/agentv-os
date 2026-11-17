@@ -113,7 +113,9 @@ for (const look of LOOKS) {
         const page2 = (await page.locator(".settings-panel").innerText()).replace(/\s+/g, " ");
         if (!/your claude plan/i.test(page2)) problems.push(`${theme}: the page's title: ${page2}`);
         if (!/23% used/i.test(page2) || !/41% used/i.test(page2)) problems.push(`${theme}: the page's numbers: ${page2}`);
-        if (!/starts over at \d\d:\d\d/i.test(page2) || !/starts over \w+ at \d\d:\d\d/i.test(page2)) problems.push(`${theme}: when each starts over: ${page2}`);
+        // The 5 hours start over in 2 hours: today, or tomorrow when that's
+        // past midnight (a run between 22:00 and midnight). The week's is a day.
+        if (!/starts over (tomorrow )?at \d\d:\d\d/i.test(page2) || !/starts over (monday|tuesday|wednesday|thursday|friday|saturday|sunday) at \d\d:\d\d/i.test(page2)) problems.push(`${theme}: when each starts over: ${page2}`);
         if (/\$/.test(page2)) problems.push(`${theme}: the page shows a dollar amount`);
       } finally {
         await page.close();
