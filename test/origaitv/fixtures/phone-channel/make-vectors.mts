@@ -1,8 +1,8 @@
 // Makes vectors.json, next to this file: one pairing by the QR code's
 // secret, one by the code typed from the TV, one with a TV that has an id,
-// answers to a pairing that a phone has to refuse, a hello, and a run of
+// answers to a pairing that a phone has to refuse, a hello, a run of
 // signed and sealed requests with their answers, some of which the TV
-// refuses.
+// refuses, and game mode's open connection with messages each way.
 // docs/phone-api.md says what each value is.
 //
 //   node test/origaitv/fixtures/phone-channel/make-vectors.mts
@@ -261,6 +261,95 @@ function session(phoneId: string, phoneKey: Buffer) {
     { name: "a refusal that isn't sealed", status: 403, type: JSON_TYPE, body: b64u(Buffer.from(JSON.stringify({ ok: false, error: "That needs the PIN", pin: true }))) },
   ];
 
+  // --- Game mode: the connection that stays open ---------------------------------
+  //
+  // Opened by a signed GET that asks for a WebSocket, with a counter this
+  // session hasn't used. Each message on it is its number as 8 bytes, then
+  // the sealed bytes: `up` for the phone's, `down` for the TV's, and for the
+  // extra data which way it goes, the address and counter of the request
+  // that opened it, and the number.
+  const padAddress = "/api/phone/pad";
+  const padCounter = 201;
+  const padExtra = (way: "up" | "down", n: number, opened = padCounter) => `pad ${way}\n${padAddress}\n${opened}\n${n}`;
+  const numbered = (n: number, bytes: Uint8Array) => {
+    const head = Buffer.alloc(8);
+    head.writeBigUInt64BE(BigInt(n));
+    return Buffer.concat([head, bytes]);
+  };
+  // A controller's state: the buttons as 16 bits, then the stick's x and y.
+  const padState = (state: { buttons: number; x: number; y: number }) => {
+    const plain = Buffer.alloc(6);
+    plain.writeUInt16BE(state.buttons, 0);
+    plain.writeInt16BE(state.x, 2);
+    plain.writeInt16BE(state.y, 4);
+    return plain;
+  };
+  // What the TV says back: which controller, and the newest message taken.
+  const padTook = (slot: number, took: number) => {
+    const plain = Buffer.alloc(9);
+    plain.writeUInt8(slot, 0);
+    plain.writeBigUInt64BE(BigInt(took), 1);
+    return plain;
+  };
+  const padMessage = (key: Uint8Array, way: "up" | "down", n: number, plain: Buffer, label: string, opened = padCounter) => {
+    const nonce = fixed(`pad ${label}`, 12);
+    const extra = padExtra(way, n, opened);
+    return { n, plain: b64u(plain), nonce: b64u(nonce), extra, message: b64u(numbered(n, seal(key, nonce, plain, extra))) };
+  };
+  const fromPhone = (name: string, n: number, state: { buttons: number; x: number; y: number }, label = `up nonce ${n}`) => ({ name, state, ...padMessage(up, "up", n, padState(state), label) });
+  const fromTv = (name: string, n: number, slot: number, took: number) => ({ name, slot, took, ...padMessage(down, "down", n, padTook(slot, took), `down nonce ${n}`) });
+  const padOpen = signature("GET", padAddress, padCounter, "", sha256("").toString("hex"));
+  const webSocketKey = fixed("pad websocket key", 16).toString("base64");
+  // Another session of the same phone, for a message that isn't this one's.
+  const otherNonces = [fixed("other hello phone nonce", 16), fixed("other hello tv nonce", 16)];
+  const otherUp = hkdf(phoneKey, Buffer.concat(otherNonces), LABELS.session, 96).subarray(32, 64);
+  const A = { buttons: 1, x: 0, y: 0 };
+  const padUp = [fromPhone("A goes down", 1, A), fromPhone("A still down, and the stick up and to the right", 2, { buttons: 1, x: 23170, y: -23170 })];
+  const tagChanged = spoiled(Buffer.from(fromPhone("", 3, { buttons: 2, x: 0, y: 0 }, "dropped nonce tag").message, "base64url"));
+  const pad = {
+    buttons: ["a", "b", "x", "y", "l1", "r1", "l2", "r2", "view", "menu", "home"],
+    open: {
+      name: "the request that opens game mode: a signed GET that asks for a WebSocket",
+      method: "GET",
+      address: padAddress,
+      counter: padCounter,
+      grant: "",
+      digest: sha256("").toString("hex"),
+      signed: padOpen.signed,
+      headers: { Connection: "Upgrade", Upgrade: "websocket", "Sec-WebSocket-Version": "13", "Sec-WebSocket-Key": webSocketKey, ...headers(padCounter, padOpen.sig, "") },
+      body: null,
+      answer: { status: 101, headers: { Upgrade: "websocket", Connection: "Upgrade", "Sec-WebSocket-Accept": createHash("sha1").update(`${webSocketKey}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64") } },
+    },
+    // What the phone sends, in order, each answered by the TV's next message.
+    up: padUp,
+    // What the TV sends: the first as the connection opens, then one for
+    // each message its controller took.
+    down: [fromTv("as it opens: this phone is controller 1, and nothing is taken yet", 1, 1, 0), fromTv("the controller took the phone's first message", 2, 1, 1), fromTv("and its second", 3, 1, 2), fromTv("and, after the ones it dropped, its fourth", 4, 1, 4)],
+    // Messages the TV drops, sent after the two above. None reaches the
+    // controller, and the TV says nothing back. `counts` says whether its
+    // number is used up by it.
+    dropped: [
+      { name: "the first message again", message: padUp[0].message, counts: false },
+      { ...fromPhone("a new message with a number that's been taken", 2, { buttons: 4, x: 0, y: 0 }, "dropped nonce used"), counts: false },
+      { name: "a state with its number, not sealed", message: b64u(numbered(3, padState({ buttons: 2, x: 0, y: 0 }))), counts: false },
+      { name: "sealed with the key of another session of this phone", ...padMessage(otherUp, "up", 3, padState({ buttons: 2, x: 0, y: 0 }), "dropped nonce other session"), counts: false },
+      { name: "sealed for another connection of this session, one that counter 202 opened", ...padMessage(up, "up", 3, padState({ buttons: 2, x: 0, y: 0 }), "dropped nonce other connection", 202), counts: false },
+      { name: "sealed with the key for the TV's own messages", ...padMessage(down, "up", 3, padState({ buttons: 2, x: 0, y: 0 }), "dropped nonce down key"), counts: false },
+      { name: "a byte of its tag changed on the way", message: b64u(tagChanged), counts: false },
+      { name: "sealed right, and not a controller's state: a bit no button has", ...padMessage(up, "up", 3, Buffer.from("080000000000", "hex"), "dropped nonce bit"), counts: true },
+    ],
+    // The next one the TV takes: number 3 was used up by the last of those.
+    after: fromPhone("B, with the next number", 4, { buttons: 2, x: 0, y: 0 }),
+    otherSession: { phoneNonce: b64u(otherNonces[0]), tvNonce: b64u(otherNonces[1]), up: b64u(otherUp) },
+    // Messages a phone has to drop, after the TV's first: that one again,
+    // the phone's own message played back, and one with a byte changed.
+    downToRefuse: [
+      { name: "the TV's first message again", message: fromTv("", 1, 1, 0).message },
+      { name: "the phone's own message, played back as the TV's", message: padUp[1].message },
+      { name: "the TV's second message with a byte of its tag changed", message: b64u(spoiled(Buffer.from(fromTv("", 2, 1, 1).message, "base64url"))) },
+    ],
+  };
+
   return {
     hello: {
       request: { method: "POST", address: "/api/phone/hello", type: JSON_TYPE, text: JSON.stringify({ id: phoneId, nonce: b64u(phoneNonce) }) },
@@ -276,6 +365,7 @@ function session(phoneId: string, phoneKey: Buffer) {
     refused,
     window,
     answersToRefuse,
+    pad,
   };
 }
 
@@ -301,7 +391,7 @@ export function make() {
   const wrong = b64u(hmac(Buffer.from("ZZZZZZ"), LABELS.pair, Buffer.from(bySecret.phone.x25519Public, "base64url")));
   return {
     about: "Test vectors for the channel between a paired phone and the TV. docs/phone-api.md says what each value is. Made by make-vectors.mts, next to this file. None of these is a real key.",
-    encoding: "Bytes are base64url with no padding. A field named text, signed, extra, digest, code, typed or boxId is plain text, and so is every header.",
+    encoding: "Bytes are base64url with no padding. A field named text, signed, extra, digest, code, typed or boxId is plain text, and so is every header. A WebSocket's own key and accept headers are base64 as that protocol has them.",
     labels: LABELS,
     alphabet: ALPHABET,
     host: HOST,

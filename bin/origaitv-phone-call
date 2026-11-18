@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # origaitv:summary=Send a request to the box as a paired phone would, to check it
-# origaitv:args=pair <code> [<name>] | pair-new [<name>] | [--errors] <key-file> <METHOD> <path> [<json> | @<file> <content-type>]
-# origaitv:examples=origaitv-phone-call pair ABC123 "a check" | origaitv-phone-call /tmp/origaitv-phone-x/key.json GET /api/phone/state | origaitv-phone-call "$key" POST /api/phone/remote '{"key":"up"}'
+# origaitv:args=pair <code> [<name>] | pair-new [<name>] | [--errors] <key-file> <METHOD> <path> [<json> | @<file> <content-type>] | <key-file> pad [<step>...]
+# origaitv:examples=origaitv-phone-call pair ABC123 "a check" | origaitv-phone-call /tmp/origaitv-phone-x/key.json GET /api/phone/state | origaitv-phone-call "$key" POST /api/phone/remote '{"key":"up"}' | origaitv-phone-call "$key" pad a:0.2 time:200
 # origaitv:hidden=true
 
 # A phone signs and seals what it sends the box, so curl alone can't stand in
@@ -11,6 +11,10 @@
 # phone's key in a file, and sends one request at a time with it, printing
 # the answer opened. It's for checking the box from the box: it talks to the phone
 # companion's port there (ORIGAITV_PHONE_URL to point it elsewhere).
+#
+# With pad it's a phone in game mode: it opens the connection, presses the
+# buttons and moves the stick as its steps say, and prints how long each
+# press took to reach the TV's controller and be answered.
 #
 # It exits 22 when the box answers 400 or more, as curl -f does.
 
