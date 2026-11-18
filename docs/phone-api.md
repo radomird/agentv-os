@@ -811,6 +811,7 @@ Here's the whole state with every field's type, written the way TypeScript write
   version: number,
   phone: { id: string, name: string, pairedAt: string },
   boxId?: string,
+  boxName?: string,
   features: { remote2: boolean, askbuilds: boolean },
   ask?: Ask | null,
   look: string | null,
