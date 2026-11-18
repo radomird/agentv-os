@@ -280,6 +280,113 @@ for (const one of PAGES) {
   });
 }
 
+// What a row shows as its value, by the row's name on the page.
+// In lower case, since a look may show it that way.
+const shows = async (page: Page, action: string) => ((await page.locator(`[data-action="${action}"] .button-value`).textContent()) ?? "").toLowerCase();
+
+// Presses Save, and gives what it sent. A stand-in says no, so the page stays.
+async function saved(page: Page, method: string, path: RegExp): Promise<any> {
+  let body: unknown;
+  await page.route(path, async (route) => {
+    if (route.request().method() !== method) return route.fallback();
+    body = route.request().postDataJSON();
+    await route.fulfill({ status: 400, json: { ok: false, error: "A stand-in said no" } });
+  });
+  await page.click('[data-action="save"]');
+  for (let i = 0; i < 100 && body === undefined; i++) await page.waitForTimeout(50);
+  return body;
+}
+
+for (const who of ["new", "saved"]) {
+  test(`T28.9 a ${who} profile's role, colour and what phones may send stay as picked when the page is drawn again, and Save sends what the page shows`, async () => {
+    const page = await tv();
+    try {
+      // The saved one is the adult nobody is watching as at the start.
+      const id = who === "new" ? "new" : adults[1];
+      await send("POST", "/api/viewer", { id: adults[0] });
+      await go(page, `profile/${id}`);
+      const name = '[data-action="name"]';
+      await page.waitForSelector(name);
+      await page.evaluate((sel) => (window as unknown as Tv).origaitvLauncher.focus.set(document.querySelector<HTMLElement>(sel)!), name);
+      await page.keyboard.press("ControlOrMeta+a");
+      await page.keyboard.type("Mira Lind");
+      const before = { role: await shows(page, "role"), colour: await shows(page, "avatar") };
+      // The other role, two colours on, and phones may send to it.
+      await page.click('[data-action="role"]');
+      await page.click('[data-action="avatar"]');
+      await page.click('[data-action="avatar"]');
+      await page.click('[data-action="shares"]');
+      const picked = { role: await shows(page, "role"), colour: await shows(page, "avatar"), shares: await shows(page, "shares") };
+      assert.equal(picked.role, "child");
+      assert.notEqual(picked.role, before.role);
+      assert.notEqual(picked.colour, before.colour);
+      assert.equal(picked.shares, "on");
+
+      for (const [cause, happen] of CAUSES) {
+        await drawnAgain(page, name, happen).catch(() => assert.fail(`when ${cause}, the page wasn't drawn again`));
+        assert.equal((await seen(page, name)).value, "Mira Lind", `when ${cause}, the name is kept`);
+        assert.deepEqual({ role: await shows(page, "role"), colour: await shows(page, "avatar"), shares: await shows(page, "shares") }, picked, `when ${cause}, the role, the colour and what phones may send are as picked`);
+      }
+
+      const body = await saved(page, who === "new" ? "POST" : "PUT", who === "new" ? /\/api\/viewers$/ : /\/api\/viewers\/[^/]+$/);
+      assert.ok(body, "Save sent the profile");
+      // What went is what the page showed, whatever was picked.
+      assert.equal(body.name, "Mira Lind");
+      assert.equal(body.role, await shows(page, "role"), "the role sent is the one on the page");
+      assert.equal(body.avatar, await shows(page, "avatar"), "the colour sent is the one on the page");
+      assert.deepEqual({ role: body.role, shares: body.shares, locked: body.locked }, { role: "child", shares: true, locked: false });
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+test("T28.9 a profile nobody changed takes what's saved when its page is drawn again", async () => {
+  const page = await tv();
+  try {
+    await send("POST", "/api/viewer", { id: adults[0] });
+    await go(page, `profile/${adults[1]}`);
+    const name = '[data-action="name"]';
+    await page.waitForSelector(name);
+    const colour = await shows(page, "avatar");
+    // Somebody changes it from elsewhere, as from a phone: the page is drawn
+    // again with the new colour and the new name, since nothing was picked or typed here.
+    const other = colour === "red" ? "cyan" : "red";
+    await send("PUT", `/api/viewers/${adults[1]}`, { name: "Ana B", avatar: other });
+    await page.waitForFunction((want) => document.querySelector('[data-action="avatar"] .button-value')?.textContent?.toLowerCase() === want, other);
+    assert.equal((await seen(page, name)).value, "Ana B");
+    await send("PUT", `/api/viewers/${adults[1]}`, { name: "Ana", avatar: colour });
+  } finally {
+    await page.close();
+  }
+});
+
+test("T28.9 the AI picked for a key stays when the page is drawn again, so the key is saved for the AI the page shows", async () => {
+  const page = await tv();
+  try {
+    await go(page, "key");
+    const field = '[data-action="key"]';
+    const first = await shows(page, "provider");
+    await page.click('[data-action="provider"]');
+    await page.click('[data-action="provider"]');
+    const picked = await shows(page, "provider");
+    assert.notEqual(picked, first);
+    await type(page, field, KEY);
+    for (const [cause, happen] of CAUSES) {
+      await drawnAgain(page, field, happen).catch(() => assert.fail(`when ${cause}, the page wasn't drawn again`));
+      assert.equal(await shows(page, "provider"), picked, `when ${cause}, the AI is the one picked`);
+      assert.equal((await seen(page, field)).value, KEY, `when ${cause}, the key is kept`);
+    }
+    // The third AI in the page's list, which is what two presses picked.
+    const body = await saved(page, "PUT", /\/api\/key$/);
+    assert.equal(body.key, KEY);
+    assert.equal(body.provider, "gemini", "the key goes to the AI the page shows");
+    assert.match(picked, /gemini/i);
+  } finally {
+    await page.close();
+  }
+});
+
 test("T28.9 a phone typing into a field goes on in the same field after the page is drawn again, with nothing lost or typed twice", async () => {
   const page = await tv();
   try {

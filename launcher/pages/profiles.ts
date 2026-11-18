@@ -14,6 +14,7 @@ import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 import { pinAsked } from "./pin.ts";
 import { loadShared, sharesAllowed } from "./shared.ts";
+import { keeps } from "../typed.ts";
 
 // The theme's colours an avatar can be, in the daemon's order.
 export const AVATARS = ["blue", "green", "magenta", "yellow", "cyan", "orange", "red"];
@@ -96,7 +97,18 @@ export function profile(ctx: Ctx, id: string): View {
     else draft.avatar = AVATARS[(AVATARS.indexOf(draft.avatar) + by + AVATARS.length) % AVATARS.length];
     ctx.sounds.play("move");
     draw();
+    picked({ role: draft.role, avatar: draft.avatar, locked: draft.locked, shares: draft.shares });
   };
+  // What's picked here and not saved yet stays when the page is drawn again,
+  // as the name does: Save sends what the screen shows, never the name with
+  // a role that went back to the saved one.
+  const picked = keeps<Partial<typeof draft>>(name, "profile", (kept) => {
+    if (kept.role !== "adult" && kept.role !== "child") return;
+    if (typeof kept.avatar !== "string" || !AVATARS.includes(kept.avatar)) return;
+    if (typeof kept.locked !== "boolean" || typeof kept.shares !== "boolean") return;
+    Object.assign(draft, { role: kept.role, avatar: kept.avatar, locked: kept.locked, shares: kept.shares });
+    draw();
+  });
   const role = h("button", { class: "button", "data-focus": true, "data-action": "role", "data-adjust": "role", onclick: () => step("role", 1) }, h("span", {}, "Role"), roleValue);
   const colour = h("button", { class: "button", "data-focus": true, "data-action": "avatar", "data-adjust": "avatar", onclick: () => step("avatar", 1) }, h("span", {}, "Colour"), colourValue);
 
