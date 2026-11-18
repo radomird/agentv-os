@@ -240,11 +240,13 @@ left_out "a name with half of a pair" "$(with_name $'"evil\xed\xa0\x80evil"')"
 left_out "a name past the end of Unicode" "$(with_name $'"evil\xf4\x90\x80\x80evil"')"
 pass "T28.5 a name whose bytes aren't UTF-8 is left out"
 
-# Half of a pair written as an escape. jq reads it as U+FFFD, and the name is
-# left out, or it can't read the drop at all, and the drop is refused whole,
-# as anything that isn't JSON is. Which one depends on the half and on jq's
-# version. Either way the name isn't announced.
-half() {
+# What isn't JSON to jq, though it nearly is: a raw newline or tab inside the
+# name, and half of a pair written as an escape. jq can't read such a drop
+# at all, so it's refused whole, as anything that isn't JSON is. Or, for the
+# second half of a pair by itself, jq reads it as U+FFFD and the name is
+# left out. Either way the name isn't announced, and neither is any part of
+# it.
+not_announced() {
   local what=$1 status=0
   printf '<service-group/>\n' >"$ORIGAITV_ANNOUNCE_FILE"
   hand "$2"
@@ -259,11 +261,14 @@ half() {
   if grep -q "evil\|EVIL" "$SCRATCH/out"; then fail "$what isn't echoed" "$(cat "$SCRATCH/out")"; fi
   [[ ! -e $ORIGAITV_ANNOUNCE_DROP && -z $(ls -A "$SCRATCH/drop") ]] || fail "$what: the drop is gone" "$(ls -A "$SCRATCH/drop")"
 }
-half "a name with the first half of a pair, escaped" "$(with_name '"evil\ud83devil"')"
-half "a name that ends in the first half of a pair, escaped" "$(with_name '"evil\ud83d"')"
-half "a name with the second half of a pair, escaped" "$(with_name '"evil\udcfaevil"')"
-half "a name with a pair the wrong way round, escaped" "$(with_name '"evil\udcfa\ud83devil"')"
-pass "T28.5 a name with half of a pair written as an escape is never announced"
+not_announced "a name with a raw newline in it" "$(with_name $'"evil\nevil"')"
+not_announced "a name with a raw tab in it" "$(with_name $'"evil\tevil"')"
+not_announced "a name with a raw escape character in it" "$(with_name $'"evil\x1b[31mevil"')"
+not_announced "a name with the first half of a pair, escaped" "$(with_name '"evil\ud83devil"')"
+not_announced "a name that ends in the first half of a pair, escaped" "$(with_name '"evil\ud83d"')"
+not_announced "a name with the second half of a pair, escaped" "$(with_name '"evil\udcfaevil"')"
+not_announced "a name with a pair the wrong way round, escaped" "$(with_name '"evil\udcfa\ud83devil"')"
+pass "T28.5 a name with a raw control character in it, or half of a pair written as an escape, is never announced"
 
 # Code points Avahi refuses a name for, which would take the TV off the
 # network if they reached the file, and the one jq writes for bad bytes.

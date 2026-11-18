@@ -90,11 +90,17 @@ fi
 # - it has none of the code points that Avahi refuses a name for: U+FDD0 to
 #   U+FDEF, and the last two of every plane, such as U+FFFE and U+FFFF;
 # - it has no U+FFFD. That's what jq puts where the drop's bytes weren't
-#   UTF-8, and where an escape named half of a pair, so a name with one in
-#   it wasn't handed over whole.
+#   UTF-8, and where an escape named the second half of a pair with no
+#   first, so a name with one in it wasn't handed over whole.
 # Then the five characters XML reads as its own are written the long way, &
-# first: &amp; &lt; &gt; &quot; and &#39;. They're spelled out here, since
-# jq's own @html writes the last one differently from one build to the next.
+# first: &amp; &lt; &gt; &quot; and &#39;. They're spelled out here, where
+# they're plain to see, and not left to jq's @html, which is for HTML and
+# writes the last one another way than its manual says.
+#
+# A drop that jq can't read at all never gets this far: it has no id and no
+# port either, and was refused above. That's a drop that isn't JSON, which
+# to jq includes a string with a raw control character in it, or with the
+# first half of a pair written as an escape and no second.
 name=$(jq -r '
   if type == "object" and (.name | type) == "string" then .name else empty end
   | select(utf8bytelength >= 1 and utf8bytelength <= 63)
