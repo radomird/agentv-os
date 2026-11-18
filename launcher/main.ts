@@ -1059,8 +1059,8 @@ async function start(): Promise<void> {
   // The TV's name, there while the announce switch is on: Settings has its
   // row from the first draw, and loses it when the switch goes off.
   onFeatures(() => {
-    void loadName().then(() => {
-      if (history[history.length - 1].startsWith("settings")) redraw();
+    void loadName().then((changed) => {
+      if (changed && history[history.length - 1].startsWith("settings")) redraw();
     });
   });
   // The Ask box building (ADR-068): the bar's Ask and Apps follow it.

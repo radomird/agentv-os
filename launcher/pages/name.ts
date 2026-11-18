@@ -5,6 +5,7 @@
 
 import { daemon } from "../api.ts";
 import { asWritten, h } from "../dom.ts";
+import { featureOn } from "../features.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 import { pinAsked } from "./pin.ts";
@@ -17,11 +18,18 @@ const UNNAMED = "OrigaiTV";
 // to give: then there's no row and no page.
 export let tvName: string | null = null;
 
-export async function loadName(): Promise<void> {
-  tvName = await daemon.name().then(
-    (found) => found.name,
-    () => null,
-  );
+// Asks only while the switch is on: with it off the daemon has no such
+// address, and the TV's pages ask for nothing new. True when the name, or
+// whether there is one, is different from before.
+export async function loadName(): Promise<boolean> {
+  const before = tvName;
+  tvName = (await featureOn("announce"))
+    ? await daemon.name().then(
+        (found) => found.name,
+        () => null,
+      )
+    : null;
+  return tvName !== before;
 }
 
 // The daemon said the name changed, from here or from a phone.
