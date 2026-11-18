@@ -539,7 +539,11 @@ function show(route: string, direction?: "forward" | "back", action?: string, ke
     saidPageDrawn((was) => (was ? el.querySelector<HTMLElement>(`[data-action="${was}"], [data-id="${was}"]`) : null) ?? first);
     return;
   }
-  const again = field ?? (action ? el.querySelector<HTMLElement>(`[data-action="${action}"], [data-id="${action}"]`) : null);
+  let again = field ?? (action ? el.querySelector<HTMLElement>(`[data-action="${action}"], [data-id="${action}"]`) : null);
+  // A field that's out of sight until the TV answers can't take the keys
+  // yet. The focus waits on the page's first element, and goes to the field
+  // as it shows (typed.ts).
+  if (again instanceof HTMLInputElement && again.offsetParent === null) again = null;
   // A page's first element can be gone by now, where the text put back
   // drew a list again.
   focus.setRoot(el, again ?? (view.first?.isConnected ? view.first : undefined));
