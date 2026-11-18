@@ -366,9 +366,24 @@ test("ADR-045 Settings → usage shows the month's spend, and the caps and safeg
   const panel = await page.locator(".panel").innerText();
   assert.match(panel, /spent this month\s+\$3\.46 of \$20\s+limit per app\s+\$5\s+limit per month\s+\$20\s+extra safety checks\s+on$/i);
   assert.equal(await page.locator(".panel .panel-note").count(), 0, "nothing is explained under a row");
-  const meter = page.locator('.panel [data-action="usage"] .meter');
-  assert.equal(await meter.getAttribute("aria-label"), "17 percent of the month's limit");
-  const bar = await meter.evaluate((el) => ({ all: el.getBoundingClientRect().width, filled: el.firstElementChild!.getBoundingClientRect().width, shown: getComputedStyle(el.firstElementChild!).backgroundColor }));
+  // Settings draws AI's rows again when the key's answer comes, a few ms
+  // after they first show. A bar found before that is off the page by the
+  // time it's measured: 0 wide, with no colour. So the bar is found and
+  // measured in one go, in the page, once it's there with a width.
+  const bar = (await page
+    .waitForFunction(
+      () => {
+        const el = document.querySelector('.panel [data-action="usage"] .meter');
+        const fill = el?.firstElementChild;
+        const all = el?.getBoundingClientRect().width ?? 0;
+        return el && fill && all > 0 ? { says: el.getAttribute("aria-label"), all, filled: fill.getBoundingClientRect().width, shown: getComputedStyle(fill).backgroundColor } : null;
+      },
+      undefined,
+      { timeout: 5000 },
+    )
+    .then((found) => found.jsonValue())
+    .catch((error) => assert.fail(`the spending row's bar wasn't on the page with a width in 5000 ms: ${(error as Error).message}`)))!;
+  assert.equal(bar.says, "17 percent of the month's limit");
   assert.ok(bar.all > 300 && Math.abs(bar.filled / bar.all - 0.17) < 0.01 && bar.shown !== "rgba(0, 0, 0, 0)", `the bar is filled as far as what's spent: ${JSON.stringify(bar)}`);
   // The spending row's page has what the nightly check found.
   await page.locator('.panel [data-action="usage"]').click();

@@ -530,9 +530,16 @@ test("Settings → Appearance keeps the focus ring on the card as each look is p
           await page.keyboard.press("Enter");
           assert.match((await page.evaluate(() => document.querySelector<HTMLElement>("#page .focused")?.dataset.action)) ?? "", /^theme-/, `${at}: OK goes into the theme list`);
           // As many whole rows as the page has room for, more than two
-          // (ADR-095), two themes a row.
-          const top = await list();
-          assert.ok(top.cut === 0 && top.shown > 4 && top.shown % 2 === 0 && top.thumb && top.down === 0, `${at}: whole rows of themes filling the page, and the thumb at the top: ${JSON.stringify(top)}`);
+          // (ADR-095), two themes a row. The page fits the list to its room
+          // and draws the thumb when it's next laid out, and until then the
+          // list is two rows with no thumb. The slide in gives that time,
+          // but the last look picked draws Settings again a moment later,
+          // and when that lands on this page there's no slide to wait for.
+          // So the read waits for the fitted list, and says what it last saw.
+          let top = await list();
+          const fitted = () => top.cut === 0 && top.shown > 4 && top.shown % 2 === 0 && top.thumb && top.down === 0;
+          for (const until = Date.now() + 3000; !fitted() && Date.now() < until; top = await list()) await page.waitForTimeout(50);
+          assert.ok(fitted(), `${at}: whole rows of themes filling the page, and the thumb at the top, 3000 ms on: ${JSON.stringify(top)}`);
           await frames(page);
           const inSight = await page.evaluate(() => {
             const panel = document.querySelector(".settings-panel")!.getBoundingClientRect();
