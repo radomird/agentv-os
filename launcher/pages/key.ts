@@ -471,7 +471,9 @@ export function planSignInPage(ctx: Ctx): View {
     const code = field.value.trim();
     if (!code) return;
     try {
-      await signInCall("POST", "/api/ai/sign-in/code", { code }, grant);
+      // The PIN's grant from Start over, or the one this visit to Settings
+      // holds, where the page was drawn again since.
+      await signInCall("POST", "/api/ai/sign-in/code", { code }, grant ?? ctx.held());
       // The code stays in the field until the TV has it.
       if (field.value.trim() === code) field.value = "";
       ctx.toast("Signing in…", "ok");

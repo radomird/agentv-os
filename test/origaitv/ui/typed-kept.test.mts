@@ -143,6 +143,8 @@ interface Case {
   // The fields, in the order they're typed. The last one has the focus and
   // the caret when the page is drawn again.
   fields: [selector: string, text: string][];
+  // The last field is out of sight until the TV has answered the page.
+  late?: boolean;
   // Save: what's pressed (or Enter, in the field), the request it sends, and
   // where the text is in it.
   save: { press: string; method: string; path: RegExp; sent: (body: any) => unknown[] } | { press: string | null; screen: (asked: Sent[]) => unknown[] };
@@ -201,6 +203,16 @@ const PAGES: Case[] = [
     ],
     save: { press: '[data-action="add-share"]', screen: (asked) => [asked.find((r) => r.op === "add-share")?.uri, asked.find((r) => r.op === "add-share")?.password] },
   },
+  {
+    name: "a network drive's sign-in",
+    route: "music/nas:attic.local",
+    fields: [
+      ['.share-form [data-field="user"]', "ana"],
+      ['.share-form [data-field="password"]', SECRET],
+    ],
+    save: { press: '[data-action="list"]', method: "POST", path: /\/api\/discover\/shares$/, sent: (b) => [b.user, b.password] },
+  },
+  { name: "the code a plan's sign-in gave", route: "plan-sign-in", late: true, fields: [['[data-action="sign-in-code"]', "stand-in code 4821"]], save: { press: '[data-action="send-code"]', method: "POST", path: /\/api\/ai\/sign-in\/code$/, sent: (b) => [b.code] } },
 ];
 
 for (const one of PAGES) {
@@ -224,6 +236,9 @@ for (const one of PAGES) {
           assert.equal(now.value, text, `when ${cause}, ${selector} keeps its text`);
           assert.equal(now.kind, kinds[i], `when ${cause}, ${selector} is the kind of field it was`);
         }
+        // A field the page shows only once the TV has answered gets the
+        // focus then, a moment after the page is drawn.
+        if (one.late) await page.waitForFunction((sel) => (window as unknown as Tv).origaitvLauncher.focus.get() === document.querySelector(sel), last).catch(() => {});
         const now = await seen(page, last);
         assert.deepEqual({ start: now.start, end: now.end }, caret, `when ${cause}, the caret is where it was`);
         assert.ok(now.active && now.focused, `when ${cause}, the field has the focus`);
