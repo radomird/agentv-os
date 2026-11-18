@@ -24,8 +24,9 @@
 //                             TV already has for the title
 //
 // and the state's nowPlaying says where the thing is and how long it runs,
-// in seconds, when that was read, whether it's playing or paused, and what
-// can be asked of it. With the switch off, all of this is as it was.
+// in seconds, when that was read and how long ago, whether it's playing or
+// paused, and what can be asked of it. With the switch off, all of this is
+// as it was.
 //
 // Each change goes to the screen daemon on its stream (daemon/remote.ts),
 // which puts it in the field in front and answers here. Only the newest
@@ -86,7 +87,8 @@ export interface NowPlaying {
   left?: number; // minutes
   position: number; // seconds
   duration: number | null; // seconds; null for something live
-  at: string; // when position was read
+  at: string; // when position was read, on the TV's clock
+  age: number; // how long ago that was as this was made, in ms
   playing: boolean; // false while it's paused
   next: boolean;
   previous: boolean;
@@ -195,7 +197,9 @@ export function moved(before: PlayingNow, now: PlayingNow): boolean {
 }
 
 // What a phone is told of it, with its app's name and whether there's a
-// picture. The minutes left are counted from now, for the remote's card.
+// picture. at is the moment it's told. The minutes left are counted from
+// then, for the remote's card, and age is how old the reading is by then.
+// A phone adds age to its own clock, so its bar needs nothing of the TV's.
 export function toldNow(now: PlayingNow, app: string, picture: boolean, at = Date.now()): NowPlaying {
   const position = now.position + (now.playing ? Math.max(0, at - now.at) / 1000 : 0);
   const left = now.duration === null ? null : Math.max(0, Math.round((now.duration - position) / 60));
@@ -206,6 +210,7 @@ export function toldNow(now: PlayingNow, app: string, picture: boolean, at = Dat
     position: Math.round(now.position * 10) / 10,
     duration: now.duration === null ? null : Math.round(now.duration * 10) / 10,
     at: new Date(now.at).toISOString(),
+    age: Math.max(0, Math.round(at - now.at)),
     playing: now.playing,
     next: now.next,
     previous: now.previous,
@@ -222,7 +227,10 @@ export class PhoneRemote {
   private queued: { value: string; caret: number | null; bar: Bar; done: (answer: RemoteAnswer) => void } | null = null;
   private typing = false;
   // What's playing, as last read, with its app's name and its picture.
-  private kept: { key: string; now: PlayingNow; app: string; picture: Picture | null } | null = null;
+  // read is when it was read, on a clock that only runs forward
+  // (performance.now), so its age stays right if the TV's clock is set
+  // meanwhile.
+  private kept: { key: string; now: PlayingNow; read: number; app: string; picture: Picture | null } | null = null;
   private keeping: Promise<void> = Promise.resolve();
   private looking = false;
   private lookAgain = false;
@@ -299,9 +307,13 @@ export class PhoneRemote {
     return this.o.playing2 ? this.o.playing2.on().catch(() => false) : Promise.resolve(false);
   }
 
-  // What's playing, for the state, or null with nothing to steer in front.
+  // What's playing, for the state and for a playback answer, or null with
+  // nothing to steer in front. Made as it's asked for, so its age is the
+  // reading's age as the answer leaves.
   nowPlaying(): NowPlaying | null {
-    return this.kept ? toldNow(this.kept.now, this.kept.app, this.kept.picture !== null) : null;
+    if (!this.kept) return null;
+    const age = performance.now() - this.kept.read;
+    return toldNow(this.kept.now, this.kept.app, this.kept.picture !== null, this.kept.now.at + age);
   }
 
   // What's on the TV changed, or the switch did: a look at what plays.
@@ -349,15 +361,19 @@ export class PhoneRemote {
         return;
       }
       const key = JSON.stringify([now.id, now.title, now.picture ?? null, now.cover === true]);
+      // The reading comes from this box, so its age so far is by one clock.
+      // From here on it's counted by the one that only runs forward. The
+      // same reading handed over again keeps the count it has.
+      const read = before?.key === key && before.now.at === now.at ? before.read : performance.now() - Math.max(0, Date.now() - now.at);
       if (before?.key === key) {
         // An older reading of the same thing never replaces a newer one.
         if (now.at < before.now.at) return;
-        this.kept = { ...before, now };
+        this.kept = { ...before, now, read };
         if (moved(before.now, now)) this.o.playing2?.changed();
         return;
       }
       const app = (await this.o.playing2?.name(now.id).catch(() => null)) ?? now.id;
-      this.kept = { key, now, app, picture: null };
+      this.kept = { key, now, read, app, picture: null };
       this.o.playing2?.changed();
       void this.findPicture(key, now);
     });

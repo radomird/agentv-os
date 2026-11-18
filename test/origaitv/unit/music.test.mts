@@ -11,12 +11,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { MusicApp, MusicLibrary, MusicPlayer, connectMpv, tagsOf, words, type Track } from "../../../daemon/music.ts";
 import { Storage, gioProblem, rootShare, shareProblem, run as realRun, type Run, type Source } from "../../../daemon/storage.ts";
+import { standInMpv, type StandInMpv } from "./mpv.mts";
 
 const ROOT = join(import.meta.dirname, "../../..");
 const FIXTURES = join(ROOT, "test/origaitv/fixtures/music");
@@ -369,42 +369,8 @@ test("a share's address is smb:// or nfs://, names its share, and holds no passw
 
 // --- The player ------------------------------------------------------------------
 
-// A stand-in for mpv's JSON IPC: it keeps a playlist and a pause flag.
-function fakeMpv(socket: string): { server: Server; commands: unknown[][] } {
-  const commands: unknown[][] = [];
-  const state = { playlist: [] as string[], pos: -1, pause: true, timePos: 0 };
-  const server = createServer((connection) => {
-    let buffer = "";
-    connection.setEncoding("utf8");
-    connection.on("data", (chunk: string) => {
-      buffer += chunk;
-      let end;
-      while ((end = buffer.indexOf("\n")) >= 0) {
-        const { command, request_id } = JSON.parse(buffer.slice(0, end));
-        buffer = buffer.slice(end + 1);
-        commands.push(command);
-        let data: unknown = null;
-        const [name, a, b] = command;
-        if (name === "loadfile") {
-          if (b === "replace") state.playlist = [a];
-          else state.playlist.push(a);
-          state.pos = 0;
-          state.timePos = 0.5;
-        } else if (name === "set_property" && a === "pause") state.pause = b;
-        else if (name === "cycle" && a === "pause") state.pause = !state.pause;
-        else if (name === "playlist-next") state.pos = Math.min(state.pos + 1, state.playlist.length - 1);
-        else if (name === "stop") state.playlist = [];
-        else if (name === "get_property") {
-          data = { "playlist-pos": state.playlist.length ? state.pos : -1, "time-pos": state.timePos, duration: 2, pause: state.pause, "idle-active": state.playlist.length === 0 }[a as string];
-        }
-        connection.write(`${JSON.stringify({ request_id, error: "success", data })}\n`);
-      }
-    });
-  });
-  server.listen(socket);
-  return { server, commands };
-}
-
+// mpv is stood in for on its socket (mpv.mts): a playlist, a pause flag and
+// a clock that runs while a track plays.
 const tracks = (n: number): Track[] =>
   Array.from({ length: n }, (_, i) => ({
     id: `t${i}`,
@@ -426,13 +392,13 @@ const tracks = (n: number): Track[] =>
 test("the player starts mpv when something first plays, queues an album, and says what's playing", async () => {
   const socket = join(scratch, "mpv.sock");
   let started = 0;
-  let fake: ReturnType<typeof fakeMpv> | undefined;
+  let fake: StandInMpv | undefined;
   const player = new MusicPlayer({
     socket,
     start: (path) => {
       started++;
-      fake = fakeMpv(path);
-      return { stop: () => fake?.server.close() };
+      fake = standInMpv(path);
+      return { stop: () => fake?.close() };
     },
   });
   assert.equal(await player.now(), null);
@@ -443,8 +409,10 @@ test("the player starts mpv when something first plays, queues an album, and say
     ["loadfile", "/music/3.flac", "append"],
     ["set_property", "pause", false],
   ]);
-  const now = await player.now();
-  assert.deepEqual(now, { title: "Track 1", artist: "Pixel Band", album: "Night Shift", albumId: "night", position: 0.5, duration: 2, playing: true, index: 0, count: 3 });
+  // Started at the second of three, the queue is that one and the third.
+  const now = (await player.now())!;
+  assert.ok(now.position >= 0 && now.position < 1, `it's near the start: ${now.position}`);
+  assert.deepEqual({ ...now, position: 0 }, { title: "Track 2", artist: "Pixel Band", album: "Night Shift", albumId: "night", position: 0, duration: 2, playing: true, index: 0, count: 2 });
   await player.pause();
   assert.equal((await player.now())?.playing, false);
   await player.next();
@@ -455,12 +423,96 @@ test("the player starts mpv when something first plays, queues an album, and say
 
 test("mpv's IPC answers each request by its id, and says when it's gone", async () => {
   const socket = join(scratch, "mpv2.sock");
-  const fake = fakeMpv(socket);
+  const fake = standInMpv(socket);
   const link = await connectMpv(socket);
   assert.equal(await link.command(["get_property", "pause"]), true);
   link.close();
-  fake.server.close();
+  fake.close();
   await assert.rejects(connectMpv(join(scratch, "nothing.sock")));
+});
+
+// A player on a stand-in mpv whose tracks each run three minutes, and a
+// library of one album for the app around it.
+function playerOn(name: string, seekMs = 120) {
+  let fake: StandInMpv | undefined;
+  const player = new MusicPlayer({
+    socket: join(scratch, `${name}.sock`),
+    start: (path) => {
+      fake = standInMpv(path, { duration: 180, seekMs });
+      return { stop: () => fake?.close() };
+    },
+  });
+  const dir = join(scratch, `library-${name}`);
+  mkdirSync(dir, { recursive: true });
+  const album = tracks(3);
+  writeFileSync(
+    join(dir, "library.json"),
+    JSON.stringify({ scannedAt: "", tracks: Object.fromEntries(album.map((track) => [track.id, track])), albums: { night: { id: "night", title: "Night Shift", artist: "Pixel Band", year: "2025", cover: null, tracks: album.map((track) => track.id), source: "folder:/music" } }, playlists: {} }),
+  );
+  const app = new MusicApp({ storage: {} as Storage, library: new MusicLibrary({ dir }), player });
+  return { player, app, mpv: () => fake! };
+}
+
+test("T28.1 a jump in Music lands within a second, waits for mpv to be there, and stays inside the track", async () => {
+  const { player, mpv } = playerOn("jump");
+  assert.equal(await player.seek(60), false, "with nothing loaded there's nowhere to jump");
+  await player.play(tracks(3));
+  assert.equal(await player.seek(60), true);
+  assert.deepEqual(mpv().commands.findLast(([name]) => name === "seek"), ["seek", 60, "absolute+exact"]);
+  assert.ok(Math.abs(mpv().place()! - 60) < 1, `mpv is at ${mpv().place()}`);
+  const now = (await player.now())!;
+  assert.ok(Math.abs(now.position - 60) < 1, `and says so: ${now.position}`);
+  assert.deepEqual([now.title, now.playing], ["Track 1", true], "the same track, still playing");
+
+  // Paused, it jumps and stays paused.
+  await player.pause(true);
+  assert.equal(await player.seek(12.5), true);
+  assert.deepEqual([(await player.now())!.position, (await player.now())!.playing], [12.5, false]);
+
+  // A place past the end is the end, where the track is over: the next one
+  // plays. After the last one, nothing does.
+  await player.pause(false);
+  assert.equal(await player.seek(5000), true);
+  assert.deepEqual(mpv().commands.findLast(([name]) => name === "seek"), ["seek", 180, "absolute+exact"]);
+  assert.equal((await player.now())!.title, "Track 2");
+  await player.next();
+  assert.equal(await player.seek(180), true);
+  assert.equal(await player.now(), null);
+  player.close();
+});
+
+test("T28.1 a jump mpv never gets to says so, in two seconds", async () => {
+  const { player } = playerOn("stuck", 60_000);
+  await player.play(tracks(1));
+  const started = Date.now();
+  assert.equal(await player.seek(90), false);
+  assert.ok(Date.now() - started < 4000, "it doesn't wait for ever");
+  player.close();
+});
+
+test("T28.1 Music takes a jump as a request, and says where its queue has a next and a previous", async () => {
+  const { app, mpv } = playerOn("queue");
+  const at = async () => ((await app.handle({ op: "now" })) as { now: { title: string; index: number; count: number; position: number } | null }).now;
+  assert.deepEqual(await app.handle({ op: "seek", position: 10 }), { ok: false, error: "Couldn't jump there" }, "nothing plays yet");
+  assert.equal(((await app.handle({ op: "play", kind: "album", key: "night" })) as { ok: boolean }).ok, true);
+  assert.deepEqual(await app.handle({ op: "seek", position: 75 }), { ok: true });
+  assert.ok(Math.abs(mpv().place()! - 75) < 1);
+  for (const position of [undefined, "75", -1, Number.NaN, Infinity]) {
+    assert.deepEqual(await app.handle({ op: "seek", position }), { ok: false, error: "Couldn't jump there" }, String(position));
+  }
+  assert.equal(mpv().commands.filter(([name]) => name === "seek").length, 1, "only a place in seconds reaches mpv");
+
+  // The whole album: the first has one after it, the last has one before.
+  assert.deepEqual([(await at())!.title, (await at())!.index, (await at())!.count], ["Track 1", 0, 3]);
+  await app.handle({ op: "next" });
+  await app.handle({ op: "next" });
+  assert.deepEqual([(await at())!.title, (await at())!.index, (await at())!.count], ["Track 3", 2, 3]);
+  await app.handle({ op: "previous" });
+  assert.deepEqual([(await at())!.title, (await at())!.index], ["Track 2", 1]);
+  // Started at its last track, the queue is that track alone.
+  await app.handle({ op: "play", kind: "album", key: "night", from: 2 });
+  assert.deepEqual([(await at())!.title, (await at())!.index, (await at())!.count], ["Track 3", 0, 1]);
+  app.stop();
 });
 
 // --- S3.6: an album from a USB stick and one from a share -------------------------
