@@ -9,6 +9,10 @@
 // A password only ever goes to a password field, straight from the old one
 // in the same call, and waits for nothing. Nothing here logs the text, stores
 // it or sends it anywhere.
+//
+// A page can hold a pick beside its fields, as a profile's role next to its
+// name. That goes over too (keeps, below), so Save never sends the text with
+// a pick the person didn't leave on the screen.
 
 type Field = HTMLInputElement | HTMLTextAreaElement;
 
@@ -39,6 +43,35 @@ export interface Typed {
   // The page is going, or is drawn once more: nothing waits here any more.
   // It answers with the text that never found its field.
   stop(): Entry[];
+}
+
+// A page's picks beside its fields: what a person chose with left and right
+// and hasn't saved yet. The page names them on one of its elements and says
+// what they are each time one changes. When the page is drawn again, the new
+// page's take gets them, as they were said. They're plain choices, never
+// text a person typed, so nothing secret goes this way.
+export function keeps<T>(el: HTMLElement, name: string, take: (kept: T) => void): (now: T) => void {
+  el.dataset.keeps = name;
+  el.addEventListener("kept", (event) => {
+    const said = (event as CustomEvent<string>).detail;
+    let kept: T;
+    try {
+      kept = JSON.parse(said) as T;
+    } catch {
+      return;
+    }
+    // Still the person's own, if the page is drawn once more.
+    el.dataset.kept = said;
+    take(kept);
+  });
+  return (now) => {
+    el.dataset.kept = JSON.stringify(now);
+  };
+}
+
+// The picks a page has said, by the name it gave them.
+function picks(root: HTMLElement): [name: string, said: string][] {
+  return [...root.querySelectorAll<HTMLElement>("[data-keeps][data-kept]")].map((el) => [el.dataset.keeps!, el.dataset.kept!]);
 }
 
 function fields(root: HTMLElement): Field[] {
@@ -95,6 +128,7 @@ export function keepTyped(root: HTMLElement, focused: HTMLElement | undefined, w
   const here = keys(fields(root));
   // What still waited keeps waiting, unless its field is here now.
   let left = [...waiting.filter((entry) => !here.includes(entry.key)), ...read(root, focused)];
+  const picked = picks(root);
   // The field that had the focus: the one that has it again, and the one
   // still owed it, while it's out of sight. Neither holds the text.
   let landed: { el: Field; entry: Entry } | undefined;
@@ -133,6 +167,11 @@ export function keepTyped(root: HTMLElement, focused: HTMLElement | undefined, w
 
   return {
     into(to, late) {
+      // The picks first, so a field's text finds the page as it was.
+      for (const [name, said] of picked) {
+        const el = [...to.querySelectorAll<HTMLElement>("[data-keeps]")].find((one) => one.dataset.keeps === name);
+        el?.dispatchEvent(new CustomEvent("kept", { detail: said }));
+      }
       owed = fill(to);
       // A password never waits.
       left = left.filter((entry) => !entry.secret);
