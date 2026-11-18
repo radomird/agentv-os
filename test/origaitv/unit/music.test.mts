@@ -443,8 +443,9 @@ test("the player starts mpv when something first plays, queues an album, and say
     ["loadfile", "/music/3.flac", "append"],
     ["set_property", "pause", false],
   ]);
+  // Started at the second of three, the queue is that one and the third.
   const now = await player.now();
-  assert.deepEqual(now, { title: "Track 1", artist: "Pixel Band", album: "Night Shift", albumId: "night", position: 0.5, duration: 2, playing: true, index: 0, count: 3 });
+  assert.deepEqual(now, { title: "Track 2", artist: "Pixel Band", album: "Night Shift", albumId: "night", position: 0.5, duration: 2, playing: true, index: 0, count: 2 });
   await player.pause();
   assert.equal((await player.now())?.playing, false);
   await player.next();

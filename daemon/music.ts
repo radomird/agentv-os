@@ -573,9 +573,12 @@ export class MusicPlayer {
 
   async play(tracks: Track[], from = 0): Promise<void> {
     if (tracks.length === 0) throw new Error("Nothing to play there");
-    this.queued = tracks;
-    await this.send(["loadfile", tracks[from]?.path ?? tracks[0].path, "replace"]);
-    for (const track of tracks.slice(from + 1)) await this.send(["loadfile", track.path, "append"]);
+    // The queue is what mpv is given: the track asked for and the ones
+    // after it. mpv counts from there, so what's playing is read from there.
+    const queue = [tracks[from] ?? tracks[0], ...tracks.slice(from + 1)];
+    this.queued = queue;
+    await this.send(["loadfile", queue[0].path, "replace"]);
+    for (const track of queue.slice(1)) await this.send(["loadfile", track.path, "append"]);
     await this.send(["set_property", "pause", false]);
   }
 
