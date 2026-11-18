@@ -80,10 +80,46 @@ if [[ ! -d $folder ]]; then
   exit 1
 fi
 
+# The name. jq reads it out of the drop, checks it and escapes it in one
+# go, so what the shell holds is a finished piece of text for the file, or
+# nothing. A name is taken when all of this is true:
+# - it's a string of 1 to 63 bytes as UTF-8, which is as long as a name on
+#   the network can be, and it doesn't start or end with a space;
+# - it has no control character: nothing under U+0020, and nothing from
+#   U+007F to U+009F;
+# - it has none of the code points that Avahi refuses a name for: U+FDD0 to
+#   U+FDEF, and the last two of every plane, such as U+FFFE and U+FFFF;
+# - it has no U+FFFD. That's what jq puts where the drop's bytes weren't
+#   UTF-8, and where an escape named half of a pair, so a name with one in
+#   it wasn't handed over whole.
+# Then the five characters XML reads as its own are written the long way, &
+# first: &amp; &lt; &gt; &quot; and &#39;. They're spelled out here, since
+# jq's own @html writes the last one differently from one build to the next.
+name=$(jq -r '
+  if type == "object" and (.name | type) == "string" then .name else empty end
+  | select(utf8bytelength >= 1 and utf8bytelength <= 63)
+  | select(explode | first != 32 and last != 32
+      and all(. >= 32 and (. < 127 or . > 159) and (. < 64976 or . > 65007) and . != 65533 and . % 65536 < 65534))
+  | split("&") | join("&amp;")
+  | split("<") | join("&lt;")
+  | split(">") | join("&gt;")
+  | split("\"") | join("&quot;")
+  | split("\u0027") | join("&#39;")' <<<"$said" 2>/dev/null || true)
+# And once more without jq: what's left has to be one line with none of the
+# five characters as themselves. Otherwise the TV is still announced, under
+# the name every TV starts with. What was handed over isn't echoed.
+markup='[<>"'\'']'
+if [[ -z $name || $name == *$'\n'* || $name == *$markup* ]]; then
+  name=OrigaiTV
+  echo "origaitv-announce-set: the drop's name isn't one to announce, so the TV is announced as OrigaiTV" >&2
+fi
+
 # The file's own words are written as they are, with nothing expanded in
-# them, and each value goes in on a line of its own. All three were checked
-# above against a short list of characters, so none of them can end a tag.
-# The phones' port answers on IPv4, so the record is on IPv4.
+# them, and each value goes in on a line of its own. The id, the port and
+# the version were checked above against a short list of characters, and
+# the name was escaped, so none of them can end a tag. Avahi is told to
+# replace nothing in the name. The phones' port answers on IPv4, so the
+# record is on IPv4.
 next="$folder/.origaitv.service.next"
 {
   cat <<'XML'
@@ -91,7 +127,9 @@ next="$folder/.origaitv.service.next"
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
 <!-- Written by origaitv-announce-set, each time OrigaiTV's daemon starts. -->
 <service-group>
-  <name replace-wildcards="yes">%h</name>
+XML
+  printf '  <name replace-wildcards="no">%s</name>\n' "$name"
+  cat <<'XML'
   <service protocol="ipv4">
     <type>_origaitv._tcp</type>
 XML

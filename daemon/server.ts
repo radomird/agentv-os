@@ -54,7 +54,7 @@ import { PhoneChannel } from "./phone-channel.ts";
 import { Phones, type PairRequest, type Phone } from "./phones.ts";
 import { Features, type FeatureMap } from "./features.ts";
 import { Box, type BoxOptions } from "./box.ts";
-import { Announce } from "./announce.ts";
+import { Announce, NAME_MAX } from "./announce.ts";
 import { boxRoute, phoneBoxRoute, type BoxRoutes } from "./routes/box.ts";
 import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
 import { aiModelRoutes } from "./routes/ai-models.ts";
@@ -1044,6 +1044,33 @@ export class Daemon {
     }
   }
 
+  // The TV's name for a phone, while the announce switch is on: what the TV
+  // is announced as, and what a phone calls it. With the switch off there's
+  // none, and the state is as it was.
+  private async boxName(): Promise<{ boxName?: string }> {
+    return (await this.features.on("announce")) ? { boxName: this.announce.name() } : {};
+  }
+
+  // Names the TV, from its own pages or from a paired phone, once the asker
+  // has been let through. What was typed is cleaned and cut to fit
+  // (daemon/announce.ts), root is handed the new name to announce, and the
+  // answer has the name as it's kept.
+  private async rename(request: IncomingMessage, response: ServerResponse, by: string): Promise<void> {
+    const body = (await this.body(request)) as { name?: unknown } | undefined;
+    const before = this.announce.name();
+    const name = this.announce.rename(body?.name);
+    if (name === null) {
+      this.json(response, 400, { ok: false, error: `Names can be up to ${NAME_MAX} characters` });
+      return;
+    }
+    if (name !== before) {
+      this.log(`the tv is called ${name} now, from ${by}`);
+      this.announced(true);
+      this.broadcast("name", { name });
+    }
+    this.json(response, 200, { ok: true, name });
+  }
+
   // Tells every page that's listening what changed, and the phones too.
   private broadcast(event: string, data: unknown): void {
     this.toPages(event, data);
@@ -1162,6 +1189,8 @@ export class Daemon {
       phone,
       // The box id, while the TV announces itself (track 25).
       ...(await this.boxId()),
+      // And the TV's name, which is what it announces itself as.
+      ...(await this.boxName()),
       // The feature switches the phone draws by.
       features: { remote2, askbuilds },
       // What the Ask box waits on, for an adult's ok on the phone (ADR-068).
@@ -2014,6 +2043,19 @@ export class Daemon {
       this.broadcast("key", { set: true, provider: ai.provider });
       void this.fetchAiCli("a key was kept");
       this.json(response, 200, { ok: true, provider: ai.provider });
+      return;
+    }
+
+    // The TV's name, from an adult's phone, past the PIN once there is one,
+    // while the announce switch is on. Every phone reads the new name in
+    // its state.
+    if (method === "POST" && path === "/api/phone/name" && (await this.features.on("announce"))) {
+      if ((await this.profiles.active()).role !== "adult") {
+        this.json(response, 403, { ok: false, error: "Only adults can change the name" });
+        return;
+      }
+      if (!this.guarded(request, response, "the tv's name from a phone")) return;
+      await this.rename(request, response, phone.name);
       return;
     }
 
@@ -3762,6 +3804,18 @@ export class Daemon {
       this.broadcast("country", set.state);
       this.broadcast("whats-new", {});
       this.json(response, 200, { ok: true, ...set.state });
+      return;
+    }
+    // The TV's name (daemon/announce.ts), while the announce switch is on:
+    // what it is, for Settings, System, and another one, which is an
+    // adult's, past the PIN once there is one, as the location is.
+    if ((method === "GET" || method === "PUT") && path === "/api/name" && (await this.features.on("announce"))) {
+      if (method === "GET") {
+        this.json(response, 200, { ok: true, name: this.announce.name() });
+        return;
+      }
+      if (!this.guarded(request, response, "the tv's name") || !(await this.adult(request, response, "the tv's name"))) return;
+      await this.rename(request, response, "the tv");
       return;
     }
     // The TMDB key, kept where only root can read it, or taken off. An
