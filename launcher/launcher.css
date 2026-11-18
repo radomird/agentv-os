@@ -1179,6 +1179,19 @@ button {
   max-width: 960px;
 }
 
+/* The TV's name can be 30 characters. It stays on its row's one line, clear
+   of the word before it, and one that doesn't fit ends in an ellipsis. */
+.panel [data-action="name"] {
+  gap: 32px;
+}
+
+.panel [data-action="name"] .button-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* --- Toasts --------------------------------------------------------------- */
 
 #toasts {

@@ -27,6 +27,7 @@ import { checkView, drawUpdating, installing, off, release, shown, whatsNew } fr
 import { pad as pinPad, type Pad, type PadOptions } from "./pages/pin.ts";
 import { keyPage, planPage, planSignInPage, termsHeard } from "./pages/key.ts";
 import { countryPage, loadCountry } from "./pages/country.ts";
+import { loadName, nameHeard, namePage, tvName } from "./pages/name.ts";
 import { desktopPasswordPage } from "./pages/desktop-password.ts";
 import { loadNews, tmdbKeyPage } from "./pages/tmdb.ts";
 import { pairPage } from "./pages/phones.ts";
@@ -465,6 +466,8 @@ function viewFor(route: string): View {
   if (name === "key") return keyPage(ctx);
   if (name === "tmdb-key") return tmdbKeyPage(ctx);
   if (name === "country") return countryPage(ctx);
+  // Name this TV, while the TV has a name to change (the announce switch).
+  if (name === "name" && tvName !== null) return namePage(ctx);
   if (name === "plan") return planPage(ctx);
   if (name === "plan-sign-in" && ctx.state.viewer.role === "adult") return planSignInPage(ctx);
   if (name === "desktop-password" && ctx.state.viewer.role === "adult") return desktopPasswordPage(ctx);
@@ -981,6 +984,11 @@ async function start(): Promise<void> {
       const route = history[history.length - 1];
       if (route.startsWith("settings")) void loadCountry().then(redraw);
     },
+    // The TV was named, here or from a phone: Settings shows it.
+    name: (data) => {
+      nameHeard(data);
+      if (history[history.length - 1].startsWith("settings")) redraw();
+    },
     // The TMDB key or the country changed (S8.1): New this week asks again,
     // and Settings shows it.
     "whats-new": () => {
@@ -1047,6 +1055,13 @@ async function start(): Promise<void> {
   // phase 1's again, without a reload.
   onFeatures((all) => {
     if (Boolean(all.looks) !== (lookId() !== null)) void lookAgain().then(redraw);
+  });
+  // The TV's name, there while the announce switch is on: Settings has its
+  // row from the first draw, and loses it when the switch goes off.
+  onFeatures(() => {
+    void loadName().then(() => {
+      if (history[history.length - 1].startsWith("settings")) redraw();
+    });
   });
   // The Ask box building (ADR-068): the bar's Ask and Apps follow it.
   followAskBuilds(() => redraw());
