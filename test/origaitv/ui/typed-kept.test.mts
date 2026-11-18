@@ -143,11 +143,13 @@ interface Case {
   // The fields, in the order they're typed. The last one has the focus and
   // the caret when the page is drawn again.
   fields: [selector: string, text: string][];
-  // Save: what's pressed, the request it sends, and where the text is in it.
+  // Save: what's pressed (or Enter, in the field), the request it sends, and
+  // where the text is in it.
   save: { press: string; method: string; path: RegExp; sent: (body: any) => unknown[] } | { press: string | null; screen: (asked: Sent[]) => unknown[] };
 }
 
-const KEY = "eyJhbGciOiJIUzI1NiJ9.stand-in.signature";
+// A stand-in for a key: long, and nothing a secrets check would take for one.
+const KEY = `stand-in-${"k".repeat(40)}`;
 const SECRET = `typed ${process.pid} here`;
 
 const PAGES: Case[] = [
@@ -172,7 +174,7 @@ const PAGES: Case[] = [
   },
   { name: "a new profile's name", route: "profile/new", fields: [['[data-action="name"]', "Mira Lind"]], save: { press: '[data-action="save"]', method: "POST", path: /\/api\/viewers$/, sent: (b) => [b.name] } },
   { name: "the AI's key", route: "key", fields: [['[data-action="key"]', KEY]], save: { press: '[data-action="save"]', method: "PUT", path: /\/api\/key$/, sent: (b) => [b.key] } },
-  { name: "what's asked in the Ask box", route: "ask", fields: [['[data-field="ask"]', "play something calm tonight"]], save: { press: null, method: "POST", path: /\/api\/say$/, sent: (b) => [b.sentence] } },
+  { name: "what's asked in the Ask box", route: "ask", fields: [['[data-field="ask"]', "play something calm tonight"]], save: { press: "Enter", method: "POST", path: /\/api\/say$/, sent: (b) => [b.sentence] } },
   { name: "what to build", route: "build", fields: [['[data-field="sentence"]', "a clock with big numbers"]], save: { press: '[data-action="ask"]', method: "POST", path: /\/api\/builds$/, sent: (b) => [b.sentence] } },
   { name: "what a theme looks like", route: "describe", fields: [['[data-field="sentence"]', "a theme of wet slate"]], save: { press: '[data-action="ask"]', method: "POST", path: /\/api\/builds$/, sent: (b) => [b.sentence] } },
   { name: "what to change in an app", route: "change/local.mytv", fields: [['[data-field="change"]', "bigger letters please"]], save: { press: '[data-action="ask"]', method: "POST", path: /\/api\/builds\/apps\/local\.mytv\/change$/, sent: (b) => [b.text] } },
@@ -252,8 +254,8 @@ for (const one of PAGES) {
           body = route.request().postDataJSON();
           await route.fulfill({ status: 400, json: { ok: false, error: "A stand-in said no" } });
         });
-        if (press) await page.click(press);
-        else await page.keyboard.press("Enter");
+        if (press === "Enter") await page.keyboard.press("Enter");
+        else await page.click(press);
         for (let i = 0; i < 100 && body === undefined; i++) await page.waitForTimeout(50);
         assert.deepEqual(sent(body), want, "the request has the text");
       }
