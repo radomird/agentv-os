@@ -571,6 +571,7 @@ It's made for a card that shows what's playing while the phone is locked: where 
   "position": 232.4,
   "duration": 888,
   "at": "2026-11-17T20:15:03.120Z",
+  "age": 4310,
   "playing": true,
   "next": false,
   "previous": false,
@@ -584,22 +585,31 @@ It's made for a card that shows what's playing while the phone is locked: where 
 | `title` | What it's called: the app's own word for it, or the page's. |
 | `app` | The app's name. `"Shared"` for something a phone sent to the TV. |
 | `left` | Minutes left, counted when the answer was made. Missing for something live. The web remote's card shows it. |
-| `position` | Where it is, in seconds from the start, at the moment in `at`. |
+| `position` | Where it is, in seconds from the start, when the TV read it. |
 | `duration` | How long it runs, in seconds. `null` for something live. |
 | `at` | When `position` was read: an ISO time, on the TV's clock. |
+| `age` | How long ago `position` was read, in milliseconds, counted as this answer was made. |
 | `playing` | `true` while it plays, `false` while it's paused. |
 | `next` | Whether there's one after it to go to. |
 | `previous` | Whether there's one before it to go to. |
 | `seek` | Whether it can jump to a place. |
 | `picture` | Whether `GET /api/phone/playing/picture` has a picture for it. |
 
-Where the thing is right now is `position` while it's paused, and `position` plus the time since `at` while it plays. That sum uses the TV's clock and the phone's, so it's only as good as the two agree. If you'd rather not lean on that, use a playback answer: its `nowPlaying` was read just before the answer left the TV.
+Where the thing is right now is `position` while it's paused. While it plays, it's `position` plus the time since the TV read it, and `age` gives you that without the TV's clock:
+
+1. When the answer arrives, take the time on your own clock and subtract `age`. That's when `position` was read, on your clock.
+2. From then on, the place is `position` plus what your clock has run since that moment.
+
+Stop at `duration`, and add nothing while it's paused. All this leaves out is the answer's trip over the home network, which is a few milliseconds.
+
+`at` is the same moment on the TV's clock, for a client that trusts that clock. A TV and a phone can be seconds or hours apart, and a bar worked out from `at` is off by as much, so use `age` unless you have a reason not to.
 
 A few things to know:
 
 - `next`, `previous` and `seek` say what this app can do with this thing right now. Don't offer one that's `false`. Asking anyway gets `"ok": false` and a sentence in `why`.
 - `tv.playing` is still `true` only while something plays. Something paused is `nowPlaying` with `"playing": false`.
 - The TV reads the place again when something starts, pauses or stops, after every playback request, and every 10 seconds while something is playing or paused in front.
+- `age` is counted again for every answer. Between two reads of the state with nothing new read on the TV, `position` and `at` are the same and `age` is higher by the time between them. The TV counts it on a clock that only runs forward, so it stays right when the TV sets its own clock.
 - The state's `version` doesn't go up just because time passed. It goes up when it's another thing, when it was paused or played, when it jumped by more than 2 seconds, when its length changed, when a picture was found, or when what it can do changed. So the long poll stays quiet through a film, and still tells you about a jump somebody made with the TV's own remote, within 10 seconds.
 - A native app, such as a game, has no `nowPlaying`. The TV can't see into it.
 - There's no volume, here or anywhere else in this API. The TV keeps its own.
@@ -619,21 +629,21 @@ All of them are `POST /api/phone/playback` with a sealed body:
 
 Use `play` and `pause` for anything that can send a press twice. A `toggle` sent twice undoes itself.
 
-The answer to every action but `toggle` has `nowPlaying`: the same object as in the state, read after the request was done, so it says where the thing then is.
+The answer to every action but `toggle` has `nowPlaying`: the same object as in the state, read after the request was done, so it says where the thing then is. It has its own `age`. That's usually a few milliseconds, since the place was read just before the answer left. Use it all the same: when the wait runs out, `nowPlaying` is what the TV last knew.
 
 ```json
-{ "ok": true, "by": "app", "nowPlaying": { "title": "Sintel", "position": 754, "playing": true } }
+{ "ok": true, "by": "app", "nowPlaying": { "title": "Sintel", "position": 754, "age": 6, "playing": true } }
 ```
 
 (The example leaves out the rest of `nowPlaying`'s fields.) When it didn't work the status is still `200`:
 
 ```json
-{ "ok": false, "why": "This app can't go back", "nowPlaying": { "title": "Sintel", "position": 232.4, "playing": true } }
+{ "ok": false, "why": "This app can't go back", "nowPlaying": { "title": "Sintel", "position": 232.4, "age": 9, "playing": true } }
 ```
 
 - `by` says who did it: `"app"` for the app's own player, `"page"` for the video on the page, `"key"` for a media key sent to a native app.
 - `why` is a sentence for the person, such as `Nothing is playing`, `This app can't skip`, `This app can't go back`, `This app can't jump to a time`, `Couldn't jump there`, `Couldn't pause` or `Couldn't play`.
-- `nowPlaying` is `null` when nothing is left to steer. Right after `next` or `previous` it can be `null`, or still the old title, while the new one loads. The state follows once it's there.
+- `nowPlaying` is `null` when nothing is left to steer. Right after `next`, `previous` or a jump to the end of a track in Music it can be `null`, or still the old title, while the new one loads. The state follows once it's there.
 - A native app has one key for play and pause, which can't say which way it went. So `play`, `pause` and `seek` answer `"ok": false` there, and `toggle`, `next` and `previous` send the key.
 - `400` is an action the TV doesn't know, or a `seek` with no `position` in range. `503` with `Your TV isn't ready yet` means the TV's screen session isn't running.
 
@@ -663,7 +673,7 @@ The picture is one the TV already has for the title: the one the app itself give
 ### What can do what
 
 - **An app with a video on its page** can play, pause and jump. `next` and `previous` are there only when the app has its own for them, and can say at any moment that there's none right now.
-- **Music** can play, pause, and go to the next and the previous track. It can't jump yet.
+- **Music** can play, pause and jump to a place in the track. `next` and `previous` are `true` only where its queue has a track to go to. The queue is the album or the playlist from the track that was started, so the first track played has no `previous` and the last has no `next`. A jump to the end of a track, or past it, ends the track: the next one starts, or after the last one nothing is playing.
 - **Something a phone sent to the TV** can play, pause and jump.
 - **A native app** takes the media keys for `toggle`, `next` and `previous`, and nothing else.
 
