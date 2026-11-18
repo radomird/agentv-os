@@ -1602,7 +1602,11 @@ export class Daemon {
     }
 
     if (method === "POST" && path === "/api/phone/pair") {
-      const paired = this.phones.pair((await this.body(request)) as PairRequest | undefined);
+      const asked = (await this.body(request)) as PairRequest | undefined;
+      // With the announce switch on, the phone learns the box id here, to
+      // find its TV by afterwards, and the TV's proof covers it. The state
+      // has it too, sealed.
+      const paired = this.phones.pair(asked, (await this.boxId()).boxId);
       if ("error" in paired) {
         this.log("a phone sent a wrong pairing code");
         this.json(response, 403, { ok: false, error: paired.error });
@@ -1610,9 +1614,7 @@ export class Daemon {
       }
       this.log(`${paired.phone.name} is paired`);
       this.broadcast("phones", { paired: paired.phone.name });
-      // With the announce switch on, the phone learns the box id here, to
-      // find its TV by afterwards. The state has it too, sealed.
-      this.json(response, 200, { ok: true, ...paired, ...(await this.boxId()) });
+      this.json(response, 200, { ok: true, ...paired });
       return;
     }
 

@@ -1,6 +1,8 @@
 // Makes vectors.json, next to this file: one pairing by the QR code's
-// secret, one by the code typed from the TV, a hello, and a run of signed
-// and sealed requests with their answers, some of which the TV refuses.
+// secret, one by the code typed from the TV, one with a TV that has an id,
+// answers to a pairing that a phone has to refuse, a hello, and a run of
+// signed and sealed requests with their answers, some of which the TV
+// refuses.
 // docs/phone-api.md says what each value is.
 //
 //   node test/origaitv/fixtures/phone-channel/make-vectors.mts
@@ -21,7 +23,7 @@ import { join } from "node:path";
 
 const SEALED = "application/origaitv-sealed";
 const JSON_TYPE = "application/json";
-const LABELS = { pair: "origaitv pair v1", pairBox: "origaitv pair box v1", key: "origaitv phone key v1", helloBox: "origaitv hello box v1", session: "origaitv session v1" };
+const LABELS = { pair: "origaitv pair v1", pairBox: "origaitv pair box v1", pairBoxId: "origaitv pair box id v1", key: "origaitv phone key v1", helloBox: "origaitv hello box v1", session: "origaitv session v1" };
 // The letters a code is made of, as the TV shows it.
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 // Where the TV answers phones in these vectors.
@@ -63,8 +65,9 @@ function spoiled(bytes: Uint8Array): Buffer {
 
 // One pairing: the TV shows a code and a QR code, and the phone proves it
 // has one of the two. `typed` is the code as someone typed it, or nothing
-// for the QR code.
-function pairing(tag: string, name: string, phoneName: string, typed?: string) {
+// for the QR code. `boxId` is the TV's id, when it has one: the answer then
+// says it, and the TV's proof covers it under a label of its own.
+function pairing(tag: string, name: string, phoneName: string, typed?: string, boxId?: string) {
   const code = Array.from(fixed(`${tag} code`, 6), (byte) => ALPHABET[byte % ALPHABET.length]).join("");
   const secret = fixed(`${tag} qr secret`, 16);
   const phonePrivate = fixed(`${tag} phone x25519`, 32);
@@ -78,7 +81,7 @@ function pairing(tag: string, name: string, phoneName: string, typed?: string) {
   const proof = hmac(k, LABELS.pair, phonePublic);
   const dh = shared(phonePrivate, boxPublic);
   const phoneKey = hkdf(dh, k, Buffer.concat([Buffer.from(LABELS.key), phonePublic, boxPublic]), 32);
-  const confirm = hmac(phoneKey, LABELS.pairBox, phonePublic, boxPublic);
+  const confirm = boxId === undefined ? hmac(phoneKey, LABELS.pairBox, phonePublic, boxPublic) : hmac(phoneKey, LABELS.pairBoxId, phonePublic, boxPublic, boxId);
   return {
     name,
     by: typed === undefined ? "secret" : "code",
@@ -90,6 +93,7 @@ function pairing(tag: string, name: string, phoneName: string, typed?: string) {
       x25519Public: b64u(boxPublic),
       phoneId: id,
       now: NOW,
+      ...(boxId === undefined ? {} : { boxId }),
     },
     phone: {
       ...(typed === undefined ? {} : { typed }),
@@ -99,7 +103,7 @@ function pairing(tag: string, name: string, phoneName: string, typed?: string) {
     },
     k: b64u(k),
     request: { method: "POST", address: "/api/phone/pair", type: JSON_TYPE, text: JSON.stringify({ key: b64u(phonePublic), name: phoneName, proof: b64u(proof) }) },
-    answer: { status: 200, type: JSON_TYPE, text: JSON.stringify({ ok: true, id, key: b64u(boxPublic), confirm: b64u(confirm), phone: { id, name: phoneName, pairedAt: NOW } }) },
+    answer: { status: 200, type: JSON_TYPE, text: JSON.stringify({ ok: true, id, key: b64u(boxPublic), confirm: b64u(confirm), phone: { id, name: phoneName, pairedAt: NOW }, ...(boxId === undefined ? {} : { boxId }) }) },
     x25519Shared: b64u(dh),
     // The 32 bytes both sides now hold: the phone's key.
     phoneKey: b64u(phoneKey),
@@ -280,15 +284,30 @@ export function make() {
   const byCode = pairing("by code", "by the code typed from the TV", "Living room iPad", "");
   // Typed in lower case with a dash and a space, as a person might.
   byCode.phone.typed = `${byCode.tv.code.slice(0, 3).toLowerCase()}-${byCode.tv.code.slice(3).toLowerCase()} `;
+  // A TV with an id, which it only has while it announces itself.
+  const withId = pairing("with id", "by the QR code's secret, with a TV that has an id", "Kitchen phone", undefined, fixed("with id box id", 16).toString("hex"));
+  // What somebody between the phone and the TV can do to a pairing's answer
+  // without the secret, and one thing only an older TV does. A phone has to
+  // refuse each, and keep no key from it.
+  const answered = (p: typeof bySecret, change: (answer: Record<string, unknown>) => Record<string, unknown>) => ({ status: 200, type: JSON_TYPE, text: JSON.stringify(change(JSON.parse(p.answer.text))) });
+  const oldProof = b64u(hmac(Buffer.from(withId.phoneKey, "base64url"), LABELS.pairBox, Buffer.from(withId.phone.x25519Public, "base64url"), Buffer.from(withId.tv.x25519Public, "base64url")));
+  const pairingAnswersToRefuse = [
+    { name: "the id changed on the way", pairing: 2, answer: answered(withId, (answer) => ({ ...answer, boxId: fixed("another box id", 16).toString("hex") })) },
+    { name: "the id taken out on the way, and the proof the TV made", pairing: 2, answer: answered(withId, ({ boxId: _taken, ...answer }) => answer) },
+    { name: "the id, and the proof of a pairing without one", pairing: 2, answer: answered(withId, (answer) => ({ ...answer, confirm: oldProof })) },
+    { name: "an id put into the answer of a TV that has none", pairing: 0, answer: answered(bySecret, (answer) => ({ ...answer, boxId: withId.tv.boxId })) },
+  ];
   // A proof made with a code the TV isn't showing.
   const wrong = b64u(hmac(Buffer.from("ZZZZZZ"), LABELS.pair, Buffer.from(bySecret.phone.x25519Public, "base64url")));
   return {
     about: "Test vectors for the channel between a paired phone and the TV. docs/phone-api.md says what each value is. Made by make-vectors.mts, next to this file. None of these is a real key.",
-    encoding: "Bytes are base64url with no padding. A field named text, signed, extra, digest, code or typed is plain text, and so is every header.",
+    encoding: "Bytes are base64url with no padding. A field named text, signed, extra, digest, code, typed or boxId is plain text, and so is every header.",
     labels: LABELS,
     alphabet: ALPHABET,
     host: HOST,
-    pairings: [bySecret, byCode],
+    pairings: [bySecret, byCode, withId],
+    // Each answers the request of the pairing at that place in `pairings`.
+    pairingAnswersToRefuse,
     pairingRefused: {
       name: "a proof made with a code the TV isn't showing",
       request: { method: "POST", address: "/api/phone/pair", type: JSON_TYPE, text: JSON.stringify({ key: bySecret.phone.x25519Public, name: "Ana's iPhone", proof: wrong }) },

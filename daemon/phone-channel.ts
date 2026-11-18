@@ -25,6 +25,7 @@ import { Readable } from "node:stream";
 export const INFO = {
   pair: "origaitv pair v1",
   pairBox: "origaitv pair box v1",
+  pairBoxId: "origaitv pair box id v1",
   key: "origaitv phone key v1",
   helloBox: "origaitv hello box v1",
   session: "origaitv session v1",

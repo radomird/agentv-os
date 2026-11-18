@@ -48,14 +48,19 @@ export async function pair(base: string, proofOf: { secret: string } | { code: s
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ key: b64u(mine.public), name, proof: b64u(hmac(k, INFO.pair, mine.public)) }),
   });
-  const data = (await response.json().catch(() => ({}))) as { id?: string; key?: string; confirm?: string; error?: string };
+  const data = (await response.json().catch(() => ({}))) as { id?: string; key?: string; confirm?: string; boxId?: unknown; error?: string };
   if (!response.ok) throw new Error(data.error ?? `pairing answered ${response.status}`);
   const theirs = unb64u(data.key, 32);
   const shared = theirs && x25519Shared(mine.secret, theirs);
   if (!theirs || !shared || typeof data.id !== "string") throw new Error("the box's answer isn't a pairing");
   const key = phoneKey(shared, k, mine.public, theirs);
   const confirm = unb64u(data.confirm, 32);
-  if (!confirm || !same(confirm, hmac(key, INFO.pairBox, mine.public, theirs))) throw new Error("the box didn't come to the same key");
+  // When the answer says which box this is, the proof has to cover that
+  // too, under a label of its own. So an id that was put in, changed or
+  // taken out on the way fits neither proof, and no key comes of it.
+  const boxId = data.boxId;
+  const proved = boxId === undefined ? hmac(key, INFO.pairBox, mine.public, theirs) : typeof boxId === "string" ? hmac(key, INFO.pairBoxId, mine.public, theirs, boxId) : null;
+  if (!confirm || !proved || !same(confirm, proved)) throw new Error("the box didn't come to the same key");
   return { id: data.id, key: key.toString("base64") };
 }
 
