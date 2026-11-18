@@ -4,7 +4,9 @@
 // the box's own checks (bin/origaitv-phone-call) and for the tests.
 
 import { randomBytes } from "node:crypto";
-import { answerExtra, b64u, HEADERS, hmac, INFO, open, phoneKey, requestExtra, seal, SEALED, same, sessionKeys, sha256hex, signed, unb64u, x25519Pair, x25519Shared, type SessionKeys } from "./phone-channel.ts";
+import { connect, type Socket } from "node:net";
+import { acceptKey, closeFrame, frame, Frames, OP, packState, unpackTook, type PadState } from "./pad-wire.ts";
+import { answerExtra, b64u, HEADERS, hmac, INFO, open, phoneKey, requestExtra, seal, SEALED, same, sessionKeys, sha256hex, signed, streamExtra, streamMessage, streamParts, unb64u, x25519Pair, x25519Shared, type SessionKeys } from "./phone-channel.ts";
 
 // What a paired phone keeps: its id on the box, and its key in base64.
 export interface Kept {
@@ -57,6 +59,142 @@ export async function pair(base: string, proofOf: { secret: string } | { code: s
   const confirm = unb64u(data.confirm, 32);
   if (!confirm || !same(confirm, hmac(key, INFO.pairBox, mine.public, theirs))) throw new Error("the box didn't come to the same key");
   return { id: data.id, key: key.toString("base64") };
+}
+
+// The box said no to game mode: its status, and its answer when that came
+// sealed.
+export class PadRefused extends Error {
+  status: number;
+  data: Record<string, any>;
+
+  constructor(status: number, data: Record<string, any>) {
+    super(typeof data.error === "string" ? data.error : `the box answered ${status}`);
+    this.status = status;
+    this.data = data;
+  }
+}
+
+// Game mode as a phone has it (docs/phone-api.md, "Game mode"): the open
+// connection, on which each state of the controller is one sealed,
+// numbered message, and the box says which ones its controller has taken.
+export class PhonePad {
+  // Which controller this phone is, 1 to 4.
+  slot = 0;
+  // The number of the last message sent, and of the newest the box's
+  // controller took.
+  sent = 0;
+  took = 0;
+  // How the connection ended, once it has.
+  readonly closed: Promise<{ code: number; why: string }>;
+  private socket: Socket;
+  private keys: SessionKeys;
+  private address: string;
+  private opened: number;
+  private heard = 0;
+  private waiting: { n: number; done: () => void }[] = [];
+  private end!: (how: { code: number; why: string }) => void;
+  private ready!: () => void;
+  // Settled once the box's first sealed message has come: the controller
+  // is there.
+  readonly there: Promise<void>;
+
+  constructor(socket: Socket, keys: SessionKeys, address: string, opened: number, rest: Uint8Array) {
+    this.socket = socket;
+    this.keys = keys;
+    this.address = address;
+    this.opened = opened;
+    this.closed = new Promise((resolve) => (this.end = resolve));
+    this.there = new Promise((resolve) => (this.ready = resolve));
+    const frames = new Frames(false);
+    let said: { code: number; why: string } | null = null;
+    const data = (chunk: Uint8Array) => {
+      for (const got of frames.push(chunk)) {
+        if ("broken" in got) {
+          socket.destroy();
+          return;
+        }
+        if (got.opcode === OP.binary) this.hear(got.payload);
+        else if (got.opcode === OP.ping) socket.write(frame(OP.pong, got.payload, randomBytes(4)));
+        else if (got.opcode === OP.close) {
+          said = { code: got.payload.length >= 2 ? got.payload.readUInt16BE(0) : 1005, why: got.payload.subarray(2).toString() };
+          if (socket.writable) socket.end(closeFrame(said.code, "", randomBytes(4)));
+        }
+      }
+    };
+    socket.on("data", data);
+    socket.on("error", () => {});
+    socket.on("close", () => {
+      this.end(said ?? { code: 1006, why: "the connection ended" });
+      for (const { done } of this.waiting.splice(0)) done();
+    });
+    if (rest.length) data(rest);
+  }
+
+  // A message from the box: taken only if it opens for this connection and
+  // its number is above the last one.
+  private hear(message: Uint8Array): void {
+    const parts = streamParts(message);
+    if (!parts || parts.n <= this.heard) return;
+    const plain = open(this.keys.down, parts.sealed, streamExtra("down", this.address, this.opened, parts.n));
+    const said = plain && unpackTook(plain);
+    if (!said) return;
+    this.heard = parts.n;
+    this.slot = said.slot;
+    this.took = Math.max(this.took, said.took);
+    this.ready();
+    for (const wait of this.waiting.filter((w) => w.n <= this.took)) {
+      this.waiting.splice(this.waiting.indexOf(wait), 1);
+      wait.done();
+    }
+  }
+
+  // The message for a state, sealed and numbered n. A test gives the nonce.
+  message(n: number, state: PadState, nonce: Uint8Array = randomBytes(12)): Buffer {
+    return streamMessage(n, seal(this.keys.up, packState(state), streamExtra("up", this.address, this.opened, n), nonce));
+  }
+
+  // Any bytes as one message, as they are.
+  raw(message: Uint8Array, opcode: number = OP.binary): void {
+    this.socket.write(frame(opcode, message, randomBytes(4)));
+  }
+
+  // The controller as it is now. Gives the message's number.
+  send(state: PadState): number {
+    const n = ++this.sent;
+    this.raw(this.message(n, state));
+    return n;
+  }
+
+  // Sends a state and waits until the box's controller has taken it. Gives
+  // how long that took, in milliseconds, there and back. Rejects when the
+  // connection ended first, or nothing came in time.
+  async timed(state: PadState, timeoutMs = 5000): Promise<number> {
+    const started = performance.now();
+    const n = this.send(state);
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("the box didn't say it took that")), timeoutMs);
+      this.waiting.push({
+        n,
+        done: () => {
+          clearTimeout(timer);
+          if (this.took >= n) resolve();
+          else reject(new Error("game mode closed"));
+        },
+      });
+    });
+    return performance.now() - started;
+  }
+
+  // Closes game mode, as the phone does when it's turned upright.
+  close(): Promise<{ code: number; why: string }> {
+    if (this.socket.writable) this.socket.write(closeFrame(1000, "", randomBytes(4)));
+    return this.closed;
+  }
+
+  // The connection cut, with no word: a phone that walked out of range.
+  cut(): void {
+    this.socket.destroy();
+  }
 }
 
 export class PhoneClient {
@@ -168,6 +306,82 @@ export class PhoneClient {
       }
       if (options.file && method === "GET" && response.status === 200 && !json) return { status: 200, ok: true, type, headers, body: raw, sealed: false, data: {} };
       throw new Error("the box's answer wasn't sealed");
+    }
+  }
+
+  // Opens game mode: a signed request that asks for a WebSocket. It gives
+  // the connection once the box's first sealed message has come, which is
+  // what says the box made this phone a controller. Throws PadRefused with
+  // the box's status when it says no.
+  async pad(options: { headers?: Record<string, string>; timeoutMs?: number } = {}): Promise<PhonePad> {
+    for (let attempt = 0; ; attempt++) {
+      if (!this.session && !(await this.hello())) throw new PadRefused(401, { ok: false, pair: true });
+      const keys = this.session!.keys;
+      const address = "/api/phone/pad";
+      const request = this.sign("GET", address, undefined, { headers: options.headers });
+      const key = randomBytes(16).toString("base64");
+      const url = new URL(this.base);
+      const socket = connect(Number(url.port || 80), url.hostname);
+      socket.setNoDelay(true);
+      const head = [`GET ${address} HTTP/1.1`, `Host: ${url.host}`, "Connection: Upgrade", "Upgrade: websocket", "Sec-WebSocket-Version: 13", `Sec-WebSocket-Key: ${key}`, ...Object.entries(request.headers).map(([name, value]) => `${name}: ${value}`)];
+      const answer = await new Promise<{ status: number; headers: Record<string, string>; rest: Buffer }>((resolve, reject) => {
+        let got = Buffer.alloc(0);
+        const timer = setTimeout(() => socket.destroy(new Error("the box didn't answer")), options.timeoutMs ?? 10_000);
+        const data = (chunk: Buffer) => {
+          got = Buffer.concat([got, chunk]);
+          const end = got.indexOf("\r\n\r\n");
+          if (end < 0) return;
+          const [first, ...lines] = got.subarray(0, end).toString("latin1").split("\r\n");
+          const headers = Object.fromEntries(lines.map((line) => [line.slice(0, line.indexOf(":")).toLowerCase(), line.slice(line.indexOf(":") + 1).trim()]));
+          const status = Number(first.split(" ")[1]);
+          const rest = got.subarray(end + 4);
+          // An answer that isn't a yes has a body, which may come later.
+          if (status !== 101 && rest.length < Number(headers["content-length"] ?? 0)) return;
+          clearTimeout(timer);
+          socket.off("data", data);
+          resolve({ status, headers, rest });
+        };
+        socket.on("data", data);
+        socket.on("error", (error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+        socket.on("close", () => {
+          clearTimeout(timer);
+          reject(new Error("the box closed the connection"));
+        });
+        socket.on("connect", () => socket.write(`${head.join("\r\n")}\r\n\r\n`));
+      });
+      if (answer.status === 101) {
+        if (answer.headers["sec-websocket-accept"] !== acceptKey(key)) {
+          socket.destroy();
+          throw new Error("the box's answer isn't a WebSocket's");
+        }
+        const pad = new PhonePad(socket, keys, address, request.counter, answer.rest);
+        // Anyone on the network can write a 101. The first message has to
+        // open with this session's key before the phone believes it.
+        const timer = setTimeout(() => pad.cut(), options.timeoutMs ?? 10_000);
+        const how = await Promise.race([pad.there.then(() => null), pad.closed]);
+        clearTimeout(timer);
+        if (how) throw new Error(`game mode closed before the box said the controller is there (${how.code})`);
+        return pad;
+      }
+      socket.destroy();
+      let data: Record<string, any> = {};
+      const sealed = answer.headers["content-type"] === SEALED;
+      const body = sealed ? open(keys.down, answer.rest, answerExtra("GET", address, request.counter, answer.status)) : answer.rest;
+      if (sealed && !body) throw new Error("the box's answer couldn't be opened");
+      try {
+        data = JSON.parse(body!.toString("utf8"));
+      } catch {
+        // Not JSON.
+      }
+      if (!sealed && answer.status === 401 && attempt === 0 && (data.session === true || data.pair === true)) {
+        this.session = null;
+        continue;
+      }
+      // Only a sealed answer is the box's own word.
+      throw new PadRefused(answer.status, sealed ? data : {});
     }
   }
 }

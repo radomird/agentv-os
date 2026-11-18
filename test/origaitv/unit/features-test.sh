@@ -51,9 +51,23 @@ start
 out=$("$ROOT/bin/origaitv" feature list) || fail "origaitv feature list works" "$out"
 expected=$(printf '%-12s on\n' boxcheck sizes looks dynamicbg setup2 remote2 starter discover askbuilds)
 # The ones that land off, until they're reviewed.
-expected+=$'\n'$(printf '%-12s off\n' announce playing2)
+expected+=$'\n'$(printf '%-12s off\n' announce phonepad playing2)
 [[ $out == "$expected" ]] || fail "T12.1 origaitv feature list shows every track's switch, on" "$out"
 pass "T12.1 origaitv feature list shows every track's switch, each on by default but the ones that land off"
+
+# A switch that's off by default: stable says no, edge turns it on, and a
+# box back on stable shows it off again.
+status=0
+out=$("$ROOT/bin/origaitv" feature on phonepad 2>&1) || status=$?
+(( status == 1 )) && [[ $out == "Switches only turn on on edge."* ]] || fail "on stable, a switch that's off by default doesn't turn on" "$out"
+channel edge
+out=$("$ROOT/bin/origaitv" feature on phonepad) || fail "on edge, origaitv feature on turns it on" "$out"
+[[ $out == "phonepad is on." && $("$ROOT/bin/origaitv" feature list | grep '^phonepad') == "phonepad     on" ]] || fail "and the list shows it on" "$out"
+channel stable
+[[ $("$ROOT/bin/origaitv" feature list | grep '^phonepad') == "phonepad     off" ]] || fail "back on stable, it's off"
+out=$("$ROOT/bin/origaitv" feature off phonepad) || fail "origaitv feature off puts it back" "$out"
+[[ $out == "phonepad is off." && ! -e $SCRATCH/state/features.json ]] || fail "and leaves nothing to keep" "$out"
+pass "T26.1 phonepad lands off, and only an edge box turns it on"
 
 out=$("$ROOT/bin/origaitv" feature off looks) || fail "on stable, origaitv feature off works" "$out"
 [[ $out == "looks is off." ]] || fail "it says what it did" "$out"
@@ -93,7 +107,7 @@ pass "a switch that's off by default turns on only on edge, and shows off again 
 
 status=0
 out=$("$ROOT/bin/origaitv" feature on nope 2>&1) || status=$?
-(( status == 1 )) && [[ $out == "There's no switch called \"nope\". The switches are boxcheck, sizes, looks, dynamicbg, setup2, remote2, starter, discover, askbuilds, announce, playing2." ]] ||
+(( status == 1 )) && [[ $out == "There's no switch called \"nope\". The switches are boxcheck, sizes, looks, dynamicbg, setup2, remote2, starter, discover, askbuilds, announce, phonepad, playing2." ]] ||
   fail "a name that isn't a switch is refused, with the names" "$out"
 for wrong in "" "Looks" "looks extra" '../x'; do
   status=0

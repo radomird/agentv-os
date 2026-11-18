@@ -2,7 +2,7 @@
 
 This is how a paired phone talks to an OrigaiTV box. The phone's page in `companion-web/` speaks it today. If you're writing another client, this is what you build against.
 
-It's written from the code as it is. The TV's side is `daemon/phone-channel.ts`, `daemon/phones.ts`, `daemon/pin.ts` and the phone routes in `daemon/server.ts` and `daemon/routes/`. How the TV says it's there is `daemon/announce.ts` and `bin/origaitv-announce-set`. The phone's side is `companion-web/channel.ts`, and `daemon/phone-client.ts` is the same thing in Node for tests.
+It's written from the code as it is. The TV's side is `daemon/phone-channel.ts`, `daemon/phones.ts`, `daemon/pin.ts` and the phone routes in `daemon/server.ts` and `daemon/routes/`. How the TV says it's there is `daemon/announce.ts` and `bin/origaitv-announce-set`. Game mode's is `daemon/pad-wire.ts`, `daemon/pads.ts` and `daemon/routes/pad.ts`. The phone's side is `companion-web/channel.ts`, and `daemon/phone-client.ts` is the same thing in Node for tests, with game mode.
 
 There are test vectors in `test/origaitv/fixtures/phone-channel/vectors.json`: fixed keys, nonces and counters, and the exact bytes they give. The fast gate replays them through the daemon and through the phone's page, so a client that reproduces them agrees with both. See [Test vectors](#test-vectors).
 
@@ -14,6 +14,7 @@ There are test vectors in `test/origaitv/fixtures/phone-channel/vectors.json`: f
 - Every request past that is signed with HMAC-SHA256. JSON bodies and JSON answers are sealed with ChaCha20-Poly1305. A photo or a video goes as it is, with its length signed.
 - Sessions live in the daemon's memory. When the daemon restarts, the phone says hello again and carries on. It doesn't pair again.
 - With the `announce` switch on, the TV also says it's there over mDNS, so a phone finds it again when the router gives it a new address. See [Finding the TV](#finding-the-tv).
+- One thing isn't a request each time. [Game mode](#game-mode) is a WebSocket that a signed request opens, and each message on it is sealed with the session's keys.
 
 Two conventions for the rest of this doc:
 
@@ -415,6 +416,12 @@ What `POST /api/phone/remote` takes, one per request:
 
 `POST /api/phone/text` keeps a field on the TV in step with one on the phone. `value` is the whole text, up to 500 characters, and `caret` is where the cursor is. Only the newest change waits to go: one that's overtaken is answered `{"ok":true}` straight away.
 
+### Game mode
+
+| Route | Body | Answer | Who |
+| --- | --- | --- | --- |
+| `GET /api/phone/pad` | None. It's a WebSocket's opening request. | `101`, then the controller's messages. See [Game mode](#game-mode). `404` while the `phonepad` switch is off. | Anyone |
+
 ### Asking the TV
 
 | Route | Body | Answer | Who |
@@ -554,6 +561,7 @@ A few things to know:
 | `builds` | The builds an adult follows: `[{build, id, name, provider, state, phase, done, steps}]`, with `signIn`, `ranOut` and `reason` when they apply. Empty on a child's profile. |
 | `export` | An app the TV is offering to save a copy of: `{id, name, version, github}`. `github` is who the TV is signed in to GitHub as, or `null`. `null` with no offer, and on a child's profile. |
 | `said` | The last sentence said to the TV and what came of it, for ten minutes: `{n, sentence, from, viewer, state, outcome, at}`. `state` is `"routing"` or `"done"`, and `outcome` is missing until it's done. Then `null`. |
+| `controllers` | `{phones, most}`: how many phones are game controllers right now, and how many can be. Only there while `phonepad` is on. See [Game mode](#game-mode). |
 
 `tv` has:
 
@@ -567,10 +575,163 @@ A few things to know:
 | `front` | `"home"` or `"app"`. |
 | `playing` | Whether something is playing. |
 | `desktop` | `true` while the Omarchy desktop is on, where the remote is a trackpad. |
+| `game` | The game in front, `{id, name}`, or `null`. Only there while `phonepad` is on. See [Game mode](#game-mode). |
 
 `ai`, when it isn't `null`, is `{ask, provider, path, name, maker, plan, terms, summary, keyUrl}`. `ask` says what the phone should show: `"terms"` to accept with `POST /api/phone/terms`, `"key"` to paste with `POST /api/phone/key`, or `"sign-in"`, which adds `signIn: {url, code, pastes}` for the plan's sign-in.
 
 `outcome` in `said` has a `kind` and a sentence in `say`. The kinds are `opened`, `choose`, `told`, `build`, `change` and `none`, and `daemon/executors/index.ts` has what each carries. For `choose`, `candidates` are what `POST /api/phone/say/pick` picks from.
+
+## Game mode
+
+A phone in game mode is a game controller. The TV makes it an input device that games see as an ordinary one: one stick, A, B, X and Y, two shoulders on each side, View, Menu and the guide button. A request for each press is too slow to play on, so game mode has the one thing in this API that isn't a request each time: a connection that stays open.
+
+All of it is behind the `phonepad` switch, which is off for now. While it's off, `/api/phone/pad` answers like any address that isn't there, and the state has neither of the fields in [In the state](#in-the-state). `GET /api/phone/features` says whether it's on.
+
+The phone's own page doesn't have game mode. This part is for an app.
+
+### Opening it
+
+```
+GET /api/phone/pad
+Connection: Upgrade
+Upgrade: websocket
+Sec-WebSocket-Version: 13
+Sec-WebSocket-Key: <16 random bytes, in base64>
+X-OrigaiTV-Session: <the session>
+X-OrigaiTV-Counter: <the next counter>
+X-OrigaiTV-Sig: <the signature>
+```
+
+It's a WebSocket's opening request (RFC 6455) with the channel's three headers on it. Sign it like any request with no body: the method is `GET`, the address is `/api/phone/pad`, the grant is empty and the digest is the SHA-256 of nothing. It uses up its counter like any other request. Keep that counter, since every message on the connection is tied to it.
+
+A page in a browser can't put headers on a WebSocket, so no page can open one. If the request has an `Origin` header anyway, it has to be the phone's own page's, as for a `POST`.
+
+What comes back:
+
+| Status | What it means |
+| --- | --- |
+| `101` | The connection is open. Don't believe it yet: wait for the TV's first message. |
+| `401`, plain | The same two as for any request, `pair` and `session`. Say hello again and open it again. |
+| `403`, plain | The `Origin` isn't the phone's page. |
+| `404`, sealed | The switch is off. |
+| `409`, sealed | Four phones are controllers already: `{"ok":false,"error":"Four phones are playing already"}`. |
+| `426`, sealed | The request didn't ask for a WebSocket. |
+| `503`, sealed | `Your TV isn't ready yet`: nothing is there to make a controller, because the TV's screen session isn't running. Try again in a few seconds. |
+
+Most WebSocket clients give you the status of a refusal and not its body. The status is enough to act on.
+
+The TV makes the controller before it answers `101`, so a phone that's told yes has one. One phone has one controller. If the same phone opens game mode again, the new connection gets a controller of its own, and the old connection is closed with `4001` and its controller goes.
+
+### Messages
+
+Everything after the `101` is binary WebSocket messages, each one sealed and numbered:
+
+```
+message = n (8 bytes, big end first) || nonce (12 random bytes) || ciphertext || tag (16 bytes)
+```
+
+- `n` is the message's number. Each direction counts from 1 and adds one for each message.
+- What follows it is ChaCha20-Poly1305, put together exactly as a sealed body is. The phone's messages use the session's `up` key and the TV's use `down`.
+- The extra data is four lines:
+
+```
+"pad up" or "pad down" + "\n" + address + "\n" + counter + "\n" + n
+```
+
+`address` is `/api/phone/pad`. `counter` is the counter of the request that opened this connection, the same text as its header. `n` is the message's number in decimal. So the phone's first message on a connection that counter 201 opened has `pad up\n/api/phone/pad\n201\n1`.
+
+A message is taken only if it opens, and only if its number is above the last one taken from that side. That's the counter's rule for requests without the window: on one connection nothing arrives out of order.
+
+What that buys:
+
+- A message can't be sent twice, since its number is used.
+- It can't be moved to another connection or another session, since the extra data names the one request that opened this one, and each session has its own keys.
+- It can't be turned around, since the two directions have their own key and their own first line.
+- A request's body can't be passed off as a message, or a message as a body. No HTTP method has a space in it, so the two never have the same extra data.
+
+#### What the phone sends
+
+The controller's whole state, 6 bytes, big end first:
+
+| Bytes | What it is |
+| --- | --- |
+| 0 and 1 | The buttons that are down, a bit each. A is bit 0, the lowest. Then B, X, Y, L1, R1, L2, R2, View and Menu, and Home is bit 10. The top five bits are 0. |
+| 2 and 3 | The stick's x, signed. -32767 is all the way left and 32767 all the way right. |
+| 4 and 5 | The stick's y, signed. -32767 is all the way up and 32767 all the way down. |
+
+L1 and R1 are the shoulders in front, and L2 and R2 are the ones behind them. Home is the guide button. With A down and the stick at rest, the six bytes are `00 01 00 00 00 00`.
+
+Send the state when it changes. It's always the whole state: not "A went down", but "A is down and the stick is here". While nothing changes, send it again at least every 2 seconds. A phone that sends nothing for 5 seconds loses its controller, and the same state again is how it says it's still there. It writes nothing to the controller.
+
+Nothing else fits in a message. One that isn't exactly these 6 bytes is dropped, and so is one with a bit set that no button has, or -32768 for the stick. There's no way to send a key, text, or anything but a controller's state down this connection.
+
+#### What the TV sends
+
+9 bytes:
+
+| Bytes | What it is |
+| --- | --- |
+| 0 | Which controller this phone is, 1 to 4. |
+| 1 to 8 | The number of the newest message from the phone that the controller has taken, big end first. |
+
+The first one comes as the connection opens, with 0 for the number. It's the TV saying the controller is there. Anyone on the network can write a `101`, so count game mode as open only once this message has opened with the session's `down` key.
+
+After that there's one for each state the controller took, sent once the state has been written to the input device. That makes it a stopwatch. The time from sending message `n` to hearing that `n` was taken is the trip there and back, and the press reached the game in less than that.
+
+#### What the TV drops
+
+A message that doesn't open, a number that isn't above the last one, a text message, and a state that isn't one. The TV says nothing back, and the connection stays open. One exception: a message that opens and isn't a state has used its number up.
+
+The TV puts up with 16 of those on one connection and closes it at the next. It also closes it when more than 500 messages come in one second, which isn't somebody playing.
+
+#### The WebSocket itself
+
+The TV speaks as little of it as game mode needs:
+
+- A frame is whole and holds 125 bytes at most. A message is 42, so a client library does this without being asked.
+- The phone's frames are masked, as the RFC says a client's are. No extensions, and no message split over frames.
+- The TV answers a ping with a pong. A ping isn't the phone saying it's still there: only a state is.
+
+Anything else ends the connection with `1002`.
+
+### Closing it
+
+Close the WebSocket and the controller is gone at once. The same goes for a connection that breaks.
+
+When the TV closes it, the close frame's code says why:
+
+| Code | Why |
+| --- | --- |
+| `1000` | The phone closed it. |
+| `1001` | The TV is going away: it's stopping, or the switch was turned off. |
+| `1002` | Something that isn't a WebSocket as above. |
+| `4000` | Nothing came for 5 seconds. |
+| `4001` | The same phone opened game mode again. |
+| `4002` | The session ended, or the phone was forgotten in Settings. |
+| `4003` | Too many messages that weren't a controller's, or far too many at once. |
+| `4004` | The TV lost the controller. Open game mode again in a few seconds. |
+
+A close frame isn't sealed, so someone who can write into the connection could send one. All it does is end game mode, which they could do by cutting the connection.
+
+### What a game sees
+
+One more controller, named "OrigaiTV phone controller". It has the layout and the ids of the wired controller nearly every game already knows, so Steam, an emulator and a browser's gamepad support all map it with nothing to set up.
+
+- The stick is the left stick. Once it's half way out, its direction is the d-pad's too, so a game or a menu that only reads a d-pad still moves.
+- L2 and R2 are that controller's triggers. The phone's are buttons, so they're all the way in or all the way out.
+- Home held for a second goes home from a game. A short press is the game's own. That's the rule a real controller's guide button has.
+- The right stick and the two stick clicks are there, because the layout has them, and they never move.
+
+### In the state
+
+Two fields, there only while the switch is on:
+
+| Field | What it is |
+| --- | --- |
+| `tv.game` | The game in front: `{id, name}`, the app's id and its name. `null` when what's in front isn't a game. What makes an app a game is its category. |
+| `controllers` | `{phones, most}`: how many phones are controllers right now, and how many can be, which is 4. A real controller plugged into the TV isn't counted. |
+
+Both change the state's `version`, so the long poll hears a game coming in front and a controller coming or going.
 
 ## What's playing
 
@@ -696,6 +857,7 @@ The picture is one the TV already has for the title: the one the app itself give
 - `session.refused`: requests the TV refuses, with the plain `401` each gets. A replayed counter, a body changed on the way, JSON that isn't sealed, a counter of 0. One of them has a good signature over a body with a bad tag, which gets the sealed `400`.
 - `session.window`: counters 200, 72 and 73, for the edge of the window.
 - `session.answersToRefuse`: answers to the first request that a phone has to refuse. A bad tag, the wrong status, another request's answer, the phone's own request played back, and two that aren't sealed.
+- `session.pad`: game mode. `open` is the request that opens the connection, with its headers and the `101`. `up` is two states from the phone and `down` the TV's messages, each with its number, its plain bytes, its nonce, its extra data and the whole message. `dropped` is what the TV drops after those two: a replay, a used number, a state that isn't sealed, one sealed by another session (`otherSession` has its key), one for another connection, one with the wrong key, a changed tag, and one that opens and isn't a state. `after` is the next message it takes. `downToRefuse` is what a phone has to drop.
 
 The file says which fields are plain text. Everything else is base64url.
 
@@ -707,4 +869,4 @@ The file is made by `make-vectors.mts` next to it, which uses only Node's crypto
 node test/origaitv/fixtures/phone-channel/make-vectors.mts
 ```
 
-`test/origaitv/unit/phone-channel-vectors.test.mts` replays it, and fails if the file isn't what the script makes.
+`test/origaitv/unit/phone-channel-vectors.test.mts` replays it, and fails if the file isn't what the script makes. `test/origaitv/unit/phonepad-vectors.test.mts` replays game mode's part, through the TV's side and the phone's.

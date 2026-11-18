@@ -14,6 +14,12 @@
 // request someone recorded is worth nothing after the daemon restarts, and
 // nothing within a session works twice.
 //
+// Game mode is the one thing that isn't a request each time: a connection
+// that stays open, for a controller's buttons and stick. A signed request
+// opens it, and each message on it is sealed with the session's keys and
+// numbered, tied to that one connection (see "A connection that stays
+// open" below).
+//
 // The page does the same in companion-web/seal.ts and channel.ts, and
 // daemon/phone-client.ts is the phone's side for the box's own checks.
 
@@ -136,6 +142,55 @@ export const requestExtra = (method: string, address: string, counter: number | 
 // An answer is tied to its request and to its own status.
 export const answerExtra = (method: string, address: string, counter: number | string, status: number): Buffer => Buffer.from(`${method}\n${address}\n${counter}\n${status}`);
 
+// --- A connection that stays open ---------------------------------------------------
+//
+// A message on it is `n || nonce || sealed text || tag`: its number as 8
+// bytes, big end first, then what seal() makes. Messages are numbered from
+// 1 each way, and one is taken only when its number is above the last one
+// taken, so none works twice.
+//
+// What it's sealed with, besides the key: which way it goes, the address
+// and the counter of the request that opened the connection, and its own
+// number. So a message opens on the one connection it was sent on, at its
+// own place, and nowhere else. No HTTP method has a space in it, so a
+// message can never be opened as a request's body, or a body as a message.
+export const streamExtra = (way: "up" | "down", address: string, opened: number | string, n: number | string): Buffer => Buffer.from(`pad ${way}\n${address}\n${opened}\n${n}`);
+
+const NUMBER = 8;
+
+// A message for the wire: its number, then the sealed bytes.
+export function streamMessage(n: number, sealed: Uint8Array): Buffer {
+  const head = Buffer.alloc(NUMBER);
+  head.writeUInt32BE(Math.floor(n / 2 ** 32), 0);
+  head.writeUInt32BE(n % 2 ** 32, 4);
+  return Buffer.concat([head, sealed]);
+}
+
+// A message's number and its sealed bytes, or null when it's too short or
+// its number isn't one a counter can be: 1 or more, and small enough to
+// count with.
+export function streamParts(message: Uint8Array): { n: number; sealed: Buffer } | null {
+  if (message.length < NUMBER + NONCE + TAG) return null;
+  const bytes = Buffer.from(message.buffer, message.byteOffset, message.length);
+  const high = bytes.readUInt32BE(0);
+  if (high >= 2 ** 21) return null;
+  const n = high * 2 ** 32 + bytes.readUInt32BE(4);
+  return n >= 1 ? { n, sealed: bytes.subarray(NUMBER) } : null;
+}
+
+// The box's end of one open connection.
+export interface Stream<P> {
+  phone: P;
+  // What the phone sent, opened, with its number. Null for a message that
+  // isn't sealed for this connection, one whose number was taken already,
+  // and anything once the session has ended.
+  take(message: Uint8Array): { n: number; plain: Buffer } | null;
+  // What the box sends, sealed and numbered.
+  give(plain: Uint8Array): Buffer;
+  // Whether the session it was opened in is still there.
+  alive(): boolean;
+}
+
 // The nonce is random, unless a test gives one.
 export function seal(key: Uint8Array, plain: Uint8Array, extra: Uint8Array, nonce: Uint8Array = randomBytes(NONCE)): Buffer {
   const cipher = createCipheriv("chacha20-poly1305", key, nonce, { authTagLength: TAG });
@@ -233,7 +288,7 @@ export class PhoneChannel<P> {
   // it gives the phone and the request for the routes to read, with a
   // sealed body opened, and from here on every JSON answer written to the
   // response is sealed on its way out.
-  async open(request: IncomingMessage, response: ServerResponse): Promise<{ phone: P; request: IncomingMessage } | null> {
+  async open(request: IncomingMessage, response: ServerResponse): Promise<{ phone: P; request: IncomingMessage; stream: () => Stream<P> } | null> {
     const refuse = (what: "pair" | "session") => {
       const body = JSON.stringify(what === "pair" ? { ok: false, error: "This phone isn't paired. Pair it from your TV.", pair: true } : { ok: false, error: "this phone has to say hello again", session: true });
       response.writeHead(401, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body), "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
@@ -312,7 +367,8 @@ export class PhoneChannel<P> {
     session.at = this.now();
 
     sealAnswers(response, (status, plain) => seal(session.keys.down, plain, answerExtra(method, address, counter, status), this.random(NONCE)));
-    if (!sealed) return { phone: known.phone, request };
+    const stream = () => this.stream(session, known.phone, address, counter);
+    if (!sealed) return { phone: known.phone, request, stream };
 
     const plain = open(session.keys.up, body, requestExtra(method, address, counter));
     if (!plain) {
@@ -330,7 +386,34 @@ export class PhoneChannel<P> {
       socket: request.socket,
       httpVersion: request.httpVersion,
     });
-    return { phone: known.phone, request: inner };
+    return { phone: known.phone, request: inner, stream };
+  }
+
+  // The connection a signed request opened: `address` and `opened` are that
+  // request's address and counter, which never come again in the session.
+  // It lasts as long as the session does, and a message on it counts as the
+  // session being used.
+  private stream(session: Session, phone: P, address: string, opened: number): Stream<P> {
+    let taken = 0;
+    let given = 0;
+    const alive = () => this.sessions.get(session.id) === session && this.options.phone(session.phone) !== null;
+    return {
+      phone,
+      alive,
+      take: (message) => {
+        const parts = streamParts(message);
+        if (!parts || parts.n <= taken || !alive()) return null;
+        const plain = open(session.keys.up, parts.sealed, streamExtra("up", address, opened, parts.n));
+        if (!plain) return null;
+        taken = parts.n;
+        session.at = this.now();
+        return { n: parts.n, plain };
+      },
+      give: (plain) => {
+        given++;
+        return streamMessage(given, seal(session.keys.down, plain, streamExtra("down", address, opened, given), this.random(NONCE)));
+      },
+    };
   }
 }
 
