@@ -520,6 +520,11 @@ export interface PlayerOptions {
   connect?: (socket: string) => Promise<MpvLink>;
 }
 
+// How often mpv is asked whether a jump has landed, and how many times:
+// two seconds in all.
+const SEEK_WAIT_MS = 50;
+const SEEK_TRIES = 40;
+
 export class MusicPlayer {
   private socket: string;
   private startMpv: (socket: string) => { stop(): void } | null;
@@ -593,6 +598,26 @@ export class MusicPlayer {
 
   async previous(): Promise<void> {
     await this.send(["playlist-prev", "weak"]);
+  }
+
+  // A jump to a place in the track that plays, in seconds from its start,
+  // kept inside its length. mpv answers before it's there, so this waits
+  // until mpv says it is: true once it's within a second of the place. A
+  // place at the end ends the track, and the next one playing counts too.
+  async seek(position: number): Promise<boolean> {
+    if (this.queued.length === 0) return false;
+    const get = (name: string) => this.send(["get_property", name]).catch(() => null);
+    const [index, duration] = await Promise.all([get("playlist-pos"), get("duration")]);
+    if (typeof index !== "number" || index < 0) return false;
+    const to = typeof duration === "number" && duration > 0 ? Math.min(position, duration) : position;
+    await this.send(["seek", to, "absolute+exact"]);
+    for (let tries = 0; tries < SEEK_TRIES; tries++) {
+      const [now, at] = await Promise.all([get("playlist-pos"), get("time-pos")]);
+      if (now !== index) return true;
+      if (typeof at === "number" && Math.abs(at - to) < 1) return true;
+      await new Promise((done) => setTimeout(done, SEEK_WAIT_MS));
+    }
+    return false;
   }
 
   async stop(): Promise<void> {
@@ -801,6 +826,13 @@ export class MusicApp {
       case "previous":
         await this.player.previous();
         return { ok: true };
+      // A jump to a place in the track, in seconds, for a phone's bar.
+      case "seek": {
+        const position = request.position;
+        if (typeof position !== "number" || !Number.isFinite(position) || position < 0) return { ok: false, error: "Couldn't jump there" };
+        const there = await this.player.seek(position).catch(() => false);
+        return there ? { ok: true } : { ok: false, error: "Couldn't jump there" };
+      }
       case "stop":
         await this.player.stop();
         return { ok: true };

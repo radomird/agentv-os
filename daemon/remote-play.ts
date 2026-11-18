@@ -13,8 +13,10 @@
 // What's playing, in full (the playing2 switch) is further down: play and
 // pause as two requests that leave what's already so alone, previous, a
 // jump to a place in seconds, and where the thing is. They go the same way:
-// the app's own player first, and the page's video when it has none. The
-// daemon asks for them only with the switch on.
+// the app's own player first, and the page's video when it has none. With
+// home in front and nothing in its own player, they're Music's: its queue
+// says whether there's a next and a previous, and its player takes the
+// jump. The daemon asks for them only with the switch on.
 
 import type { PlaybackState } from "../apps/contract/contract.ts";
 import { MUSIC } from "./music.ts";
@@ -112,6 +114,7 @@ export const MEDIA_NOW = `(() => {${NOW}
 })()`;
 
 const CANT_JUMP = "This app can't jump to a time";
+const COULDNT_JUMP = "Couldn't jump there";
 const CANT_GO_BACK = "This app can't go back";
 
 // An expression for a page: what plays is paused, or what was playing last
@@ -151,7 +154,7 @@ export function mediaSeek(jump: { to: number } | { by: number }): string {
     one.addEventListener("seeked", () => (clearTimeout(timer), done()), { once: true });
     one.currentTime = to;
   });
-  return one.currentTime > to - 1 && one.currentTime < to + 3 ? { ok: true } : { ok: false, why: "Couldn't jump there" };
+  return one.currentTime > to - 1 && one.currentTime < to + 3 ? { ok: true } : { ok: false, why: ${JSON.stringify(COULDNT_JUMP)} };
 })()`;
 }
 
@@ -372,19 +375,23 @@ export class PhonePlayback {
     return { ok: false, why: CANT_GO_BACK };
   }
 
-  // A jump to a place, in seconds from the start: the app's own seek, or
-  // the page's video. An app's place isn't always its video's clock, so
-  // with no seek of its own the video jumps by as far as the place is from
-  // where the app says it is now.
+  // A jump to a place, in seconds from the start: the app's own seek,
+  // Music's, or the page's video. An app's place isn't always its video's
+  // clock, so with no seek of its own the video jumps by as far as the
+  // place is from where the app says it is now.
   async seek(position: unknown): Promise<TextAnswer> {
-    if (typeof position !== "number" || !Number.isFinite(position) || position < 0) return { ok: false, why: "Couldn't jump there" };
+    if (typeof position !== "number" || !Number.isFinite(position) || position < 0) return { ok: false, why: COULDNT_JUMP };
     const front = this.o.front();
     if (!front) return NOTHING;
     if (front.kind === "native") return { ok: false, why: CANT_JUMP };
     if (front.kind === "home") {
       const state = await this.pageNow(front.evaluate);
       if (state?.playing) return this.pageSeek(front.evaluate, { to: position });
-      if (await this.musicNow(front)) return { ok: false, why: CANT_JUMP };
+      if (await this.musicNow(front)) {
+        // Music waits for its player to be there, for up to two seconds.
+        const done = (await this.within(front.music!({ op: "seek", position }), 4000)) as { ok?: boolean } | null;
+        return done?.ok ? { ok: true, by: "app" } : { ok: false, why: COULDNT_JUMP };
+      }
       return state ? this.pageSeek(front.evaluate, { to: position }) : NOTHING;
     }
     if (front.app) {
@@ -471,24 +478,25 @@ export class PhonePlayback {
   }
 
   // What Music plays, with whether its queue has one after and one before.
-  // Music has no jump yet.
+  // A track with a length can jump.
   private async musicFull(front: Extract<PlaybackFront, { kind: "home" }>): Promise<PlayingNow | null> {
     if (!front.music) return null;
     const said = (await this.within(front.music({ op: "now" }))) as { now?: Record<string, unknown> | null } | null;
     const now = said?.now;
     if (!now || typeof now.title !== "string") return null;
     const index = Number(now.index) || 0;
+    const duration = typeof now.duration === "number" && now.duration > 0 ? now.duration : null;
     return {
       by: "app",
       id: MUSIC,
       title: now.title.slice(0, 300),
       position: typeof now.position === "number" && now.position >= 0 ? now.position : 0,
-      duration: typeof now.duration === "number" && now.duration > 0 ? now.duration : null,
+      duration,
       playing: now.playing === true,
       at: Date.now(),
       next: index + 1 < (Number(now.count) || 0),
       previous: index > 0,
-      seek: false,
+      seek: duration !== null,
       ...(typeof now.albumId === "string" && now.albumId ? { cover: true } : {}),
     };
   }
