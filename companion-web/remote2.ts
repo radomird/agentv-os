@@ -63,6 +63,8 @@ export interface Phone {
   // The Ask box building (ADR-068): its switch, and what it waits on.
   features?: { askbuilds?: boolean };
   ask?: AskView | null;
+  // The TV's name, while it announces itself (daemon/announce.ts).
+  boxName?: string;
 }
 
 // What the remote needs from the page around it (main.ts).
@@ -284,6 +286,8 @@ export class Remote2 {
   private kit: Kit;
   private page: Page = "remote";
   private sheet: Sheet = null;
+  // What the tab is called with no name for the TV: the page's own title.
+  private title = document.title;
   // The pointer, from a hold on the surface, until done.
   private pointer = false;
   // The field the keyboard was put away for, which it stays away from.
@@ -332,6 +336,9 @@ export class Remote2 {
     const state = this.kit.state();
     if (!state) return;
     document.body.dataset.look = state.look ?? "terminal";
+    // The tab is called what the TV is, and follows a new name.
+    const title = state.boxName || this.title;
+    if (document.title !== title) document.title = title;
     const shape = this.shapeOf(state);
     if (!force && shape === this.shape) {
       this.refreshParts(state);
@@ -1118,6 +1125,8 @@ export class Remote2 {
       h("span", { class: "r2-switch", "aria-hidden": "true" }),
     );
     const items: (HTMLElement | null)[] = [
+      // Which TV this is, by the name it has.
+      state.boxName ? h("p", { class: "r2-name" }, state.boxName) : null,
       h("p", { class: "r2-label" }, "Who's watching"),
       h(
         "div",
