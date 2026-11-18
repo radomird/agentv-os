@@ -2,11 +2,11 @@
 
 # Guards the feature switches (daemon/features.ts) with Node's own test
 # runner, then runs the daemon the way its unit does and checks origaitv
-# feature list, on and off: every track's switch is listed, on by default,
-# off works on any channel and lasts through a restart, on puts a switch back
-# to its default, and each says when the daemon isn't there. The rule that
-# only edge turns on a switch that's off by default is features.test.mts's,
-# since no switch is off by default now.
+# feature list, on and off: every track's switch is listed, the screens' on
+# by default and the iPhone app's off, off works on any channel and lasts
+# through a restart, on puts a switch back to its default, a switch that's
+# off by default turns on only on edge, and each says when the daemon isn't
+# there.
 
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/helpers.sh"
@@ -51,7 +51,7 @@ start
 out=$("$ROOT/bin/origaitv" feature list) || fail "origaitv feature list works" "$out"
 expected=$(printf '%-12s on\n' boxcheck sizes looks dynamicbg setup2 remote2 starter discover askbuilds)
 # The ones that land off, until they're reviewed.
-expected+=$'\n'$(printf '%-12s off\n' playing2)
+expected+=$'\n'$(printf '%-12s off\n' announce playing2)
 [[ $out == "$expected" ]] || fail "T12.1 origaitv feature list shows every track's switch, on" "$out"
 pass "T12.1 origaitv feature list shows every track's switch, each on by default but the ones that land off"
 
@@ -72,9 +72,28 @@ out=$("$ROOT/bin/origaitv" feature on looks) || fail "origaitv feature on puts i
 [[ $out == "looks is on." && ! -e $SCRATCH/state/features.json ]] || fail "and leaves nothing to keep" "$out"
 pass "a switch stays off after a restart and on either channel, and origaitv feature on puts it back to its default anywhere"
 
+# A switch that's off by default: only an edge box turns it on, and a box
+# that goes back to stable shows it off again.
+status=0
+out=$("$ROOT/bin/origaitv" feature on announce 2>&1) || status=$?
+(( status == 1 )) && [[ $out == "Switches only turn on on edge. Run origaitv channel edge, then origaitv update, and try again." ]] ||
+  fail "on stable, a switch that's off by default doesn't turn on" "$out"
+[[ ! -e $SCRATCH/state/features.json ]] || fail "and nothing is kept"
+channel edge
+out=$("$ROOT/bin/origaitv" feature on announce) || fail "on edge it turns on" "$out"
+[[ $out == "announce is on." && $(jq -c . "$SCRATCH/state/features.json") == '{"announce":true}' ]] || fail "and it's kept in features.json" "$out"
+channel stable
+[[ $("$ROOT/bin/origaitv" feature list | grep '^announce') == "announce     off" ]] || fail "back on stable, it shows off again"
+channel edge
+[[ $("$ROOT/bin/origaitv" feature list | grep '^announce') == "announce     on" ]] || fail "and on again on edge"
+out=$("$ROOT/bin/origaitv" feature off announce) || fail "origaitv feature off puts it back to its default" "$out"
+[[ $out == "announce is off." && ! -e $SCRATCH/state/features.json ]] || fail "and leaves nothing to keep" "$out"
+channel stable
+pass "a switch that's off by default turns on only on edge, and shows off again on stable"
+
 status=0
 out=$("$ROOT/bin/origaitv" feature on nope 2>&1) || status=$?
-(( status == 1 )) && [[ $out == "There's no switch called \"nope\". The switches are boxcheck, sizes, looks, dynamicbg, setup2, remote2, starter, discover, askbuilds, playing2." ]] ||
+(( status == 1 )) && [[ $out == "There's no switch called \"nope\". The switches are boxcheck, sizes, looks, dynamicbg, setup2, remote2, starter, discover, askbuilds, announce, playing2." ]] ||
   fail "a name that isn't a switch is refused, with the names" "$out"
 for wrong in "" "Looks" "looks extra" '../x'; do
   status=0

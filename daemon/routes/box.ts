@@ -8,7 +8,8 @@
 // - POST /api/box/widevine: the services' Chromium's Widevine, from the
 //   screen daemon;
 // - GET /api/phone/box, for a paired phone: the box in one line, for its
-//   menu's about line.
+//   menu's about line. With the announce switch on, also what the phone
+//   needs to wake the box (PHASE-2-PLAN.md track 25).
 // The TV's pages hear "box" when something changed.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -23,6 +24,8 @@ export interface BoxRoutes {
   // Tells the TV's pages, and the phones, what changed.
   broadcast: (event: string, data: unknown) => void;
   log: (line: string) => void;
+  // Whether the announce switch is on.
+  announce: () => Promise<boolean>;
 }
 
 export async function boxRoute(kit: BoxRoutes, method: string | undefined, path: string, request: IncomingMessage, response: ServerResponse): Promise<boolean> {
@@ -71,10 +74,14 @@ export async function boxRoute(kit: BoxRoutes, method: string | undefined, path:
   return true;
 }
 
-// The phone's, past pairing.
+// The phone's, past pairing: the daemon has checked the request's signature
+// by the time it gets here, so only a paired phone reads this, and the
+// answer goes back sealed. That's what keeps the wired port's hardware
+// address to paired phones. With the switch off the answer is as it was.
 export async function phoneBoxRoute(kit: BoxRoutes, method: string | undefined, path: string, response: ServerResponse): Promise<boolean> {
   if (method !== "GET" || path !== "/api/phone/box") return false;
   const report = await kit.box.report();
-  kit.json(response, 200, { ok: true, line: summary(report), box: report });
+  const wake = (await kit.announce()) ? { wake: kit.box.wake() } : {};
+  kit.json(response, 200, { ok: true, line: summary(report), box: report, ...wake });
   return true;
 }

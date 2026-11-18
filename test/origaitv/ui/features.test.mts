@@ -1,8 +1,8 @@
 // The feature switches on the TV's pages, in a real Chromium (layer 4).
 // Every phase 2 track hides what people can see behind one of these
 // (PHASE-2-PLAN.md, "Feature switches"), and layer 4 runs each switched
-// screen both ways with bothWays from box.mts. Every switch is on by
-// default. Here, home reads its switch each way, marks it on <html> for
+// screen both ways with bothWays from box.mts. Every screen's switch is on
+// by default. Here, home reads its switch each way, marks it on <html> for
 // CSS, and follows `origaitv feature off` and `on` without a reload, on edge
 // and on stable alike.
 

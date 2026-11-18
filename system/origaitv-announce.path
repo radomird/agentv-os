@@ -1,0 +1,13 @@
+# What the TV announces on the home network, handed over by OrigaiTV's daemon
+# as it starts and when the announce switch changes: origaitv-announce.service
+# writes Avahi's file as root.
+
+[Unit]
+Description=OrigaiTV announcement hand-over
+
+[Path]
+PathExists=/var/lib/origaitv/daemon/announce-drop/announce.json
+Unit=origaitv-announce.service
+
+[Install]
+WantedBy=paths.target

@@ -3,7 +3,10 @@
 # They're disabled, not masked and not removed: someone who uses Omarchy's
 # desktop on the box gets one back with a plain systemctl enable --now, or
 # the ufw line below. Avahi stays, since the TV finds the home's servers
-# with it.
+# with it, and a paired phone finds the TV: what Avahi says about the TV is
+# in a file that bin/origaitv-announce-set writes while the announce switch
+# is on, with the box id the daemon made. First boot has no id to write
+# yet, so nothing here installs it.
 #
 # Safe to run again, and on a box where one of them isn't installed.
 # ORIGAITV_SYSTEMCTL and ORIGAITV_UFW are for the tests.

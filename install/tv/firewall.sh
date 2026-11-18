@@ -10,3 +10,12 @@ done
 for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16; do
   ufw allow proto udp from "$net" to any port 3006:3009 comment "origaitv servers on your network"
 done
+
+# Found on the home network: with the announce switch on, Avahi answers a
+# phone that asks where the TV is, over mDNS on 5353. ufw already lets in the
+# kind sent to everyone at once. This also lets in the kind a phone sends
+# straight to the TV to check a record it already has, from the home network
+# only. The phones' port answers on IPv4, so the record is on IPv4 too.
+for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16; do
+  ufw allow proto udp from "$net" to any port 5353 comment "origaitv found on your network"
+done
