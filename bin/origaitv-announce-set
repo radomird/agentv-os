@@ -34,23 +34,39 @@ ORIGAITV_PATH=${ORIGAITV_PATH:-/usr/share/origaitv}
 # The drop is moved aside before it's read, so one the daemon leaves while
 # this runs isn't lost: it's still there afterwards, and starts this again.
 # It has to be a plain file, and only its first kilobyte is read: the folder
-# is the daemon's, so nothing in it is taken on trust.
+# is the daemon's, so nothing in it is taken on trust. It's moved onto that
+# one path and never into a folder somebody put there in between.
+#
+# The shell can't hold a null byte and would drop it without a word, so what
+# was read wouldn't be what was handed over. Each one becomes U+0001 on the
+# way in, which no JSON has as itself, so such a drop is refused whole.
 taken="$DROP.taken"
 rm -rf -- "$taken"
-mv -f -- "$DROP" "$taken" 2>/dev/null || rm -rf -- "$DROP"
+mv -fT -- "$DROP" "$taken" 2>/dev/null || rm -rf -- "$DROP"
 said=""
 if [[ -f $taken && ! -L $taken ]]; then
-  said=$(head -c 1024 -- "$taken" 2>/dev/null || true)
+  said=$(head -c 1024 -- "$taken" 2>/dev/null | tr '\0' '\1' || true)
 fi
 rm -rf -- "$taken"
 
-# One of the drop's values, when it's there and of the right kind.
+# A drop is one JSON object and nothing else. Two values one after the
+# other, or one with something after it, isn't what the daemon writes, so
+# it's refused whole below: no value is ever pieced together from two.
+said=$(jq -cs 'if length == 1 and (.[0] | type) == "object" then .[0] else empty end' <<<"$said" 2>/dev/null || true)
+
+# One of the drop's values, when it's there and of the right kind, left in
+# $got. jq ends it with a dot that's taken off again, since the shell would
+# drop a newline at the value's end, and an id with one isn't an id.
 field() {
-  jq -r "if type == \"object\" and (.$1 | type) == \"$2\" then .$1 else empty end" <<<"$said" 2>/dev/null || true
+  got=$(jq -j "if (.$1 | type) == \"$2\" then (.$1 | tostring) + \".\" else empty end" <<<"$said" 2>/dev/null || true)
+  got=${got%.}
 }
-on=$(field on boolean)
-id=$(field id string)
-port=$(field port number)
+field on boolean
+on=$got
+field id string
+id=$got
+field port number
+port=$got
 
 quiet() {
   if [[ -e $FILE || -L $FILE ]]; then

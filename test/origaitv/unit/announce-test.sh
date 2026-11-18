@@ -222,7 +222,6 @@ left_out "a name with an escape" "$(with_name '"\u001b[31mEVIL"')"
 left_out "a name with a delete" "$(with_name '"evil\u007fevil"')"
 left_out "a name with a next line, U+0085" "$(with_name '"evil\u0085evil"')"
 left_out "a name with U+009F" "$(with_name '"evil\u009fevil"')"
-left_out "two names, one after the other" "$(with_name '"evil"') {\"name\":\"EVIL\"}"
 pass "T28.5 a name with a control character is left out: a newline, a return, a tab, a null, an escape, a delete, and those past U+007F"
 
 left_out "a name of 64 bytes" "$(with_name "\"$(printf 'a%.0s' $(seq 1 64))\"")"
@@ -318,6 +317,43 @@ for drop in \
   hand "$drop"
   refused "a drop of $drop"
 done
+# A drop is one JSON object. Several values in one drop are refused whole,
+# so a name, an id or a port is never pieced together from two of them, and
+# neither is a good drop with anything after it.
+for drop in \
+  "{\"on\":true,\"id\":\"$ID\",\"port\":3001} {\"name\":\"EVIL\"}" \
+  "{\"name\":\"EVIL\"} {\"on\":true,\"id\":\"$ID\",\"port\":3001}" \
+  "{\"on\":true} {\"id\":\"$ID\"} {\"port\":3001} {\"name\":\"EVIL\"}" \
+  "$(with_name '"evil"') {\"name\":\"EVIL\"}" \
+  "$GOOD $GOOD" \
+  "$GOOD"$'\n'"$GOOD" \
+  "$GOOD evil" \
+  "$GOOD \"evil\"" \
+  "$GOOD 1" \
+  "$GOOD null" \
+  "$GOOD {" \
+  "[$GOOD]" \
+  "\"evil\" $GOOD"; do
+  hand "$drop"
+  refused "a drop of several values, $drop,"
+done
+# An id with a newline at its end isn't an id, though a shell would drop it.
+hand "{\"on\":true,\"id\":\"$ID\\n\",\"port\":3001,\"name\":\"evil\"}"
+refused "an id with a newline at its end"
+# A null byte in the drop itself, in the name and in the id.
+printf '{"on":true,"id":"%s","port":3001,"name":"ev\0il"}' "$ID" >"$ORIGAITV_ANNOUNCE_DROP"
+refused "a drop with a null byte in its name"
+printf '{"on":true,"id":"%s\0","port":3001,"name":"evil"}' "$ID" >"$ORIGAITV_ANNOUNCE_DROP"
+refused "a drop with a null byte in its id"
+pass "T28.5 several JSON values in one drop, an id with a newline at its end and a drop with a null byte are refused whole"
+
+# A name written twice in one object is one name, the last, as jq reads it.
+hand "{\"on\":true,\"id\":\"$ID\",\"port\":3001,\"name\":\"evil\",\"name\":\"Den\"}"
+announce || fail "a name written twice is taken once" "$(cat "$SCRATCH/out")"
+[[ $(cat "$ORIGAITV_ANNOUNCE_FILE") == "$(file_with Den)" ]] || fail "T28.5 a name written twice in one object comes out once" "$(cat "$ORIGAITV_ANNOUNCE_FILE")"
+rm -f "$ORIGAITV_ANNOUNCE_FILE"
+pass "T28.5 a name written twice in one object comes out once"
+
 # A drop too long to be one: only its first kilobyte is read.
 hand "{\"on\":true,\"id\":\"$ID\",\"port\":3001,\"pad\":\"$(printf 'x%.0s' $(seq 1 2000))\"}"
 refused "a drop longer than a kilobyte"
