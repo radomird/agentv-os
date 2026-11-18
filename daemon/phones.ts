@@ -41,12 +41,14 @@ export interface PairRequest {
 }
 
 // What the box answers: the phone's id, the box's one-time public key, and
-// proof that the box came to the same key.
+// proof that the box came to the same key. When the box has an id (see
+// daemon/announce.ts) the answer has that too, and the proof covers it.
 export interface Paired {
   id: string;
   key: string;
   confirm: string;
   phone: Phone;
+  boxId?: string;
 }
 
 export interface PhonesOptions {
@@ -127,7 +129,12 @@ export class Phones {
   // of them. A wrong proof is a wrong try. The answer has the box's public
   // key, and both sides now hold the phone's key without it having crossed
   // the network.
-  pair(request: PairRequest | undefined): Paired | { error: string } {
+  //
+  // `boxId` is the box's id, when it has one. The answer then says it, and
+  // the proof covers it under a label of its own. So a proof made with an
+  // id never fits an answer without one, or one with another id, and a
+  // proof made without never fits an answer that has one.
+  pair(request: PairRequest | undefined, boxId?: string): Paired | { error: string } {
     const pending = this.pending;
     if (!pending || pending.until <= this.now()) return { error: "That code ran out. Pair again from your TV." };
     const wrong = () => {
@@ -152,7 +159,8 @@ export class Phones {
     const label = (typeof name === "string" && name.replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, NAME_MAX)) || "a phone";
     const phone: Phone = { id: `p-${this.random(4).toString("hex")}`, name: label, pairedAt: new Date(this.now()).toISOString() };
     this.write([...this.read(), { ...phone, key: key.toString("base64") }]);
-    return { id: phone.id, key: b64u(ours.public), confirm: b64u(hmac(key, INFO.pairBox, theirs, ours.public)), phone };
+    if (boxId === undefined) return { id: phone.id, key: b64u(ours.public), confirm: b64u(hmac(key, INFO.pairBox, theirs, ours.public)), phone };
+    return { id: phone.id, key: b64u(ours.public), confirm: b64u(hmac(key, INFO.pairBoxId, theirs, ours.public, boxId)), phone, boxId };
   }
 
   // A paired phone and its key, by its id, or null.

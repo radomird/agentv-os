@@ -71,7 +71,7 @@ A phone learns the id in two places, both only while the switch is on:
 - **When it pairs.** The answer to `POST /api/phone/pair` has `boxId`.
 - **In the state.** `GET /api/phone/state` has `boxId`.
 
-The one in the state is sealed. The one in the pairing answer isn't covered by `confirm`, so someone in the middle could change it. All that would do is make the phone look for a TV that isn't there, but there's no reason to allow it: keep the pairing's `boxId` to start with, and replace it with the state's the first time you read the state.
+The one in the state is sealed. The one in the pairing answer is covered by `confirm`, so someone in the middle can't change it: see [When the TV has a box id](#when-the-tv-has-a-box-id). Once `confirm` matches, keep the pairing's `boxId` as it is. The state's is the same id.
 
 A phone that paired before the switch went on has no id yet. It gets one from the state the next time it reaches the TV at the address it knows.
 
@@ -155,9 +155,41 @@ The phone then checks that the TV came to the same key:
 confirm = HMAC-SHA256(key: phoneKey, message: "origaitv pair box v1" || phonePublic || tvPublic)
 ```
 
-If `confirm` doesn't match, whoever answered didn't see the secret. Throw the key away and treat it as the TV not answering. If it matches, keep `id` and `phoneKey`. That's the whole pairing.
+If `confirm` doesn't match, whoever answered didn't see the secret. Throw the key away and treat it as the TV not answering. If it matches, keep `id` and `phoneKey`. That's the whole pairing, for a TV with no box id.
 
-With the `announce` switch on, the answer has one more field, `"boxId": "<32 hex digits>"`, after `phone`. See [The box id](#the-box-id) for what to do with it. The test vectors are a pairing with the switch off, so they don't have it.
+#### When the TV has a box id
+
+With the `announce` switch on, the TV has a box id (see [The box id](#the-box-id)). The answer then has one more field, after `phone`:
+
+```json
+"boxId": "<32 hex digits>"
+```
+
+And the TV makes `confirm` another way, so that it covers the id:
+
+```
+confirm = HMAC-SHA256(key: phoneKey, message: "origaitv pair box id v1" || phonePublic || tvPublic || boxId)
+```
+
+`boxId` here is the field's text as it came, which is 32 ASCII bytes. It isn't the 16 bytes the digits spell. Everything before it has a fixed length, and the two labels differ, so a message made one way is never a message made the other way.
+
+A phone goes by the answer it got:
+
+- **The answer has `boxId`.** Check `confirm` this way. If it matches, the id is the TV's, and you can keep it with `id` and `phoneKey`.
+- **The answer has no `boxId`.** Check `confirm` the first way. If it matches, you're paired with a TV that has no id.
+- **Check one way only,** the one that goes with the answer. Never try the other when the first doesn't match.
+
+That's what keeps someone between the phone and the TV from touching the id. They don't have `phoneKey`, so they can't make a `confirm` of either kind. All they can do is change the answer around the one the TV made:
+
+- **Change the id.** The TV's `confirm` covers the id it sent, and no other.
+- **Take the id out.** The phone then checks the first way, and the TV made its `confirm` the second way.
+- **Put an id in,** when the TV has none. That's the same the other way round.
+
+Each time `confirm` doesn't match, the pairing fails and the phone keeps no key. So a phone can't be talked into a wrong id, or into pairing with no id when the TV has one. That's also why a phone doesn't need to know beforehand whether the TV has an id: a TV with the switch off really has none, and its answer can't be faked from one that has.
+
+What it doesn't do is stop a pairing from failing. Someone in the middle could always do that, by dropping the answer. By then the TV has the phone on its list and the code is used. So pair again with a new code, and remove the phone that nobody holds the key for in Settings, under Phones. And like `confirm` itself, it only holds against someone who doesn't have `k`. Whoever has the code or the secret while it's good can pair as they like.
+
+A `boxId` with a `confirm` made the first way is refused like the rest. No tagged release ever answered that way.
 
 When it doesn't work, the answer is `403` with one of two sentences in `error`:
 
@@ -412,7 +444,7 @@ Unless a row says otherwise, a body is sealed JSON and an answer is sealed JSON 
 
 | Route | Body | Answer | Who |
 | --- | --- | --- | --- |
-| `POST /api/phone/pair` | Plain JSON `{key, name, proof}` | Plain JSON `{ok, id, key, confirm, phone}`. `403` when it didn't work. | Anyone on the network with the code |
+| `POST /api/phone/pair` | Plain JSON `{key, name, proof}` | Plain JSON `{ok, id, key, confirm, phone}`, and `boxId` with the `announce` switch on. `403` when it didn't work. | Anyone on the network with the code |
 | `POST /api/phone/hello` | Plain JSON `{id, nonce}` | Plain JSON `{ok, session, nonce, proof}`. `401` with `pair`. | A paired phone |
 | `POST /api/phone/pin` | `{pin}` | `{ok, grant, until}`. `403` with `error` and sometimes `wait`. | Anyone |
 
@@ -1238,7 +1270,8 @@ The picture is one the TV already has for the title: the one the app itself give
 
 `test/origaitv/fixtures/phone-channel/vectors.json` has one run of everything above with fixed values:
 
-- `pairings`: one by the QR code's secret and one by a typed code. Each has the TV's code and secret, both X25519 pairs, `k`, the request and the answer as they go on the wire, the shared X25519 value, and `phoneKey`. The TV's part is under `tv`, with the QR code's secret as `tv.secret`.
+- `pairings`: one by the QR code's secret, one by a typed code, and one by the secret with a TV that has a box id. Each has the TV's code and secret, both X25519 pairs, `k`, the request and the answer as they go on the wire, the shared X25519 value, and `phoneKey`. The TV's part is under `tv`, with the QR code's secret as `tv.secret`. The third has the id as `tv.boxId`, and its answer has the `boxId` and the `confirm` that covers it. The first two are a TV with no id.
+- `pairingAnswersToRefuse`: answers to a pairing that a phone has to refuse, and keep no key from. `pairing` says which of `pairings` it answers, counting from 0. The id changed on the way, the id taken out, the id with a `confirm` made the way of a pairing without one, and an id put into the answer of a TV that has none.
 - `session.hello`: the request, both nonces and the answer. `session.derived` has `sign`, `up` and `down`.
 - `session.requests`: six requests the TV takes, counters 1 to 6. A sealed `POST`, a `GET` with a query, the PIN, a request with a grant, an upload with an address the wire escapes, and a `403` that comes back sealed. Each has the nonce, the extra data, the digest, the signed text, the headers and the body, and the answer's nonce, extra data and sealed bytes.
 - `session.refused`: requests the TV refuses, with the plain `401` each gets. A replayed counter, a body changed on the way, JSON that isn't sealed, a counter of 0. One of them has a good signature over a body with a bad tag, which gets the sealed `400`.
@@ -1248,7 +1281,7 @@ The picture is one the TV already has for the title: the one the app itself give
 
 The file says which fields are plain text. Everything else is base64url.
 
-To check a client against it, feed it the file's "random" values in place of its own: the phone's X25519 private key, the hello's nonce and each request's nonce. It should produce the file's requests byte for byte, and open the file's answers.
+To check a client against it, feed it the file's "random" values in place of its own: the phone's X25519 private key, the hello's nonce and each request's nonce. It should produce the file's requests byte for byte, and open the file's answers. For each of `pairingAnswersToRefuse`, give it that pairing's private key and the answer: it should refuse, and be no more paired than it was.
 
 The file is made by `make-vectors.mts` next to it, which uses only Node's crypto and none of the daemon's channel code:
 
