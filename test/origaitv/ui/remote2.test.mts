@@ -94,10 +94,10 @@ after(async () => {
   assert.deepEqual(errors, []);
 });
 
-async function until(check: () => Promise<boolean> | boolean, ms = 3000): Promise<void> {
+async function until(check: () => Promise<boolean> | boolean, ms = 3000, what = "it"): Promise<void> {
   const end = Date.now() + ms;
   while (!(await check())) {
-    if (Date.now() > end) throw new Error("it didn't happen in time");
+    if (Date.now() > end) throw new Error(`${what} didn't happen in ${ms} ms`);
     await new Promise((done) => setTimeout(done, 20));
   }
 }
@@ -158,7 +158,10 @@ test("T8.3 the keyboard comes up by itself for a service page's field, and each 
   assert.equal(await hand.locator(".r2-where").textContent(), "Tube · search");
   assert.equal(await hand.locator(".r2-headline").textContent(), "search");
   assert.equal(await hand.locator("#tv-text").getAttribute("inputmode"), "search");
-  assert.equal(await hand.evaluate(() => document.activeElement?.id), "tv-text", "the field has the focus, so the phone's keyboard opens");
+  // The focus is what opens the phone's keyboard. The page gives it to the
+  // field a frame after it draws it, so a read as soon as the field is
+  // there can come first.
+  await until(() => hand.evaluate(() => document.activeElement?.id === "tv-text"), 3000, "the field getting the focus");
   // The field is the same one all through, even as the TV changes under it.
   await hand.evaluate(() => ((document.getElementById("tv-text") as HTMLInputElement & { mark?: boolean }).mark = true));
   await hand.locator("#tv-text").pressSequentially("sintél", { delay: 40 });

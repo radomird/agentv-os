@@ -5,10 +5,14 @@
 // code: the stream it takes from the daemon (daemon/remote.ts) and the
 // search for what plays (daemon/remote-play.ts). It runs with the playing2
 // switch off and on: off, the routes and the state are as they were.
+//
+// Track 28's T28.1 is here too: how old the reading of the place is, on the
+// same page, and Music's jump and what its queue offers, on Music's own
+// player (daemon/music.ts) with a stand-in for mpv on its socket.
 
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -16,10 +20,13 @@ import { join, resolve } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { after, before, test } from "node:test";
 import { CdpPipe } from "../../../daemon/cdp.ts";
+import { MusicApp, MusicLibrary, MusicPlayer, type Track } from "../../../daemon/music.ts";
 import { RemoteInput } from "../../../daemon/remote.ts";
 import { PhonePlayback, type PlaybackFront } from "../../../daemon/remote-play.ts";
 import type { Daemon } from "../../../daemon/server.ts";
+import type { Storage } from "../../../daemon/storage.ts";
 import { bothWays, startBox } from "./box.mts";
+import { standInMpv } from "../unit/mpv.mts";
 import { pairPhone, type TestPhone } from "../unit/phone-client.mts";
 
 const PAGES = resolve(import.meta.dirname, "../fixtures/remote");
@@ -85,10 +92,12 @@ async function box(options: Parameters<typeof startBox>[2]) {
     press,
     phone,
     state: async () => (await phone.json("GET", "/api/phone/state")).nowPlaying as Record<string, any> | null,
+    // The whole state, with its count.
+    whole: () => phone.json("GET", "/api/phone/state"),
     // What the screen daemon tells the daemon when what's in front changes.
     tv: async (now: PlaybackFront, playing: boolean) => {
       front = now;
-      await fetch(`${url}/api/tv/context`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ front: now ? "app" : "home", playing }) });
+      await fetch(`${url}/api/tv/context`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ front: now && now.kind !== "home" ? "app" : "home", playing }) });
     },
     close: async () => {
       input.stop();
@@ -129,8 +138,8 @@ bothWays("playing2", "T27.1 play, pause and a jump are requests of their own, an
     await until(async () => (await tv.state()) !== null);
     const first = (await tv.state())!;
     assert.deepEqual(
-      { ...first, position: 0, at: "" },
-      { title: "Sintel", app: "Tube", left: 3, position: 0, duration: 180, at: "", playing: true, next: false, previous: false, seek: true, picture: false },
+      { ...first, position: 0, at: "", age: 0 },
+      { title: "Sintel", app: "Tube", left: 3, position: 0, duration: 180, at: "", age: 0, playing: true, next: false, previous: false, seek: true, picture: false },
       "the page's own name for it, its app, seconds, and no next or previous on a page that has none",
     );
     assert.ok(first.position >= 0 && first.position < 10, `it's near the start: ${first.position}`);
@@ -228,5 +237,179 @@ test("T27.1 with an app that steers its own player, next and previous are offere
   } finally {
     await tv.close();
     await cdp.close(page.target);
+  }
+});
+
+const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
+
+test("T28.1 the state and every playback answer say how old the reading of the place is, and a phone's bar is right by it whatever its clock says", async () => {
+  const page = await playing();
+  const tv = await box({ features: { playing2: true } });
+  try {
+    await tv.tv({ kind: "page", id: "origaitv.tube", evaluate: page.evaluate }, true);
+    await until(async () => (await tv.state()) !== null);
+
+    // Two reads of the state with nothing new read between them: the same
+    // place and the same count, and an age that grew by the time between.
+    let one: Record<string, any>;
+    let two: Record<string, any>;
+    let between = 0;
+    for (let tries = 0; ; tries++) {
+      one = await tv.whole();
+      const got = performance.now();
+      await sleep(600);
+      two = await tv.whole();
+      between = performance.now() - got;
+      if (one.version === two.version && one.nowPlaying?.at === two.nowPlaying?.at) break;
+      assert.ok(tries < 5, "the TV read the place again every time");
+    }
+    const [first, second] = [one.nowPlaying, two.nowPlaying];
+    assert.ok(Number.isInteger(first.age) && first.age >= 0, `the age is there: ${first.age}`);
+    assert.deepEqual([second.position, second.playing], [first.position, true], "no jump, and nothing new read");
+    assert.ok(Math.abs(second.age - first.age - between) < 250, `it grew by the ${Math.round(between)} ms between: ${first.age} to ${second.age}`);
+    // Here the TV and the test share a clock, so the age is the time since at.
+    assert.ok(Math.abs(Date.parse(second.at) + second.age - Date.now()) < 500, "it's the time since the place was read");
+
+    // A phone whose clock is an hour ahead of the TV's. It takes its own
+    // time as the answer arrives, less the age, as when the place was read.
+    const clock = () => Date.now() + 3_600_000;
+    const read = clock() - second.age;
+    await sleep(400);
+    const bar = second.position + (clock() - read) / 1000;
+    const video = await page.evaluate(`video.currentTime`);
+    assert.ok(Math.abs(bar - video) < 1, `its bar is at ${bar} with the video at ${video}`);
+    const byTheTvsClock = second.position + (clock() - Date.parse(second.at)) / 1000;
+    assert.ok(byTheTvsClock - video > 3000, "which the TV's own time for the reading would put an hour out");
+
+    // A playback answer's place was read just before it left, and says so.
+    const jumped = await tv.press({ action: "seek", position: 120 });
+    const told = jumped.body.nowPlaying;
+    assert.ok(Number.isInteger(told.age) && told.age >= 0 && told.age < 2000, `the answer's reading is ${told.age} ms old`);
+    assert.ok(Math.abs(told.position + told.age / 1000 - (await page.evaluate(`video.currentTime`))) < 1);
+
+    // Paused, the reading still gets older, and the place stays.
+    const paused = (await tv.press({ action: "pause" })).body.nowPlaying;
+    await sleep(300);
+    const later = (await tv.state())!;
+    assert.deepEqual([later.playing, later.position, later.at], [false, paused.position, paused.at]);
+    assert.ok(later.age >= paused.age + 250, `${paused.age} then ${later.age}`);
+  } finally {
+    await tv.close();
+    await cdp.close(page.target);
+  }
+});
+
+// Music as the TV session runs it: its own app and player, with mpv stood
+// in for on its socket, and an album of three tracks of three minutes each.
+function music(name: string) {
+  const album: Track[] = [1, 2, 3].map((n) => ({
+    id: `t${n}`,
+    path: `/music/night-shift/${n}.flac`,
+    title: `Track ${n}`,
+    artist: "Pixel Band",
+    album: "Night Shift",
+    albumArtist: "Pixel Band",
+    albumId: "night",
+    year: "2025",
+    number: n,
+    disc: 1,
+    duration: 180,
+    source: "folder:/music",
+    size: 1,
+    mtime: 1,
+  }));
+  const library = join(dir, `music-${name}`);
+  mkdirSync(library, { recursive: true });
+  writeFileSync(
+    join(library, "library.json"),
+    JSON.stringify({ scannedAt: "", tracks: Object.fromEntries(album.map((track) => [track.id, track])), albums: { night: { id: "night", title: "Night Shift", artist: "Pixel Band", year: "2025", cover: null, tracks: album.map((track) => track.id), source: "folder:/music" } }, playlists: {} }),
+  );
+  const socket = join(dir, `mpv-${name}.sock`);
+  const mpv = standInMpv(socket, { duration: 180, seekMs: 150 });
+  const player = new MusicPlayer({ socket, start: () => null });
+  const app = new MusicApp({ storage: {} as Storage, library: new MusicLibrary({ dir: library }), player });
+  return {
+    mpv,
+    handle: (request: Record<string, unknown>) => app.handle(request),
+    close: () => {
+      app.stop();
+      mpv.close();
+    },
+  };
+}
+
+bothWays("playing2", "T28.1 Music takes a jump that lands within a second, and offers next and previous only where its queue has them", async (on, options) => {
+  const tracks = music(on ? "on" : "off");
+  const home = await cdp.open("about:blank");
+  const tv = await box({ ...options, builtins: true });
+  const front: PlaybackFront = { kind: "home", evaluate: (expression) => cdp.evaluateIn(home, expression), music: tracks.handle };
+  const jumps = () => tracks.mpv.commands.filter(([name]) => name === "seek");
+  try {
+    assert.equal(((await tracks.handle({ op: "play", kind: "album", key: "night" })) as { ok: boolean }).ok, true);
+    await tv.tv(front, true);
+    if (!on) {
+      // As it was: no jump and no previous on the route, and nothing asked
+      // of Music's player for either.
+      for (const action of ["seek", "previous", "play", "pause"]) {
+        assert.deepEqual(await tv.press({ action, position: 60 }), { status: 400, body: { ok: false, error: 'the action is "toggle" or "next"' } }, action);
+      }
+      assert.deepEqual(jumps(), []);
+      assert.deepEqual(await tv.press({ action: "next" }), { status: 200, body: { ok: true, by: "app" } });
+      assert.equal(tracks.mpv.index(), 1);
+      assert.equal(await tv.state(), null);
+      return;
+    }
+
+    // The first of three: one after it, none before, and it can jump.
+    await until(async () => (await tv.state()) !== null);
+    const first = (await tv.state())!;
+    assert.deepEqual(
+      [first.title, first.app, first.duration, first.playing, first.previous, first.next, first.seek],
+      ["Track 1", "Music", 180, true, false, true, true],
+    );
+    assert.ok(Number.isInteger(first.age) && first.age >= 0, `Music's reading has its age too: ${first.age}`);
+
+    // A jump lands within a second, and is answered with where the track
+    // then is.
+    const jumped = await tv.press({ action: "seek", position: 60 });
+    assert.deepEqual([jumped.status, jumped.body.ok, jumped.body.by], [200, true, "app"]);
+    assert.ok(Math.abs(jumped.body.nowPlaying.position - 60) < 1, `the answer says ${jumped.body.nowPlaying.position}`);
+    assert.ok(Math.abs(tracks.mpv.place()! - 60) < 1.5, `and the player is at ${tracks.mpv.place()}`);
+    assert.deepEqual(jumps(), [["seek", 60, "absolute+exact"]]);
+    const then = (await tv.state())!;
+    assert.ok(Math.abs(then.position - 60) < 1, `the state says ${then.position}`);
+    assert.ok(Math.abs(then.position + then.age / 1000 - tracks.mpv.place()!) < 1, "and a bar drawn by the age is where the player is");
+    // Paused, a jump stays paused.
+    await tv.press({ action: "pause" });
+    const back = (await tv.press({ action: "seek", position: 30 })).body.nowPlaying;
+    assert.deepEqual([back.position, back.playing], [30, false]);
+    await tv.press({ action: "play" });
+
+    // Next and previous, each only where the queue has one to go to.
+    const second = (await tv.press({ action: "next" })).body;
+    assert.deepEqual([second.ok, second.by, second.nowPlaying.title, second.nowPlaying.previous, second.nowPlaying.next], [true, "app", "Track 2", true, true]);
+    const third = (await tv.press({ action: "next" })).body.nowPlaying;
+    assert.deepEqual([third.title, third.previous, third.next], ["Track 3", true, false]);
+    const again = (await tv.press({ action: "previous" })).body.nowPlaying;
+    assert.deepEqual([again.title, again.previous, again.next], ["Track 2", true, true]);
+    await until(async () => (await tv.state())?.title === "Track 2");
+
+    // An album started at its last track, as its page on the TV does: that
+    // track is the whole queue, so there's nothing either way. A play
+    // while it plays does nothing, and is answered with what's there now.
+    await tracks.handle({ op: "play", kind: "album", key: "night", from: 2 });
+    const alone = (await tv.press({ action: "play" })).body.nowPlaying;
+    assert.deepEqual([alone.title, alone.previous, alone.next, alone.seek], ["Track 3", false, false, true]);
+
+    // A jump past the end ends the track. After the last one, nothing is
+    // playing.
+    const over = await tv.press({ action: "seek", position: 5000 });
+    assert.deepEqual(over.body, { ok: true, by: "app", nowPlaying: null });
+    assert.deepEqual(jumps().at(-1), ["seek", 180, "absolute+exact"]);
+    await until(async () => (await tv.state()) === null);
+  } finally {
+    await tv.close();
+    tracks.close();
+    await cdp.close(home);
   }
 });

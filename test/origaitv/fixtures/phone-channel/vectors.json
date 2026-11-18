@@ -1,9 +1,10 @@
 {
   "about": "Test vectors for the channel between a paired phone and the TV. docs/phone-api.md says what each value is. Made by make-vectors.mts, next to this file. None of these is a real key.",
-  "encoding": "Bytes are base64url with no padding. A field named text, signed, extra, digest, code or typed is plain text, and so is every header. A WebSocket's own key and accept headers are base64 as that protocol has them.",
+  "encoding": "Bytes are base64url with no padding. A field named text, signed, extra, digest, code, typed or boxId is plain text, and so is every header. A WebSocket's own key and accept headers are base64 as that protocol has them.",
   "labels": {
     "pair": "origaitv pair v1",
     "pairBox": "origaitv pair box v1",
+    "pairBoxId": "origaitv pair box id v1",
     "key": "origaitv phone key v1",
     "helloBox": "origaitv hello box v1",
     "session": "origaitv session v1"
@@ -77,6 +78,78 @@
       "x25519Shared": "G8IPa8pcc8DM-OUJD5D8KK6lpLwPrIyXYioXS9gO_i4",
       "phoneKey": "iWhk0jwTB2EA5hqE-CcbHSE74jNCt7MPWW8rqtSKR0U",
       "kept": "{\"id\":\"p-4238e226\",\"key\":\"iWhk0jwTB2EA5hqE-CcbHSE74jNCt7MPWW8rqtSKR0U\"}"
+    },
+    {
+      "name": "by the QR code's secret, with a TV that has an id",
+      "by": "secret",
+      "tv": {
+        "code": "XZNVPV",
+        "secret": "VlcpuhQb8NSU2LJYOrW_cA",
+        "qrAddress": "http://192.168.1.20:3001/#pair=VlcpuhQb8NSU2LJYOrW_cA",
+        "x25519Private": "smSf-OCRj5s41lNGJ0ujZAXITW59ycaNczZ-37PWdsY",
+        "x25519Public": "fXa7hY2OMZQ3nNX8u8kRxPnDDAxkpWsJhNef7rLT2wQ",
+        "phoneId": "p-29ff828b",
+        "now": "2026-01-01T00:00:00.000Z",
+        "boxId": "211b73cbe914c2ab222482d8c99dc645"
+      },
+      "phone": {
+        "name": "Kitchen phone",
+        "x25519Private": "BFzYT4qrXFDB19iPfDdUSP1vNXytEvCrZq714SIezrI",
+        "x25519Public": "WJN0mXp_wyVS9s3qN_sETyNCUzOTvKURlP9fJEyjTS4"
+      },
+      "k": "VlcpuhQb8NSU2LJYOrW_cA",
+      "request": {
+        "method": "POST",
+        "address": "/api/phone/pair",
+        "type": "application/json",
+        "text": "{\"key\":\"WJN0mXp_wyVS9s3qN_sETyNCUzOTvKURlP9fJEyjTS4\",\"name\":\"Kitchen phone\",\"proof\":\"XwCf-TfzEQoi34dHKkyTT6oyIiwIsovl_zaUEOAAxuk\"}"
+      },
+      "answer": {
+        "status": 200,
+        "type": "application/json",
+        "text": "{\"ok\":true,\"id\":\"p-29ff828b\",\"key\":\"fXa7hY2OMZQ3nNX8u8kRxPnDDAxkpWsJhNef7rLT2wQ\",\"confirm\":\"mtb8uuqaD2DbSvUc1wRhrxffqD7LMPXnPqBs0e9UDEk\",\"phone\":{\"id\":\"p-29ff828b\",\"name\":\"Kitchen phone\",\"pairedAt\":\"2026-01-01T00:00:00.000Z\"},\"boxId\":\"211b73cbe914c2ab222482d8c99dc645\"}"
+      },
+      "x25519Shared": "JpavCkd5IQTOkleu91v09yH1aR1fh8y7hhKD-YvUui8",
+      "phoneKey": "0-kuix19dfEQn8hB8_HBb9NgGOSAShsi9kPA3FelrZE",
+      "kept": "{\"id\":\"p-29ff828b\",\"key\":\"0-kuix19dfEQn8hB8_HBb9NgGOSAShsi9kPA3FelrZE\"}"
+    }
+  ],
+  "pairingAnswersToRefuse": [
+    {
+      "name": "the id changed on the way",
+      "pairing": 2,
+      "answer": {
+        "status": 200,
+        "type": "application/json",
+        "text": "{\"ok\":true,\"id\":\"p-29ff828b\",\"key\":\"fXa7hY2OMZQ3nNX8u8kRxPnDDAxkpWsJhNef7rLT2wQ\",\"confirm\":\"mtb8uuqaD2DbSvUc1wRhrxffqD7LMPXnPqBs0e9UDEk\",\"phone\":{\"id\":\"p-29ff828b\",\"name\":\"Kitchen phone\",\"pairedAt\":\"2026-01-01T00:00:00.000Z\"},\"boxId\":\"40ec4fdd74c8d881b970c553abb53bcb\"}"
+      }
+    },
+    {
+      "name": "the id taken out on the way, and the proof the TV made",
+      "pairing": 2,
+      "answer": {
+        "status": 200,
+        "type": "application/json",
+        "text": "{\"ok\":true,\"id\":\"p-29ff828b\",\"key\":\"fXa7hY2OMZQ3nNX8u8kRxPnDDAxkpWsJhNef7rLT2wQ\",\"confirm\":\"mtb8uuqaD2DbSvUc1wRhrxffqD7LMPXnPqBs0e9UDEk\",\"phone\":{\"id\":\"p-29ff828b\",\"name\":\"Kitchen phone\",\"pairedAt\":\"2026-01-01T00:00:00.000Z\"}}"
+      }
+    },
+    {
+      "name": "the id, and the proof of a pairing without one",
+      "pairing": 2,
+      "answer": {
+        "status": 200,
+        "type": "application/json",
+        "text": "{\"ok\":true,\"id\":\"p-29ff828b\",\"key\":\"fXa7hY2OMZQ3nNX8u8kRxPnDDAxkpWsJhNef7rLT2wQ\",\"confirm\":\"6GbLIt5fW5Y7rXJb0xQ_2StG05aEBo3d97-ZiBqD8c8\",\"phone\":{\"id\":\"p-29ff828b\",\"name\":\"Kitchen phone\",\"pairedAt\":\"2026-01-01T00:00:00.000Z\"},\"boxId\":\"211b73cbe914c2ab222482d8c99dc645\"}"
+      }
+    },
+    {
+      "name": "an id put into the answer of a TV that has none",
+      "pairing": 0,
+      "answer": {
+        "status": 200,
+        "type": "application/json",
+        "text": "{\"ok\":true,\"id\":\"p-6bc96675\",\"key\":\"UJ8O8f8M6V1Mewf_aYL-TJcbdeNjIV6GNmcErzY8Kjs\",\"confirm\":\"UJ5hZrxVPkc2Er3RJWTq2dXKVDEO5TEtRFa8Nk3nfro\",\"phone\":{\"id\":\"p-6bc96675\",\"name\":\"Ana's iPhone\",\"pairedAt\":\"2026-01-01T00:00:00.000Z\"},\"boxId\":\"211b73cbe914c2ab222482d8c99dc645\"}"
+      }
     }
   ],
   "pairingRefused": {

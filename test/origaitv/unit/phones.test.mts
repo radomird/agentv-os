@@ -10,8 +10,10 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writ
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHmac, randomBytes } from "node:crypto";
+import { createServer } from "node:http";
 import { after, before, test } from "node:test";
 import { x25519Pair } from "../../../daemon/phone-channel.ts";
+import { pair } from "../../../daemon/phone-client.ts";
 import { CODE_MS, Phones } from "../../../daemon/phones.ts";
 import { Daemon } from "../../../daemon/server.ts";
 import { pairPhone, type TestPhone } from "./phone-client.mts";
@@ -122,6 +124,62 @@ test("F1 a phone stored without a key (paired before phones had keys) is gone fr
   writeFileSync(path, JSON.stringify({ phones: [old, ...kept, { ...old, id: "p-0badc0df", key: "c2hvcnQ=" }] }));
   assert.deepEqual(phones.list().map((phone) => phone.name), ["new phone"]);
   assert.deepEqual(JSON.parse(readFileSync(path, "utf8")).phones, kept);
+});
+
+// --- The TV's id in the pairing proof ---------------------------------------------
+
+test("T28.4 the box's own client: a pairing whose id was changed, taken out or put in on the way gives no key, and one left alone pairs, with an id or without", async () => {
+  const phones = new Phones({ path: join(dir, `phones-${++n}.json`) });
+  const ID = "ab".repeat(16);
+  type Answer = Record<string, any>;
+  // The TV on the wire: it answers each pairing with `id` as its own, or
+  // with none, and `onTheWay` is what somebody between the two does to the
+  // answer. `asked` is what the phone sent.
+  let id: string | undefined;
+  let onTheWay = (answer: Answer, _asked: Answer): Answer => answer;
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => {
+      const asked = JSON.parse(Buffer.concat(chunks).toString());
+      const paired = phones.pair(asked, id);
+      response.writeHead("error" in paired ? 403 : 200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify("error" in paired ? { ok: false, ...paired } : onTheWay({ ok: true, ...paired }, asked)));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const base = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
+  const pairing = (tvId: string | undefined, change: typeof onTheWay = (answer) => answer) => {
+    id = tvId;
+    onTheWay = change;
+    return pair(base, { code: phones.code().code }, "a check");
+  };
+  // The proof of a pairing with no id, which takes the phone's key to make:
+  // a TV from before the proof covered the id answers this way.
+  const oldProof = (answer: Answer, asked: Answer) =>
+    b64u(createHmac("sha256", phones.key(answer.id)!.key).update("origaitv pair box v1").update(Buffer.from(asked.key, "base64url")).update(Buffer.from(answer.key, "base64url")).digest());
+  const refused = /the box didn't come to the same key/;
+  try {
+    // Left alone, each kind pairs, and the phone holds the key the TV kept.
+    for (const tvId of [ID, undefined]) {
+      const kept = await pairing(tvId);
+      assert.equal(kept.key, phones.key(kept.id)?.key.toString("base64"), tvId ? "with an id" : "with no id");
+    }
+    await assert.rejects(pairing(ID, (answer) => ({ ...answer, boxId: "cd".repeat(16) })), refused, "the id changed on the way");
+    await assert.rejects(pairing(ID, ({ boxId: _taken, ...answer }) => answer), refused, "the id taken out, with the proof the TV made");
+    await assert.rejects(pairing(ID, (answer, asked) => ({ ...answer, confirm: oldProof(answer, asked) })), refused, "the id, with the proof of a pairing without one");
+    await assert.rejects(pairing(undefined, (answer) => ({ ...answer, boxId: ID })), refused, "an id put into the answer of a TV that has none");
+    await assert.rejects(pairing(undefined, (answer) => ({ ...answer, boxId: null })), refused, "an id that isn't text, put in the same way");
+    // The two proofs are never the same bytes, so neither stands in for the other.
+    await pairing(ID, (answer, asked) => {
+      assert.notEqual(answer.confirm, oldProof(answer, asked));
+      return answer;
+    });
+  } finally {
+    server.close();
+    server.closeAllConnections();
+  }
 });
 
 // --- The daemon -------------------------------------------------------------------
