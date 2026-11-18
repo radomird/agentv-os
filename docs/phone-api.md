@@ -45,7 +45,7 @@ The TV publishes one DNS-SD service over mDNS, through Avahi:
 | | |
 | --- | --- |
 | Type | `_origaitv._tcp`, in `local` |
-| Name | The TV's name. Today that's the machine's own name, which the installer sets to `origaitv` on every TV. When two on one network have the same name, Avahi calls the second `origaitv #2`. |
+| Name | The TV's name: `OrigaiTV` until somebody names it, then whatever they typed, such as `Living room`. See [The TV's name](#the-tvs-name). |
 | Port | The phones' port, 3001 |
 | TXT `id` | The box id: 32 lower-case hex digits |
 | TXT `version` | The OrigaiTV version that's installed, such as `1.0.0` or `1.0.0.r12.gabc1234` |
@@ -60,6 +60,23 @@ avahi-browse --resolve --terminate _origaitv._tcp
 ```
 
 Anyone on the network can read the record, paired or not. So it has nothing in it that I'd mind a guest on the Wi-Fi reading: a name, a version and a random id. It also proves nothing. Anyone on the network can publish a record with your TV's id in it. What proves a TV is yours is the hello: only the TV you paired with can answer it with the right `proof`. So find the address by the id, say hello there, and if the proof is wrong, it isn't your TV.
+
+### The TV's name
+
+A TV has a name of its own, apart from the machine's name. The machine stays `origaitv` on every TV, so `origaitv.local` and SSH don't move when someone names their TV.
+
+- It's `OrigaiTV` until somebody names it.
+- It's 1 to 30 characters, and at most 63 bytes as UTF-8, which is as long as a name on the network can be. Spaces, accents and emoji are fine.
+- It's the record's name, as it was typed. Nothing in it is filled in, so a name with `%h` in it stays `%h`.
+- `GET /api/phone/state` has it as `boxName`, sealed, while the switch is on. Show that one once you're paired. The record's name is for a list of TVs nobody has paired with yet, and anyone on the network can publish one.
+- Nothing stops two TVs having the same name. Both say it in their state, and Avahi announces the second as `Living room #2`. Tell TVs apart by the box id, never by the name.
+- Anyone on the network reads it, paired or not. If your client suggests names, suggest rooms, not people.
+
+To change it, an adult sends `POST /api/phone/name` with `{"name": "Living room"}`, and the PIN grant once a PIN is set. The TV trims what it's sent, drops control characters, and cuts a name that's too long between two characters. The answer is `{"ok": true, "name": "Living room"}`, with the name as the TV kept it, so show that and not what was typed. When nothing's left of it the answer is `400` with `Names can be up to 30 characters`. On a child's profile it's `403` with `Only adults can change the name`.
+
+Every phone's state then has a new `version` and the new `boxName`, and the record follows. A phone finds its TV by the id, so nobody pairs again. With the switch off the route is a sealed `404`, like any address that isn't there.
+
+On the TV it's in Settings, under System, as Name.
 
 ### The box id
 
@@ -369,6 +386,7 @@ Unless a row says otherwise, a body is sealed JSON and an answer is sealed JSON 
 | `GET /api/phone/state?since=<version>` | None | The state. See [The long poll](#the-long-poll). | Anyone |
 | `GET /api/phone/features` | None | Every feature switch and whether it's on, such as `{"remote2":true,"askbuilds":true}`. There's no `ok` field. | Anyone |
 | `GET /api/phone/box` | None | `{ok, line, box}`: what the box check found, as a line and in full. With the `announce` switch on, also `wake`. | Anyone |
+| `POST /api/phone/name` | `{name}` | `{ok, name}`: the TV's new name, as it was kept. Only there with the `announce` switch on. See [The TV's name](#the-tvs-name). | Adult + grant |
 
 `wake` is `{"mac": "94:c6:91:1a:2b:3c", "broadcast": "192.168.1.255"}`: the hardware address of the TV's wired port, in lower case, and the broadcast address of the network that port is on. It's `null` when no wired port is on a network. [Waking the TV](#waking-the-tv) has what to send. The TV's own pages get the same `box` from `GET /api/box` on the TV's port, without `wake`.
 
@@ -518,6 +536,7 @@ A few things to know:
 | `version` | The count described above. |
 | `phone` | This phone, as the TV knows it: `{id, name, pairedAt}`. |
 | `boxId` | The box id, as the TV announces it: 32 hex digits. Only there while the `announce` switch is on. See [The box id](#the-box-id). |
+| `boxName` | The TV's name, such as `"Living room"`, or `"OrigaiTV"` until somebody names it. Only there while the `announce` switch is on. See [The TV's name](#the-tvs-name). |
 | `features` | The two switches the remote draws by: `{remote2, askbuilds}`. |
 | `ask` | What the Ask box is waiting on for an adult's OK, or `null`. Only there while `askbuilds` is on, and always `null` on a child's profile. `daemon/routes/ask.ts` has its shape. |
 | `look` | The id of the look the TV is in, such as `"terminal"`, or `null` while the looks switch is off. |
