@@ -71,7 +71,7 @@ A phone learns the id in two places, both only while the switch is on:
 - **When it pairs.** The answer to `POST /api/phone/pair` has `boxId`.
 - **In the state.** `GET /api/phone/state` has `boxId`.
 
-The one in the state is sealed. The one in the pairing answer isn't covered by `confirm`, so someone in the middle could change it. All that would do is make the phone look for a TV that isn't there, but there's no reason to allow it: keep the pairing's `boxId` to start with, and replace it with the state's the first time you read the state.
+The one in the state is sealed. The one in the pairing answer is covered by `confirm`, so someone in the middle can't change it: see [When the TV has a box id](#when-the-tv-has-a-box-id). Once `confirm` matches, keep the pairing's `boxId` as it is. The state's is the same id.
 
 A phone that paired before the switch went on has no id yet. It gets one from the state the next time it reaches the TV at the address it knows.
 
@@ -155,9 +155,41 @@ The phone then checks that the TV came to the same key:
 confirm = HMAC-SHA256(key: phoneKey, message: "origaitv pair box v1" || phonePublic || tvPublic)
 ```
 
-If `confirm` doesn't match, whoever answered didn't see the secret. Throw the key away and treat it as the TV not answering. If it matches, keep `id` and `phoneKey`. That's the whole pairing.
+If `confirm` doesn't match, whoever answered didn't see the secret. Throw the key away and treat it as the TV not answering. If it matches, keep `id` and `phoneKey`. That's the whole pairing, for a TV with no box id.
 
-With the `announce` switch on, the answer has one more field, `"boxId": "<32 hex digits>"`, after `phone`. See [The box id](#the-box-id) for what to do with it. The test vectors are a pairing with the switch off, so they don't have it.
+#### When the TV has a box id
+
+With the `announce` switch on, the TV has a box id (see [The box id](#the-box-id)). The answer then has one more field, after `phone`:
+
+```json
+"boxId": "<32 hex digits>"
+```
+
+And the TV makes `confirm` another way, so that it covers the id:
+
+```
+confirm = HMAC-SHA256(key: phoneKey, message: "origaitv pair box id v1" || phonePublic || tvPublic || boxId)
+```
+
+`boxId` here is the field's text as it came, which is 32 ASCII bytes. It isn't the 16 bytes the digits spell. Everything before it has a fixed length, and the two labels differ, so a message made one way is never a message made the other way.
+
+A phone goes by the answer it got:
+
+- **The answer has `boxId`.** Check `confirm` this way. If it matches, the id is the TV's, and you can keep it with `id` and `phoneKey`.
+- **The answer has no `boxId`.** Check `confirm` the first way. If it matches, you're paired with a TV that has no id.
+- **Check one way only,** the one that goes with the answer. Never try the other when the first doesn't match.
+
+That's what keeps someone between the phone and the TV from touching the id. They don't have `phoneKey`, so they can't make a `confirm` of either kind. All they can do is change the answer around the one the TV made:
+
+- **Change the id.** The TV's `confirm` covers the id it sent, and no other.
+- **Take the id out.** The phone then checks the first way, and the TV made its `confirm` the second way.
+- **Put an id in,** when the TV has none. That's the same the other way round.
+
+Each time `confirm` doesn't match, the pairing fails and the phone keeps no key. So a phone can't be talked into a wrong id, or into pairing with no id when the TV has one. That's also why a phone doesn't need to know beforehand whether the TV has an id: a TV with the switch off really has none, and its answer can't be faked from one that has.
+
+What it doesn't do is stop a pairing from failing. Someone in the middle could always do that, by dropping the answer. By then the TV has the phone on its list and the code is used. So pair again with a new code, and remove the phone that nobody holds the key for in Settings, under Phones. And like `confirm` itself, it only holds against someone who doesn't have `k`. Whoever has the code or the secret while it's good can pair as they like.
+
+A `boxId` with a `confirm` made the first way is refused like the rest. No tagged release ever answered that way.
 
 When it doesn't work, the answer is `403` with one of two sentences in `error`:
 
@@ -412,7 +444,7 @@ Unless a row says otherwise, a body is sealed JSON and an answer is sealed JSON 
 
 | Route | Body | Answer | Who |
 | --- | --- | --- | --- |
-| `POST /api/phone/pair` | Plain JSON `{key, name, proof}` | Plain JSON `{ok, id, key, confirm, phone}`. `403` when it didn't work. | Anyone on the network with the code |
+| `POST /api/phone/pair` | Plain JSON `{key, name, proof}` | Plain JSON `{ok, id, key, confirm, phone}`, and `boxId` with the `announce` switch on. `403` when it didn't work. | Anyone on the network with the code |
 | `POST /api/phone/hello` | Plain JSON `{id, nonce}` | Plain JSON `{ok, session, nonce, proof}`. `401` with `pair`. | A paired phone |
 | `POST /api/phone/pin` | `{pin}` | `{ok, grant, until}`. `403` with `error` and sometimes `wait`. | Anyone |
 
@@ -1138,6 +1170,7 @@ It's made for a card that shows what's playing while the phone is locked: where 
   "position": 232.4,
   "duration": 888,
   "at": "2026-11-17T20:15:03.120Z",
+  "age": 4310,
   "playing": true,
   "next": false,
   "previous": false,
@@ -1151,22 +1184,31 @@ It's made for a card that shows what's playing while the phone is locked: where 
 | `title` | What it's called: the app's own word for it, or the page's. |
 | `app` | The app's name. `"Shared"` for something a phone sent to the TV. |
 | `left` | Minutes left, counted when the answer was made. Missing for something live. The web remote's card shows it. |
-| `position` | Where it is, in seconds from the start, at the moment in `at`. |
+| `position` | Where it is, in seconds from the start, when the TV read it. |
 | `duration` | How long it runs, in seconds. `null` for something live. |
 | `at` | When `position` was read: an ISO time, on the TV's clock. |
+| `age` | How long ago `position` was read, in milliseconds, counted as this answer was made. |
 | `playing` | `true` while it plays, `false` while it's paused. |
 | `next` | Whether there's one after it to go to. |
 | `previous` | Whether there's one before it to go to. |
 | `seek` | Whether it can jump to a place. |
 | `picture` | Whether `GET /api/phone/playing/picture` has a picture for it. |
 
-Where the thing is right now is `position` while it's paused, and `position` plus the time since `at` while it plays. That sum uses the TV's clock and the phone's, so it's only as good as the two agree. If you'd rather not lean on that, use a playback answer: its `nowPlaying` was read just before the answer left the TV.
+Where the thing is right now is `position` while it's paused. While it plays, it's `position` plus the time since the TV read it, and `age` gives you that without the TV's clock:
+
+1. When the answer arrives, take the time on your own clock and subtract `age`. That's when `position` was read, on your clock.
+2. From then on, the place is `position` plus what your clock has run since that moment.
+
+Stop at `duration`, and add nothing while it's paused. All this leaves out is the answer's trip over the home network, which is a few milliseconds.
+
+`at` is the same moment on the TV's clock, for a client that trusts that clock. A TV and a phone can be seconds or hours apart, and a bar worked out from `at` is off by as much, so use `age` unless you have a reason not to.
 
 A few things to know:
 
 - `next`, `previous` and `seek` say what this app can do with this thing right now. Don't offer one that's `false`. Asking anyway gets `"ok": false` and a sentence in `why`.
 - `tv.playing` is still `true` only while something plays. Something paused is `nowPlaying` with `"playing": false`.
 - The TV reads the place again when something starts, pauses or stops, after every playback request, and every 10 seconds while something is playing or paused in front.
+- `age` is counted again for every answer. Between two reads of the state with nothing new read on the TV, `position` and `at` are the same and `age` is higher by the time between them. The TV counts it on a clock that only runs forward, so it stays right when the TV sets its own clock.
 - The state's `version` doesn't go up just because time passed. It goes up when it's another thing, when it was paused or played, when it jumped by more than 2 seconds, when its length changed, when a picture was found, or when what it can do changed. So the long poll stays quiet through a film, and still tells you about a jump somebody made with the TV's own remote, within 10 seconds.
 - A native app, such as a game, has no `nowPlaying`. The TV can't see into it.
 - There's no volume, here or anywhere else in this API. The TV keeps its own.
@@ -1186,21 +1228,21 @@ All of them are `POST /api/phone/playback` with a sealed body:
 
 Use `play` and `pause` for anything that can send a press twice. A `toggle` sent twice undoes itself.
 
-The answer to every action but `toggle` has `nowPlaying`: the same object as in the state, read after the request was done, so it says where the thing then is.
+The answer to every action but `toggle` has `nowPlaying`: the same object as in the state, read after the request was done, so it says where the thing then is. It has its own `age`. That's usually a few milliseconds, since the place was read just before the answer left. Use it all the same: when the wait runs out, `nowPlaying` is what the TV last knew.
 
 ```json
-{ "ok": true, "by": "app", "nowPlaying": { "title": "Sintel", "position": 754, "playing": true } }
+{ "ok": true, "by": "app", "nowPlaying": { "title": "Sintel", "position": 754, "age": 6, "playing": true } }
 ```
 
 (The example leaves out the rest of `nowPlaying`'s fields.) When it didn't work the status is still `200`:
 
 ```json
-{ "ok": false, "why": "This app can't go back", "nowPlaying": { "title": "Sintel", "position": 232.4, "playing": true } }
+{ "ok": false, "why": "This app can't go back", "nowPlaying": { "title": "Sintel", "position": 232.4, "age": 9, "playing": true } }
 ```
 
 - `by` says who did it: `"app"` for the app's own player, `"page"` for the video on the page, `"key"` for a media key sent to a native app.
 - `why` is a sentence for the person, such as `Nothing is playing`, `This app can't skip`, `This app can't go back`, `This app can't jump to a time`, `Couldn't jump there`, `Couldn't pause` or `Couldn't play`.
-- `nowPlaying` is `null` when nothing is left to steer. Right after `next` or `previous` it can be `null`, or still the old title, while the new one loads. The state follows once it's there.
+- `nowPlaying` is `null` when nothing is left to steer. Right after `next`, `previous` or a jump to the end of a track in Music it can be `null`, or still the old title, while the new one loads. The state follows once it's there.
 - A native app has one key for play and pause, which can't say which way it went. So `play`, `pause` and `seek` answer `"ok": false` there, and `toggle`, `next` and `previous` send the key.
 - `400` is an action the TV doesn't know, or a `seek` with no `position` in range. `503` with `Your TV isn't ready yet` means the TV's screen session isn't running.
 
@@ -1230,7 +1272,7 @@ The picture is one the TV already has for the title: the one the app itself give
 ### What can do what
 
 - **An app with a video on its page** can play, pause and jump. `next` and `previous` are there only when the app has its own for them, and can say at any moment that there's none right now.
-- **Music** can play, pause, and go to the next and the previous track. It can't jump yet.
+- **Music** can play, pause and jump to a place in the track. `next` and `previous` are `true` only where its queue has a track to go to. The queue is the album or the playlist from the track that was started, so the first track played has no `previous` and the last has no `next`. A jump to the end of a track, or past it, ends the track: the next one starts, or after the last one nothing is playing.
 - **Something a phone sent to the TV** can play, pause and jump.
 - **A native app** takes the media keys for `toggle`, `next` and `previous`, and nothing else.
 
@@ -1238,7 +1280,8 @@ The picture is one the TV already has for the title: the one the app itself give
 
 `test/origaitv/fixtures/phone-channel/vectors.json` has one run of everything above with fixed values:
 
-- `pairings`: one by the QR code's secret and one by a typed code. Each has the TV's code and secret, both X25519 pairs, `k`, the request and the answer as they go on the wire, the shared X25519 value, and `phoneKey`. The TV's part is under `tv`, with the QR code's secret as `tv.secret`.
+- `pairings`: one by the QR code's secret, one by a typed code, and one by the secret with a TV that has a box id. Each has the TV's code and secret, both X25519 pairs, `k`, the request and the answer as they go on the wire, the shared X25519 value, and `phoneKey`. The TV's part is under `tv`, with the QR code's secret as `tv.secret`. The third has the id as `tv.boxId`, and its answer has the `boxId` and the `confirm` that covers it. The first two are a TV with no id.
+- `pairingAnswersToRefuse`: answers to a pairing that a phone has to refuse, and keep no key from. `pairing` says which of `pairings` it answers, counting from 0. The id changed on the way, the id taken out, the id with a `confirm` made the way of a pairing without one, and an id put into the answer of a TV that has none.
 - `session.hello`: the request, both nonces and the answer. `session.derived` has `sign`, `up` and `down`.
 - `session.requests`: six requests the TV takes, counters 1 to 6. A sealed `POST`, a `GET` with a query, the PIN, a request with a grant, an upload with an address the wire escapes, and a `403` that comes back sealed. Each has the nonce, the extra data, the digest, the signed text, the headers and the body, and the answer's nonce, extra data and sealed bytes.
 - `session.refused`: requests the TV refuses, with the plain `401` each gets. A replayed counter, a body changed on the way, JSON that isn't sealed, a counter of 0. One of them has a good signature over a body with a bad tag, which gets the sealed `400`.
@@ -1248,7 +1291,7 @@ The picture is one the TV already has for the title: the one the app itself give
 
 The file says which fields are plain text. Everything else is base64url.
 
-To check a client against it, feed it the file's "random" values in place of its own: the phone's X25519 private key, the hello's nonce and each request's nonce. It should produce the file's requests byte for byte, and open the file's answers.
+To check a client against it, feed it the file's "random" values in place of its own: the phone's X25519 private key, the hello's nonce and each request's nonce. It should produce the file's requests byte for byte, and open the file's answers. For each of `pairingAnswersToRefuse`, give it that pairing's private key and the answer: it should refuse, and be no more paired than it was.
 
 The file is made by `make-vectors.mts` next to it, which uses only Node's crypto and none of the daemon's channel code:
 

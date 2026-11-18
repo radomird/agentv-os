@@ -18,6 +18,7 @@ import { concat, decode, encode, hex, hkdf, hmac, open, random, same, seal, sha2
 const INFO = {
   pair: "origaitv pair v1",
   pairBox: "origaitv pair box v1",
+  pairBoxId: "origaitv pair box id v1",
   key: "origaitv phone key v1",
   helloBox: "origaitv hello box v1",
   session: "origaitv session v1",
@@ -94,8 +95,13 @@ export async function pair(how: { secret: string } | { code: string }, name: str
   const confirm = typeof data.confirm === "string" ? decode(data.confirm) : null;
   if (!theirs || theirs.length !== 32 || !confirm || typeof data.id !== "string") throw new Error("Couldn't reach your TV");
   const key = hkdf(x25519(mine, theirs), k, concat(utf8(INFO.key), mineOpen, theirs), 32);
-  // Only the box that saw the same secret comes to the same key.
-  if (!same(confirm, hmac(key, concat(utf8(INFO.pairBox), mineOpen, theirs)))) throw new Error("Couldn't reach your TV");
+  // Only the box that saw the same secret comes to the same key. When the
+  // answer says which TV this is, the proof has to cover that too, under a
+  // label of its own. So an id that was put in, changed or taken out on the
+  // way fits neither proof, and nothing is kept.
+  const boxId = data.boxId;
+  const proved = boxId === undefined ? hmac(key, concat(utf8(INFO.pairBox), mineOpen, theirs)) : typeof boxId === "string" ? hmac(key, concat(utf8(INFO.pairBoxId), mineOpen, theirs, utf8(boxId))) : null;
+  if (!proved || !same(confirm, proved)) throw new Error("Couldn't reach your TV");
   keep({ id: data.id, key: encode(key) });
 }
 

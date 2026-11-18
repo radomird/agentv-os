@@ -8,6 +8,7 @@
 // the first test holds the file against what that script makes now.
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -45,6 +46,16 @@ test("vectors.json is what make-vectors.mts makes", () => {
   assert.equal(S.window.size, WINDOW);
 });
 
+test("T28.4 the two pairings with a TV that has no id are what they were before a TV could have one, byte for byte", () => {
+  const before = V.pairings.slice(0, 2);
+  assert.deepEqual(before.map((p) => "boxId" in p.tv || "boxId" in JSON.parse(p.answer.text)), [false, false]);
+  // The SHA-256 of the two as the file had them then.
+  assert.equal(createHash("sha256").update(JSON.stringify(before)).digest("hex"), "8eef38bcd63e36cbda9e7b7029d8a57edd3deeb782c00253112aa1fb8f09b41a");
+  // And the one with an id is there, with its id in the answer.
+  assert.deepEqual(V.pairings.slice(2).map((p) => JSON.parse(p.answer.text).boxId), [V.pairings[2].tv.boxId]);
+  assert.match(V.pairings[2].tv.boxId!, /^[0-9a-f]{32}$/);
+});
+
 // --- The TV's side -----------------------------------------------------------------
 
 for (const [n, p] of V.pairings.entries()) {
@@ -65,7 +76,8 @@ for (const [n, p] of V.pairings.entries()) {
     assert.equal(p.tv.qrAddress, `http://${V.host}/#pair=${phones.secret()}`);
     // One wrong try doesn't end the code.
     assert.equal(JSON.stringify({ ok: false, ...phones.pair(JSON.parse(V.pairingRefused.request.text)) }), V.pairingRefused.answer.text);
-    const paired = phones.pair(JSON.parse(p.request.text));
+    // The TV's id is handed in when it has one, and it's in the answer then.
+    const paired = phones.pair(JSON.parse(p.request.text), p.tv.boxId);
     assert.equal(JSON.stringify({ ok: true, ...paired }), p.answer.text);
     assert.equal(random.left(), 0);
     assert.deepEqual(phones.key(p.tv.phoneId)?.key, un(p.phoneKey), "the key the TV keeps");
@@ -299,6 +311,28 @@ test("the phone's page: an answer to a pairing that doesn't prove the TV's key p
     browserGone();
   }
 });
+
+// The vectors' answers a phone has to refuse, and one more that the page
+// refuses: an id that isn't text. It isn't in the file, because a client
+// that reads it as no id at all is as safe: the TV that answered has none.
+const noId = V.pairings[0].answer;
+const notText = { name: "an id that isn't text, put into the answer of a TV that has none", pairing: 0, answer: { ...noId, text: JSON.stringify({ ...JSON.parse(noId.text), boxId: null }) } };
+for (const bad of [...V.pairingAnswersToRefuse, notText]) {
+  test(`T28.4 the phone's page keeps no key from a pairing answer with ${bad.name}`, async () => {
+    const p = V.pairings[bad.pairing];
+    browser(drawn(un(p.phone.x25519Private)));
+    try {
+      tv = { "/api/phone/pair": bad.answer };
+      const channel = await page();
+      await assert.rejects(channel.pair({ secret: p.tv.secret }, p.phone.name), /Couldn't reach your TV/);
+      assert.deepEqual(asked, [{ path: p.request.address, type: p.request.type, text: p.request.text }], "it asked as the vectors have it, so only the answer is what's wrong");
+      assert.equal(channel.paired(), false);
+      assert.equal(kept.size, 0, "and no key is kept");
+    } finally {
+      browserGone();
+    }
+  });
+}
 
 test("the phone's page: the hello, then each request and each answer, as the vectors have them", async () => {
   const p = V.pairings[0];

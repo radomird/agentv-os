@@ -1,6 +1,7 @@
 // What's playing, in full (track 27, behind the playing2 switch): play and
 // pause as two requests that leave what's already so alone, previous, a
-// jump to a place in seconds, and where the thing is. The TV session's half
+// jump to a place in seconds, and where the thing is. Track 28 adds how old
+// the reading of the place is, and Music's jump. The TV session's half
 // is daemon/remote-play.ts, the app's own player first and the page's video
 // after it. The daemon's half is daemon/routes/remote.ts: the requests, the
 // state's nowPlaying and its picture. What the page's own script does is
@@ -149,13 +150,13 @@ test("T27.2 looking again doesn't read the app again: its last read for the ledg
   assert.equal(own.calls.length, 5);
 });
 
-test("T27.2 with home in front: a shared video in home's player, then Music, which says what its queue has and can't jump", async () => {
+test("T27.2 with home in front: a shared video in home's player, then Music, which says what its queue has and takes a jump", async () => {
   const music: Record<string, unknown>[] = [];
   let now: object | null = { title: "Night Shift", artist: "Lucy Dacus", album: "Historian", albumId: "a1", position: 31.5, duration: 392, playing: true, index: 0, count: 3 };
   const handle = async (request: Record<string, unknown>) => (music.push(request), request.op === "now" ? { ok: true, now } : request.op === "cover" ? { ok: true, cover: "data:image/jpeg;base64,/9j/4AAQ" } : { ok: true });
   let front: PlaybackFront = { kind: "home", evaluate: page(null).evaluate, music: handle };
   const playback = new PhonePlayback({ front: () => front, keys: async () => {} });
-  assert.deepEqual({ ...(await playback.now())!, at: 0 }, { by: "app", id: MUSIC, title: "Night Shift", position: 31.5, duration: 392, playing: true, at: 0, next: true, previous: false, seek: false, cover: true });
+  assert.deepEqual({ ...(await playback.now())!, at: 0 }, { by: "app", id: MUSIC, title: "Night Shift", position: 31.5, duration: 392, playing: true, at: 0, next: true, previous: false, seek: true, cover: true });
   assert.deepEqual(await playback.answer({ action: "pause" }), { ok: true, by: "app" });
   assert.deepEqual(music.at(-1), { op: "pause", on: true });
   assert.deepEqual(await playback.answer({ action: "pause" }), { ok: true, by: "app" });
@@ -164,7 +165,8 @@ test("T27.2 with home in front: a shared video in home's player, then Music, whi
   assert.deepEqual(music.at(-1), { op: "pause", on: false });
   assert.deepEqual(await playback.answer({ action: "previous" }), { ok: true, by: "app" });
   assert.deepEqual(music.at(-1), { op: "previous" });
-  assert.deepEqual(await playback.answer({ action: "seek", position: 60 }), { ok: false, why: "This app can't jump to a time" });
+  assert.deepEqual(await playback.answer({ action: "seek", position: 60 }), { ok: true, by: "app" });
+  assert.deepEqual(music.at(-1), { op: "seek", position: 60 }, "the jump is Music's own");
   assert.deepEqual(await playback.answer({ action: "picture" }), { ok: true, picture: "data:image/jpeg;base64,/9j/4AAQ" });
   assert.deepEqual(music.at(-1), { op: "cover", key: "a1" });
 
@@ -234,13 +236,53 @@ test("T27.2 on Omarchy's desktop, with nothing to see what plays, the keys still
 
 // --- The daemon's half ---------------------------------------------------
 
+test("T28.1 Music offers next and previous only where its queue has them, and a jump only in a track with a length", async () => {
+  let now: Record<string, unknown> = { title: "Dusk", albumId: null, position: 4, duration: 61, playing: true, index: 0, count: 3 };
+  let jumps = true;
+  const asked: Record<string, unknown>[] = [];
+  const handle = async (request: Record<string, unknown>) => (asked.push(request), request.op === "now" ? { ok: true, now } : request.op === "seek" && !jumps ? { ok: false, error: "Couldn't jump there" } : { ok: true });
+  const playback = new PhonePlayback({ front: () => ({ kind: "home", evaluate: page(null).evaluate, music: handle }), keys: async () => {} });
+  const offers = async () => {
+    const said = (await playback.now())!;
+    return [said.previous, said.next, said.seek];
+  };
+  assert.deepEqual(await offers(), [false, true, true], "the first of three");
+  now = { ...now, index: 1 };
+  assert.deepEqual(await offers(), [true, true, true], "the second");
+  now = { ...now, index: 2 };
+  assert.deepEqual(await offers(), [true, false, true], "the last");
+  now = { ...now, index: 0, count: 1 };
+  assert.deepEqual(await offers(), [false, false, true], "one track alone");
+  now = { ...now, duration: 0 };
+  assert.deepEqual(await offers(), [false, false, false], "a track whose length isn't known");
+
+  // A jump is answered with where the track then is, and one Music's
+  // player couldn't make says so.
+  now = { ...now, duration: 61, position: 40 };
+  const jumped = await playback.answer({ action: "seek", position: 40, now: true });
+  assert.deepEqual([jumped.ok, jumped.by, jumped.now?.position, jumped.now?.id], [true, "app", 40, MUSIC]);
+  jumps = false;
+  assert.deepEqual(await playback.answer({ action: "seek", position: 50 }), { ok: false, why: "Couldn't jump there" });
+  assert.deepEqual(asked.filter((request) => request.op === "seek"), [{ op: "seek", position: 40 }, { op: "seek", position: 50 }]);
+});
+
 const NOW: PlayingNow = { by: "app", id: "origaitv.tube", title: "Sintel", position: 100, duration: 888, playing: true, at: Date.parse("2026-11-17T20:00:00Z"), next: true, previous: false, seek: true };
 
 test("T27.1 what a phone is told: seconds, when they were read, playing or paused, and what can be asked", () => {
   const at = NOW.at + 30_000;
-  assert.deepEqual(toldNow(NOW, "Tube", true, at), { title: "Sintel", app: "Tube", left: 13, position: 100, duration: 888, at: "2026-11-17T20:00:00.000Z", playing: true, next: true, previous: false, seek: true, picture: true });
-  assert.deepEqual(toldNow({ ...NOW, duration: null, playing: false, seek: false }, "Cam", false, at), { title: "Sintel", app: "Cam", position: 100, duration: null, at: "2026-11-17T20:00:00.000Z", playing: false, next: true, previous: false, seek: false, picture: false });
+  assert.deepEqual(toldNow(NOW, "Tube", true, at), { title: "Sintel", app: "Tube", left: 13, position: 100, duration: 888, at: "2026-11-17T20:00:00.000Z", age: 30_000, playing: true, next: true, previous: false, seek: true, picture: true });
+  assert.deepEqual(toldNow({ ...NOW, duration: null, playing: false, seek: false }, "Cam", false, at), { title: "Sintel", app: "Cam", position: 100, duration: null, at: "2026-11-17T20:00:00.000Z", age: 30_000, playing: false, next: true, previous: false, seek: false, picture: false });
   assert.equal(toldNow({ ...NOW, title: "" }, "Tube", false).title, "Tube", "a page with no title is called by its app");
+});
+
+test("T28.1 what a phone is told says how old the reading is, in milliseconds, as it's told", () => {
+  assert.equal(toldNow(NOW, "Tube", false, NOW.at).age, 0);
+  assert.equal(toldNow(NOW, "Tube", false, NOW.at + 4310.4).age, 4310);
+  assert.equal(toldNow(NOW, "Tube", false, NOW.at - 500).age, 0, "never less than nothing");
+  assert.equal(toldNow({ ...NOW, playing: false }, "Tube", false, NOW.at + 60_000).age, 60_000, "paused, the reading still gets older");
+  // The place by the phone's own clock: where it was read, plus the age.
+  const told = toldNow(NOW, "Tube", false, NOW.at + 12_000);
+  assert.equal(told.position + told.age / 1000, 112);
 });
 
 test("T27.1 a reading that only ran on with the clock isn't news; a pause, a jump or another length is", () => {
@@ -353,9 +395,10 @@ test("T27.1 with it on, each request of its own is answered with where the thing
   const box = await routes({ answer: (ask) => (ask.action === "now" ? { ok: true, now } : { ok: true, by: "app", ...(ask.now ? { now } : {}) }) });
   const paused = await box.post({ action: "pause" });
   assert.equal(paused.status, 200);
-  assert.deepEqual({ ...paused.body, nowPlaying: { ...paused.body.nowPlaying, at: "" } }, { ok: true, by: "app", nowPlaying: { title: "Sintel", app: "Tube", left: 13, position: 100, duration: 888, at: "", playing: true, next: true, previous: false, seek: true, picture: false } });
+  assert.ok(Number.isInteger(paused.body.nowPlaying.age) && paused.body.nowPlaying.age >= 0 && paused.body.nowPlaying.age < 2000, `the answer says how old its reading is: ${paused.body.nowPlaying.age}`);
+  assert.deepEqual({ ...paused.body, nowPlaying: { ...paused.body.nowPlaying, at: "", age: 0 } }, { ok: true, by: "app", nowPlaying: { title: "Sintel", app: "Tube", left: 13, position: 100, duration: 888, at: "", age: 0, playing: true, next: true, previous: false, seek: true, picture: false } });
   assert.deepEqual(box.asks.at(-1), { n: 1, kind: "playback", action: "pause", now: true });
-  assert.deepEqual(box.remote.nowPlaying(), paused.body.nowPlaying);
+  assert.deepEqual({ ...box.remote.nowPlaying()!, age: 0 }, { ...paused.body.nowPlaying, age: 0 });
   assert.equal(box.changes(), 1, "the phones heard that something plays");
 
   now = { ...now, position: 754, at: Date.now() };
@@ -381,6 +424,51 @@ test("T27.1 with it on, each request of its own is answered with where the thing
   await box.remote.look();
   assert.equal(box.remote.nowPlaying(), null);
   assert.equal(box.changes(), 3);
+  box.close();
+});
+
+test("T28.1 the age is there and grows between two reads with no jump, and the TV's clock being set doesn't show in it", async () => {
+  // A reading the TV session made two seconds before it handed it over,
+  // as an app's last one for the watch history can be.
+  let now: PlayingNow = { ...NOW, at: Date.now() - 2000 };
+  const box = await routes({ answer: (ask) => (ask.action === "now" ? { ok: true, now } : { ok: true, by: "app", ...(ask.now ? { now } : {}) }) });
+  await box.remote.look();
+  const first = box.remote.nowPlaying()!;
+  const since = performance.now();
+  assert.ok(Number.isInteger(first.age) && first.age >= 2000 && first.age < 2600, `two seconds old, and a little: ${first.age}`);
+
+  // Meanwhile the same reading is handed over again and again (lookMs).
+  await sleep(300);
+  const second = box.remote.nowPlaying()!;
+  const waited = performance.now() - since;
+  assert.deepEqual([second.position, second.at], [first.position, first.at], "nothing new was read");
+  assert.ok(Math.abs(second.age - first.age - waited) < 100, `it grew by the ${Math.round(waited)} ms between: ${first.age} to ${second.age}`);
+  assert.equal(box.changes(), 1, "and no phone was woken for it");
+
+  // A playback answer carries the same reading's age, as that answer is made.
+  const answered = (await box.post({ action: "play" })).body.nowPlaying;
+  assert.equal(answered.at, first.at);
+  assert.ok(answered.age >= second.age && answered.age < second.age + 1000, `${answered.age}`);
+
+  // The TV's clock is set an hour on, then an hour back: the age isn't.
+  const clock = Date.now;
+  try {
+    for (const off of [3_600_000, -3_600_000]) {
+      Date.now = () => clock() + off;
+      const told = box.remote.nowPlaying()!;
+      assert.ok(told.age >= answered.age && told.age < answered.age + 1000, `with the clock ${off} ms off it says ${told.age}`);
+      assert.equal(told.at, first.at);
+    }
+  } finally {
+    Date.now = clock;
+  }
+
+  // A new reading starts from its own age.
+  now = { ...now, position: 500, at: Date.now() };
+  await box.remote.look();
+  const jumped = box.remote.nowPlaying()!;
+  assert.ok(jumped.age < 500, `${jumped.age}`);
+  assert.equal(jumped.position, 500);
   box.close();
 });
 
