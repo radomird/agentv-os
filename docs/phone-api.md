@@ -70,7 +70,7 @@ A phone learns the id in two places, both only while the switch is on:
 - **When it pairs.** The answer to `POST /api/phone/pair` has `boxId`.
 - **In the state.** `GET /api/phone/state` has `boxId`.
 
-The one in the state is sealed. The one in the pairing answer isn't covered by `confirm`, so someone in the middle could change it. All that would do is make the phone look for a TV that isn't there, but there's no reason to allow it: keep the pairing's `boxId` to start with, and replace it with the state's the first time you read the state.
+The one in the state is sealed. The one in the pairing answer is covered by `confirm`, so someone in the middle can't change it: see [When the TV has a box id](#when-the-tv-has-a-box-id). Once `confirm` matches, keep the pairing's `boxId` as it is. The state's is the same id.
 
 A phone that paired before the switch went on has no id yet. It gets one from the state the next time it reaches the TV at the address it knows.
 
@@ -390,7 +390,7 @@ Unless a row says otherwise, a body is sealed JSON and an answer is sealed JSON 
 
 | Route | Body | Answer | Who |
 | --- | --- | --- | --- |
-| `POST /api/phone/pair` | Plain JSON `{key, name, proof}` | Plain JSON `{ok, id, key, confirm, phone}`. `403` when it didn't work. | Anyone on the network with the code |
+| `POST /api/phone/pair` | Plain JSON `{key, name, proof}` | Plain JSON `{ok, id, key, confirm, phone}`, and `boxId` with the `announce` switch on. `403` when it didn't work. | Anyone on the network with the code |
 | `POST /api/phone/hello` | Plain JSON `{id, nonce}` | Plain JSON `{ok, session, nonce, proof}`. `401` with `pair`. | A paired phone |
 | `POST /api/phone/pin` | `{pin}` | `{ok, grant, until}`. `403` with `error` and sometimes `wait`. | Anyone |
 
