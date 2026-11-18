@@ -37,6 +37,7 @@ import { saidAct, saidHeard, saidOpen, saidPageDrawn, setupSaid } from "./said.t
 import { askBuilds, askChangePage, askPage, followAskBuilds } from "./pages/ask.ts";
 import { listeningAct, listeningHeard, type Heard } from "./listening.ts";
 import { typingField, typingHeard } from "./typing.ts";
+import { keepTyped, type Typed } from "./typed.ts";
 import type { Said } from "./api.ts";
 import { Sounds } from "./sounds.ts";
 import { field } from "../setup/frame.ts";
@@ -132,6 +133,10 @@ focus.onSet = (el) => {
 };
 let history: string[] = ["home"];
 let view: View | undefined;
+// The page in front, by its route's first part, and what it still holds for
+// a field that hasn't come yet, after it was drawn again (typed.ts).
+let shownPage = "";
+let typed: Typed | undefined;
 
 const ctx: Ctx = {
   state: undefined as unknown as HomeState,
@@ -486,8 +491,12 @@ function viewFor(route: string): View {
 }
 
 // Draws a page. With a direction it slides in; an action names the element
-// focus goes back to, after a page is redrawn in place.
-function show(route: string, direction?: "forward" | "back", action?: string): void {
+// focus goes back to, after a page is redrawn in place, and kept is what was
+// typed on it, for its new fields.
+function show(route: string, direction?: "forward" | "back", action?: string, kept?: Typed): void {
+  typed?.stop();
+  typed = kept;
+  shownPage = route.split("/")[0];
   // Home ends a visit to Settings, and the PIN's grant with it.
   if (route === "home") held = null;
   // Any page but a page app's puts the one in front behind home, paused.
@@ -503,6 +512,11 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
     setTimeout(() => focus.release(), 400);
   }
   page.replaceChildren(el);
+  // What was typed goes into the new fields before anything else happens,
+  // and the field that had the focus gets it back.
+  const field = kept?.into(el, (late) => {
+    if (!pinOpen && !noticeOpen && !saidOpen() && view?.el === el) focus.set(late, false);
+  });
   // Only a page's own lists scroll. Anything that moved the page itself,
   // such as the browser bringing something into view, is undone here, so a
   // page always starts at its margins.
@@ -525,8 +539,11 @@ function show(route: string, direction?: "forward" | "back", action?: string): v
     saidPageDrawn((was) => (was ? el.querySelector<HTMLElement>(`[data-action="${was}"], [data-id="${was}"]`) : null) ?? first);
     return;
   }
-  const again = action ? el.querySelector<HTMLElement>(`[data-action="${action}"], [data-id="${action}"]`) : null;
-  focus.setRoot(el, again ?? view.first);
+  const again = field ?? (action ? el.querySelector<HTMLElement>(`[data-action="${action}"], [data-id="${action}"]`) : null);
+  // A page's first element can be gone by now, where the text put back
+  // drew a list again.
+  focus.setRoot(el, again ?? (view.first?.isConnected ? view.first : undefined));
+  kept?.caret();
 }
 
 function apply(settings: Settings): void {
@@ -874,7 +891,11 @@ onTileLanded(() => {
 
 function redraw(): void {
   const current = focus.get();
-  show(history[history.length - 1], undefined, current?.dataset.action ?? current?.dataset.id);
+  const route = history[history.length - 1];
+  // The same page keeps what's typed on it (typed.ts). Another page, as
+  // home after a child's profile took over, starts empty.
+  const kept = view && route.split("/")[0] === shownPage ? keepTyped(view.el, current, typed?.stop()) : undefined;
+  show(route, undefined, current?.dataset.action ?? current?.dataset.id, kept);
 }
 
 // Which apps are open behind home, from the screen daemon. Home's tiles show
