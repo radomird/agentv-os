@@ -94,7 +94,12 @@ export async function pair(how: { secret: string } | { code: string }, name: str
   const theirs = typeof data.key === "string" ? decode(data.key) : null;
   const confirm = typeof data.confirm === "string" ? decode(data.confirm) : null;
   if (!theirs || theirs.length !== 32 || !confirm || typeof data.id !== "string") throw new Error("Couldn't reach your TV");
-  const key = hkdf(x25519(mine, theirs), k, concat(utf8(INFO.key), mineOpen, theirs), 32);
+  // Some keys make the exchange come to all zeros whatever this phone's own
+  // key is, and that's nothing two sides share. The box refuses it, and so
+  // does the phone, before any key comes of it.
+  const shared = x25519(mine, theirs);
+  if (shared.every((byte) => byte === 0)) throw new Error("Couldn't reach your TV");
+  const key = hkdf(shared, k, concat(utf8(INFO.key), mineOpen, theirs), 32);
   // Only the box that saw the same secret comes to the same key. When the
   // answer says which TV this is, the proof has to cover that too, under a
   // label of its own. So an id that was put in, changed or taken out on the

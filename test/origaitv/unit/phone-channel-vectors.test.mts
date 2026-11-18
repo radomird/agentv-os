@@ -8,7 +8,7 @@
 // the first test holds the file against what that script makes now.
 
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -317,8 +317,10 @@ test("the phone's page: an answer to a pairing that doesn't prove the TV's key p
 // that reads it as no id at all is as safe: the TV that answered has none.
 const noId = V.pairings[0].answer;
 const notText = { name: "an id that isn't text, put into the answer of a TV that has none", pairing: 0, answer: { ...noId, text: JSON.stringify({ ...JSON.parse(noId.text), boxId: null }) } };
+// The last of the vectors' answers is the exchange that comes to all zeros.
+const allZeros = V.pairingAnswersToRefuse.find((bad) => bad.name.includes("all zeros"))!;
 for (const bad of [...V.pairingAnswersToRefuse, notText]) {
-  test(`T28.4 the phone's page keeps no key from a pairing answer with ${bad.name}`, async () => {
+  test(`${bad === allZeros ? "T28.8" : "T28.4"} the phone's page keeps no key from a pairing answer with ${bad.name}`, async () => {
     const p = V.pairings[bad.pairing];
     browser(drawn(un(p.phone.x25519Private)));
     try {
@@ -333,6 +335,19 @@ for (const bad of [...V.pairingAnswersToRefuse, notText]) {
     }
   });
 }
+
+test("T28.8 the answer whose exchange comes to all zeros has a proof that fits, so the exchange is all that's wrong with it", () => {
+  const p = V.pairings[allZeros.pairing];
+  const answer = JSON.parse(allZeros.answer.text) as { key: string; confirm: string };
+  const theirs = un(answer.key);
+  assert.deepEqual(theirs, Buffer.alloc(32));
+  // The box's side refuses the exchange, which is how it says all zeros.
+  assert.equal(x25519Shared(un(p.phone.x25519Private), theirs), null);
+  // A phone that took the zeros as they came would work out this key, and
+  // the answer's proof is the one that fits it.
+  const key = phoneKey(Buffer.alloc(32), un(p.k), un(p.phone.x25519Public), theirs);
+  assert.deepEqual(un(answer.confirm), createHmac("sha256", key).update(INFO.pairBox).update(un(p.phone.x25519Public)).update(theirs).digest());
+});
 
 test("the phone's page: the hello, then each request and each answer, as the vectors have them", async () => {
   const p = V.pairings[0];

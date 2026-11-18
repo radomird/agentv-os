@@ -150,6 +150,15 @@
         "type": "application/json",
         "text": "{\"ok\":true,\"id\":\"p-6bc96675\",\"key\":\"UJ8O8f8M6V1Mewf_aYL-TJcbdeNjIV6GNmcErzY8Kjs\",\"confirm\":\"UJ5hZrxVPkc2Er3RJWTq2dXKVDEO5TEtRFa8Nk3nfro\",\"phone\":{\"id\":\"p-6bc96675\",\"name\":\"Ana's iPhone\",\"pairedAt\":\"2026-01-01T00:00:00.000Z\"},\"boxId\":\"211b73cbe914c2ab222482d8c99dc645\"}"
       }
+    },
+    {
+      "name": "a TV key that makes the exchange come to all zeros, and the proof that fits it",
+      "pairing": 0,
+      "answer": {
+        "status": 200,
+        "type": "application/json",
+        "text": "{\"ok\":true,\"id\":\"p-6bc96675\",\"key\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"confirm\":\"q4quMyXGEBsaNUk0o8_3Ze04l8pa5QSCLG9-fGgAl0I\",\"phone\":{\"id\":\"p-6bc96675\",\"name\":\"Ana's iPhone\",\"pairedAt\":\"2026-01-01T00:00:00.000Z\"}}"
+      }
     }
   ],
   "pairingRefused": {
