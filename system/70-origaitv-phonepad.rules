@@ -1,0 +1,6 @@
+# The controller a phone in game mode is (daemon/input.py), "OrigaiTV phone
+# controller". To whatever is in front it's a controller like any other, so
+# this marks it as one, whatever udev makes of its buttons, and lets the
+# person logged in on the screen read it, as they read a real one. Nobody
+# else on the box does.
+SUBSYSTEM=="input", ATTRS{name}=="OrigaiTV phone controller", ENV{ID_INPUT_JOYSTICK}="1", TAG+="uaccess"

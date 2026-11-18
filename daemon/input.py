@@ -39,8 +39,23 @@ It also watches the gamepads for their guide button, which is Home
 (ADR-031), and tells the screen daemon: once when it goes down, and once
 more when it has stayed down for a second, which is Home from a game too
 (ADR-084). It only reads the gamepads and never grabs them, so the window
-in front gets every button as it is, the guide button too. Standard
-library only.
+in front gets every button as it is, the guide button too.
+
+A phone in game mode is a controller too (ADR-113), and this makes it:
+a second kind of device, "OrigaiTV phone controller", one for each phone
+and four at most. The daemon has the phones, and can't make a device, so
+this holds a connection open to the daemon and makes what it asks for,
+a line of JSON at a time:
+  {"open": 1}                      make controller 1, answered {"opened": 1}
+                                   or {"failed": 1, "why": "..."}
+  {"state": [1, buttons, x, y], "n": 7}
+                                   what controller 1 holds now, answered
+                                   {"took": [1, 7]} once it's written
+  {"close": 1}                     take controller 1 away
+A controller lasts as long as that connection does. When it ends, or the
+daemon says nothing on it for a few seconds, every one of them goes.
+
+Standard library only.
 """
 
 import fcntl
@@ -56,7 +71,7 @@ import threading
 import time
 
 # linux/input-event-codes.h
-EV_SYN, EV_KEY, EV_REL = 0x00, 0x01, 0x02
+EV_SYN, EV_KEY, EV_REL, EV_ABS = 0x00, 0x01, 0x02, 0x03
 SYN_REPORT, SYN_DROPPED = 0, 3
 REL_X, REL_Y, REL_HWHEEL, REL_WHEEL = 0x00, 0x01, 0x06, 0x08
 REL_WHEEL_HI_RES, REL_HWHEEL_HI_RES = 0x0B, 0x0C
@@ -66,14 +81,22 @@ NOTCH = 120
 WHEEL_MOST = 50
 BTN_LEFT, BTN_RIGHT, BTN_MIDDLE = 0x110, 0x111, 0x112
 BTN_MODE = 0x13C
+BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST = 0x130, 0x131, 0x133, 0x134
+BTN_TL, BTN_TR, BTN_SELECT, BTN_START = 0x136, 0x137, 0x13A, 0x13B
+BTN_THUMBL, BTN_THUMBR = 0x13D, 0x13E
+ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ = 0x00, 0x01, 0x02, 0x03, 0x04, 0x05
+ABS_HAT0X, ABS_HAT0Y = 0x10, 0x11
 EVENT_SIZE = struct.calcsize("llHHi")
 KEY_LEFTSHIFT = 42
 BUS_VIRTUAL = 0x06
+BUS_USB = 0x03
 
 # linux/uinput.h
 UI_SET_EVBIT = 0x40045564
 UI_SET_KEYBIT = 0x40045565
 UI_SET_RELBIT = 0x40045566
+UI_SET_ABSBIT = 0x40045567
+UI_ABS_SETUP = 0x401C5504
 UI_DEV_SETUP = 0x405C5503
 UI_DEV_CREATE = 0x5501
 UI_DEV_DESTROY = 0x5502
@@ -270,6 +293,293 @@ def create():
     return fd
 
 
+# --- The controller a phone in game mode is (ADR-113) -----------------------
+
+PAD_NAME = b"OrigaiTV phone controller"
+# What it says it is: the wired controller nearly every game already has a
+# layout for. A game, Steam and a browser each pick a controller's layout by
+# these numbers, and one they don't know needs setting up by hand before a
+# single button works. The name is its own.
+PAD_ID = (BUS_USB, 0x045E, 0x028E, 0x0114)
+PAD_MOST = 4
+# How far the stick goes each way, and how far along it counts as a
+# direction on the d-pad: half way.
+STICK = 32767
+DPAD_FROM = 16384
+# A shoulder button at the back is an axis on that controller, a trigger.
+# The phone's is a button, so it's all the way in or out.
+TRIGGER = 255
+# A state's bits, in order: A, B, X and Y, the two shoulders in front, the
+# two behind them, View, Menu and the guide button. On that controller X
+# and Y are the codes the kernel calls north and west.
+PAD_BITS = (
+    (EV_KEY, BTN_SOUTH), (EV_KEY, BTN_EAST), (EV_KEY, BTN_NORTH), (EV_KEY, BTN_WEST),
+    (EV_KEY, BTN_TL), (EV_KEY, BTN_TR), (EV_ABS, ABS_Z), (EV_ABS, ABS_RZ),
+    (EV_KEY, BTN_SELECT), (EV_KEY, BTN_START), (EV_KEY, BTN_MODE),
+)
+GUIDE_BIT = 10
+# Everything the controller it stands in for has, in its order, so each
+# button and axis has the number a game expects. The right stick and the
+# two stick clicks are there and never move: the phone has one stick.
+PAD_KEYS = (BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST, BTN_TL, BTN_TR, BTN_SELECT, BTN_START, BTN_MODE, BTN_THUMBL, BTN_THUMBR)
+PAD_AXES = (
+    (ABS_X, -32768, 32767), (ABS_Y, -32768, 32767), (ABS_Z, 0, TRIGGER),
+    (ABS_RX, -32768, 32767), (ABS_RY, -32768, 32767), (ABS_RZ, 0, TRIGGER),
+    (ABS_HAT0X, -1, 1), (ABS_HAT0Y, -1, 1),
+)
+
+
+def whole(value, low, high):
+    return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+
+
+class Pad:
+    """One phone's controller: it writes what changed between one state
+    and the next, as one report. The writer is the uinput file, or a
+    stand-in in the unit tests."""
+
+    def __init__(self, write):
+        self.write = write
+        self.buttons, self.x, self.y = 0, 0, 0
+
+    def set(self, buttons, x, y):
+        if not (whole(buttons, 0, (1 << len(PAD_BITS)) - 1) and whole(x, -STICK, STICK) and whole(y, -STICK, STICK)):
+            raise ValueError("not a controller's state")
+        events = []
+        for bit, (kind, code) in enumerate(PAD_BITS):
+            down = buttons >> bit & 1
+            if down != self.buttons >> bit & 1:
+                events.append(event(kind, code, down if kind == EV_KEY else down * TRIGGER))
+        # The stick, and the d-pad with it (ADR-115): a game that only reads
+        # a d-pad still moves.
+        for axis, hat, new, old in ((ABS_X, ABS_HAT0X, x, self.x), (ABS_Y, ABS_HAT0Y, y, self.y)):
+            if new != old:
+                events.append(event(EV_ABS, axis, new))
+            if dpad(new) != dpad(old):
+                events.append(event(EV_ABS, hat, dpad(new)))
+        self.buttons, self.x, self.y = buttons, x, y
+        if events:
+            self.write(b"".join(events) + event(EV_SYN, SYN_REPORT, 0))
+
+
+def dpad(value):
+    """Which way the d-pad points for a stick this far along an axis."""
+    return (value >= DPAD_FROM) - (value <= -DPAD_FROM)
+
+
+def create_pad():
+    """Makes one controller's uinput device and returns its file descriptor."""
+    fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
+    try:
+        for kind in (EV_KEY, EV_ABS):
+            fcntl.ioctl(fd, UI_SET_EVBIT, kind)
+        for code in PAD_KEYS:
+            fcntl.ioctl(fd, UI_SET_KEYBIT, code)
+        for code, low, high in PAD_AXES:
+            fcntl.ioctl(fd, UI_SET_ABSBIT, code)
+            # struct uinput_abs_setup: code, then struct input_absinfo.
+            fcntl.ioctl(fd, UI_ABS_SETUP, struct.pack("HHiiiiii", code, 0, 0, low, high, 0, 0, 0))
+        fcntl.ioctl(fd, UI_DEV_SETUP, struct.pack("HHHH80sI", *PAD_ID, PAD_NAME, 0))
+        fcntl.ioctl(fd, UI_DEV_CREATE)
+    except OSError:
+        os.close(fd)
+        raise
+    return fd
+
+
+def make_pad(_slot):
+    """A controller on the box: what writes to it, and what takes it away."""
+    fd = create_pad()
+
+    def close():
+        try:
+            fcntl.ioctl(fd, UI_DEV_DESTROY)
+        finally:
+            os.close(fd)
+
+    return (lambda data: os.write(fd, data)), close
+
+
+class PhonePads:
+    """The controllers the daemon asked for, by their number, 1 to 4.
+
+    Each one's guide button has the rule a real controller's has: on_guide
+    when it goes down, and on_hold once it has stayed down for hold
+    seconds. A controller that goes away takes its hold with it."""
+
+    def __init__(self, make, on_guide, on_hold, hold=GUIDE_HOLD, clock=time.monotonic):
+        self.make = make
+        self.on_guide = on_guide
+        self.on_hold = on_hold
+        self.hold = hold
+        self.clock = clock
+        self.pads = {}
+        self.down = {}
+
+    def handle(self, line):
+        """Does what one line from the daemon asks, and gives the lines to
+        answer with."""
+        if not isinstance(line, dict):
+            return []
+        if "open" in line:
+            slot = line["open"]
+            if not whole(slot, 1, PAD_MOST):
+                return []
+            self.close(slot)
+            try:
+                write, close = self.make(slot)
+            except OSError as error:
+                return [{"failed": slot, "why": str(error)}]
+            self.pads[slot] = (Pad(write), close)
+            return [{"opened": slot}]
+        if "state" in line:
+            state = line["state"]
+            if not isinstance(state, list) or len(state) != 4 or not whole(state[0], 1, PAD_MOST) or state[0] not in self.pads:
+                return []
+            slot, buttons, x, y = state
+            pad = self.pads[slot][0]
+            was = pad.buttons >> GUIDE_BIT & 1
+            try:
+                pad.set(buttons, x, y)
+            except ValueError:
+                return []
+            now = buttons >> GUIDE_BIT & 1
+            if now and not was:
+                # Before on_guide, as for a real controller's.
+                self.down[slot] = self.clock()
+                self.on_guide()
+            elif was and not now:
+                self.down.pop(slot, None)
+            return [{"took": [slot, line.get("n", 0)]}]
+        if "close" in line:
+            self.close(line["close"])
+        return []
+
+    def close(self, slot):
+        if not whole(slot, 1, PAD_MOST):
+            return
+        found = self.pads.pop(slot, None)
+        self.down.pop(slot, None)
+        if found:
+            try:
+                found[1]()
+            except OSError:
+                pass
+
+    def close_all(self):
+        for slot in list(self.pads):
+            self.close(slot)
+
+    def wait(self, most=1.0):
+        """How long until a held guide button is due, most at the longest."""
+        if not self.down:
+            return most
+        return max(0.0, min(most, min(self.down.values()) + self.hold - self.clock()))
+
+    def tick(self):
+        for slot, since in list(self.down.items()):
+            if self.clock() - since >= self.hold:
+                del self.down[slot]
+                self.on_hold()
+
+
+def daemon_address():
+    """Where OrigaiTV's daemon answers this box: 127.0.0.1:3000, or the
+    port ORIGAITV_URL or ORIGAITV_PORT names. Never another machine."""
+    found = re.fullmatch(r"http://(127\.0\.0\.1|localhost):(\d{1,5})/?", os.environ.get("ORIGAITV_URL", ""))
+    if found:
+        return "127.0.0.1", int(found.group(2))
+    port = os.environ.get("ORIGAITV_PORT", "")
+    return "127.0.0.1", int(port) if re.fullmatch(r"\d{1,5}", port) else 3000
+
+
+# How long the daemon may say nothing before the controllers go: it sends
+# a line every two seconds, so this long means it's stuck or gone.
+LINK_QUIET = 6.0
+# How long before asking again: after the connection ended, and after the
+# daemon said no, which it does while game mode's switch is off.
+LINK_RETRY = 2.0
+LINK_REFUSED = 15.0
+
+
+def pad_link(address, pads, stop, retry=LINK_RETRY, refused=LINK_REFUSED, quiet=LINK_QUIET, log=print):
+    """Holds the daemon's connection for the phones' controllers open until
+    stop is set, and makes and moves the controllers it asks for. However
+    the connection ends, every controller goes with it."""
+    said = None
+    while not stop.is_set():
+        wait = retry
+        try:
+            ended = _pad_link(address, pads, stop, quiet)
+            if ended == "refused":
+                wait = refused
+        except (OSError, ValueError) as error:
+            ended = f"{error}"
+        finally:
+            pads.close_all()
+        # Once for each reason, not every two seconds while the daemon is
+        # down.
+        if ended not in (said, "refused", None):
+            log(f"origaitv input: the phones' controllers lost the daemon ({ended}); asking again", flush=True)
+        said = ended
+        stop.wait(wait)
+
+
+def _pad_link(address, pads, stop, quiet):
+    host, port = address
+    sock = socket.create_connection(address, timeout=5)
+    try:
+        sock.sendall(
+            f"GET /api/pads HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: Upgrade\r\n"
+            "Upgrade: origaitv-pads\r\nX-OrigaiTV-Screen: 1\r\n\r\n".encode()
+        )
+        head = b""
+        while b"\r\n\r\n" not in head:
+            chunk = sock.recv(4096)
+            if not chunk or len(head) > 65536:
+                return "it closed"
+            head += chunk
+        head, _, held = head.partition(b"\r\n\r\n")
+        if not head.startswith(b"HTTP/1.1 101 "):
+            return "refused"
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        heard = time.monotonic()
+        while not stop.is_set():
+            while b"\n" in held:
+                line, _, held = held.partition(b"\n")
+                try:
+                    answers = pads.handle(json.loads(line))
+                except (ValueError, TypeError, KeyError):
+                    continue
+                if answers:
+                    sock.sendall(b"".join(json.dumps(answer, separators=(",", ":")).encode() + b"\n" for answer in answers))
+            if len(held) > 1 << 20:
+                return "a line too long"
+            ready, _, _ = select.select([sock], [], [], min(pads.wait(), quiet))
+            pads.tick()
+            if ready:
+                chunk = sock.recv(65536)
+                if not chunk:
+                    return "it closed"
+                held += chunk
+                heard = time.monotonic()
+            elif time.monotonic() - heard > quiet:
+                return "it went quiet"
+        return None
+    finally:
+        sock.close()
+
+
+def serve_pads(stop, make=make_pad, address=None, **timing):
+    """The phones' controllers, until stop is set: the daemon's connection
+    held open, and each controller's guide button going home as a real
+    one's does. Home waits for the screen daemon, so it's asked from a
+    thread of its own, and the next press doesn't wait for it."""
+    home = lambda source: threading.Thread(target=screen_home, args=(source,), daemon=True).start()
+    pads = PhonePads(make, lambda: home("guide"), lambda: home("guide-hold"))
+    pad_link(address or daemon_address(), pads, stop, **timing)
+
+
 def socket_path(name="input.sock"):
     runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
     return os.path.join(runtime, "origaitv", name)
@@ -292,6 +602,13 @@ def gamepads(root="/"):
                 marked = "E:ID_INPUT_JOYSTICK=1" in file.read().splitlines()
         except OSError:
             continue
+        # A phone's controller is this helper's own: its guide button is
+        # timed as it's written (PhonePads), so it isn't read back here.
+        try:
+            with open(os.path.join(node, "device/name")) as file:
+                marked = marked and file.read().strip() != PAD_NAME.decode()
+        except OSError:
+            pass
         if marked:
             found.add(os.path.join(root, "dev/input", os.path.basename(node)))
     return sorted(found)
@@ -373,17 +690,17 @@ def _watch_guide(fds, find, on_guide, stop, rescan, on_hold, hold):
                     on_hold()
 
 
-def keep_watching(watch, stop, pause=1.0, log=print):
+def keep_watching(watch, stop, pause=1.0, log=print, what="the guide button's watcher"):
     """Runs the guide button's watcher until stop is set. It's a thread
     beside the service's own work, so an error nobody caught would end it
     with the service still up: the guide button and its hold would do
     nothing until the next restart. So after one, it says so and starts
-    again."""
+    again. The phones' controllers are kept the same way."""
     while not stop.is_set():
         try:
             watch()
         except Exception as error:  # pylint: disable=broad-except
-            log(f"origaitv input: the guide button's watcher stopped ({error!r}); starting it again", flush=True)
+            log(f"origaitv input: {what} stopped ({error!r}); starting it again", flush=True)
             stop.wait(pause)
 
 
@@ -428,6 +745,7 @@ def serve():
     stop = threading.Event()
     watch = lambda: watch_guide(gamepads, screen_home, stop, on_hold=lambda: screen_home("guide-hold"))
     threading.Thread(target=keep_watching, args=(watch, stop), daemon=True).start()
+    threading.Thread(target=keep_watching, args=(lambda: serve_pads(stop), stop), kwargs={"what": "the phones' controllers"}, daemon=True).start()
     try:
         while True:
             conn, _ = server.accept()

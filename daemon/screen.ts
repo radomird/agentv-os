@@ -250,7 +250,12 @@ export interface Launcher {
   // Tells OrigaiTV's daemon what's in front and whether something plays, for
   // the phone's remote to follow (ADR-037), and the field with the focus in
   // the app in front, when there is one (ADR-065).
-  tvContext(change: { front: "home" | "app"; playing: boolean; appField?: object }): Promise<void>;
+  // With game mode on, the game in front too, by its app's id, or null
+  // with none (ADR-113).
+  tvContext(change: { front: "home" | "app"; playing: boolean; appField?: object; game?: string | null }): Promise<void>;
+  // Whether game mode's switch is on, so the daemon wants to hear which
+  // game is in front. Without this, it's off.
+  gameMode?(): Promise<boolean>;
   // The typing bar over the app in front, with what the phone is typing, or
   // gone with null (ADR-065). Home draws its own.
   typingBar?(bar: Bar | null): Promise<void>;
@@ -636,7 +641,10 @@ export class Screen {
         playing = now?.now?.playing === true;
       }
       const appField = app ? await this.appField() : null;
-      const change = { front: app ? ("app" as const) : ("home" as const), playing, ...(appField ? { appField } : {}) };
+      // A phone offers to be a controller while a game is in front
+      // (ADR-113), so with game mode on the daemon hears which one.
+      const game = (await this.launcher.gameMode?.().catch(() => false)) ? { game: await this.gameInFront() } : {};
+      const change = { front: app ? ("app" as const) : ("home" as const), playing, ...(appField ? { appField } : {}), ...game };
       const said = JSON.stringify(change);
       if (said === this.context.said && this.now() - this.context.at < 30_000) return;
       await this.launcher.tvContext(change);
@@ -2883,6 +2891,9 @@ let themesFollowed: OmarchyThemes | null = null;
 const omarchyThemes = (): OmarchyThemes =>
   (themesFollowed ??= new OmarchyThemes({ omarchy: process.env.OMARCHY_PATH || "/usr/share/omarchy", home: homedir(), daemon: HOME_URL, log: (line) => console.log(line) }));
 
+// Whether game mode's switch was on, the last time the daemon was asked.
+let gameModeRead = { at: 0, on: false };
+
 export const launcher: Launcher = {
   async homeReady() {
     for (let tries = 0; tries < 60; tries++) {
@@ -2984,6 +2995,15 @@ export const launcher: Launcher = {
       body: JSON.stringify(change),
       signal: AbortSignal.timeout(3000),
     });
+  },
+
+  // Asked every second, so the daemon's answer is kept for a few.
+  async gameMode() {
+    if (Date.now() - gameModeRead.at < 15_000) return gameModeRead.on;
+    const response = await fetch(`${HOME_URL}api/features`, { signal: AbortSignal.timeout(3000) });
+    const switches = (await response.json()) as { phonepad?: unknown };
+    gameModeRead = { at: Date.now(), on: response.ok && switches.phonepad === true };
+    return gameModeRead.on;
   },
 
   async signingIn(app) {

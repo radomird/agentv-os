@@ -32,10 +32,10 @@ function box(channel = "edge", defaults?: Record<string, boolean>): { features: 
 }
 
 // The switches that land off and stay off until they're reviewed.
-const LANDS_OFF = ["announce", "playing2"];
+const LANDS_OFF = ["announce", "phonepad", "playing2"];
 
 test("T12.1 every track's switch is there, in the plan's names, and on by default, on edge and stable alike, but for the ones that land off", async () => {
-  assert.deepEqual(FEATURE_NAMES, ["boxcheck", "sizes", "looks", "dynamicbg", "setup2", "remote2", "starter", "discover", "askbuilds", "announce", "playing2"]);
+  assert.deepEqual(FEATURE_NAMES, ["boxcheck", "sizes", "looks", "dynamicbg", "setup2", "remote2", "starter", "discover", "askbuilds", "announce", "phonepad", "playing2"]);
   assert.deepEqual(FEATURES, Object.fromEntries(FEATURE_NAMES.map((name) => [name, !LANDS_OFF.includes(name)])));
   assert.deepEqual(await box().features.read(), FEATURES);
   assert.deepEqual(await box("stable").features.read(), FEATURES);

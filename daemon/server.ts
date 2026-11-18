@@ -57,6 +57,8 @@ import { Box, type BoxOptions } from "./box.ts";
 import { Announce } from "./announce.ts";
 import { boxRoute, phoneBoxRoute, type BoxRoutes } from "./routes/box.ts";
 import { featureRoutes, type FeatureRoutes } from "./routes/features.ts";
+import { Pads, PADS_MOST, type PadsOptions } from "./pads.ts";
+import { PadRoutes } from "./routes/pad.ts";
 import { aiModelRoutes } from "./routes/ai-models.ts";
 import { planUsageRoutes } from "./routes/plan-usage.ts";
 import { PlanUsages, type UsageProvider, type UsageReply } from "./plan-usage.ts";
@@ -126,6 +128,9 @@ export interface DaemonOptions {
   keyWaitMs?: number;
   // The channel `origaitv channel` sets: /etc/origaitv/channel (ADR-053).
   channelFile?: string;
+  // How long a phone's controller lasts with nothing sent, and how long
+  // the input helper has to make one, for tests (daemon/pads.ts).
+  pads?: Pick<PadsOptions, "quietMs" | "openMs">;
   // Setup's apps: what origaitv-setup-apps writes as it installs them
   // (/run/origaitv-setup-apps/state.json), how long it may take to start, and
   // the official apps in the index, in place of the signed index itself.
@@ -339,6 +344,12 @@ export class Daemon {
   private phoneChannel: PhoneChannel<Phone>;
   // The phone whose session signed each request on the phone's port.
   private signedBy = new WeakMap<IncomingMessage, string>();
+  // The controllers phones in game mode are (ADR-113), and the two
+  // connections that carry them.
+  readonly pads: Pads;
+  private padRoutes: PadRoutes<Phone>;
+  // The game in front, by its app's id, as the screen daemon says it.
+  private frontGame: string | null = null;
   readonly hotspot: Hotspot;
   // Settings, network: the Wi-Fi nearby and joining one (ADR-084).
   readonly network: TvNetwork;
@@ -678,6 +689,22 @@ export class Daemon {
         else response.end();
       });
     });
+    this.pads = new Pads({ log: this.log, changed: () => this.phonesChanged(), ...options.pads });
+    this.padRoutes = new PadRoutes<Phone>({
+      pads: this.pads,
+      on: () => this.features.on("phonepad"),
+      open: async (request, response) => {
+        const opened = await this.phoneChannel.open(request, response);
+        if (opened) this.phones.saw(opened.phone.id);
+        return opened;
+      },
+      phone: (request, response) => this.handlePhone(request, response),
+      local: (request, response) => this.handle(request, response),
+      allowed: (request) => this.allowed(request).ok,
+      json: (response, status, data) => this.json(response, status, data),
+      log: this.log,
+    });
+    this.padRoutes.watch(this.lan, this.server);
   }
 
   listen(): Promise<number> {
@@ -692,6 +719,7 @@ export class Daemon {
       lan ? new Promise<void>((resolve) => lan.listen(this.options.lanPort, this.options.lanHost ?? "0.0.0.0", () => resolve())) : null,
       captive ? new Promise<void>((resolve) => captive.listen(this.options.setupPort, this.options.setupHost ?? "0.0.0.0", () => resolve())) : null,
       this.homeProxy?.listen(this.options.homeProxyPort, "127.0.0.1"),
+      this.features.on("phonepad").then((on) => this.padRoutes.switched(on)),
     ]);
     return phones.then(
       () =>
@@ -747,6 +775,7 @@ export class Daemon {
     this.displayRoutes.close();
     this.network.close();
     this.controllerRoutes.close();
+    this.padRoutes.close();
     return stopServer(this.server, graceMs);
   }
 
@@ -1093,7 +1122,15 @@ export class Daemon {
     }
     next.field = next.front === "app" ? this.appField : this.homeField;
     if (typeof change.playing === "boolean") next.playing = change.playing;
-    if (JSON.stringify(next) === JSON.stringify(this.tv)) return;
+    // The game in front, from the screen daemon while game mode's switch is
+    // on: its app's id, or null with none.
+    const game = typeof change.game === "string" ? change.game.slice(0, 120) : change.game === null ? null : this.frontGame;
+    const gameChanged = game !== this.frontGame;
+    this.frontGame = game;
+    if (JSON.stringify(next) === JSON.stringify(this.tv)) {
+      if (gameChanged) this.phonesChanged();
+      return;
+    }
     const idle = this.idleHome();
     const steered = next.front !== this.tv.front || next.playing !== this.tv.playing || next.screen !== this.tv.screen;
     this.tv = next;
@@ -1153,6 +1190,7 @@ export class Daemon {
     const setup = await this.setup();
     const remote2 = await this.features.on("remote2");
     const askbuilds = await this.features.on("askbuilds");
+    const phonepad = await this.features.on("phonepad");
     // The new remote's keyboard follows the field in front, an app's page
     // included, with the app's name; the old one only home's.
     const tv = { ...this.tv, field: remote2 ? await this.named(this.tv.field) : this.homeField && { kind: this.homeField.kind } };
@@ -1173,7 +1211,12 @@ export class Daemon {
       pin: { set: pin.set, locked: pin.locked },
       signIn: this.signingIn ? { name: this.signingIn.name } : null,
       update: await this.phoneUpdate(),
-      tv: { ...tv, view: remoteView(tv, this.signingIn !== null) },
+      // With game mode on: the game in front, by its app's name, for the
+      // remote to offer a controller (ADR-113).
+      tv: { ...tv, view: remoteView(tv, this.signingIn !== null), ...(phonepad ? { game: await this.gameInFront() } : {}) },
+      // And how many phones are controllers right now, of how many there
+      // can be.
+      ...(phonepad ? { controllers: { phones: this.pads.count(), most: PADS_MOST } } : {}),
       // What's playing, for the new remote's card.
       // With playing2 on it's what's in front, in full, playing or paused.
       nowPlaying: (await this.features.on("playing2")) ? this.phoneRemote.nowPlaying() : remote2 && tv.playing ? await this.nowPlaying(viewer.id) : null,
@@ -1196,6 +1239,15 @@ export class Daemon {
       // the phone shows it under its box, and up to three to choose from.
       said: this.saidNow(),
     };
+  }
+
+  // The game in front, as its app names it. What makes it a game is the
+  // app's category, which the screen daemon and home go by.
+  private async gameInFront(): Promise<{ id: string; name: string } | null> {
+    const id = this.frontGame;
+    if (id === null) return null;
+    const found = (await this.home.manifests().catch(() => [])).find(({ manifest }) => manifest.id === id);
+    return { id, name: found?.manifest.name ?? id };
   }
 
   // The newest row of the ledger, while it's fresh, with its app's name.
@@ -1639,6 +1691,7 @@ export class Daemon {
     if (path === "/api/phone/features" && (await featureRoutes(this.featureKit(), request, response, path))) return;
     if (await discoverRoute(this.discover, method, path, url, response, true, request)) return;
     if (await phoneBoxRoute(this.boxKit(), method, path, response)) return;
+    if (await this.padRoutes.plain(method, path, response)) return;
 
     if (await this.setupRoutes.handle("phone", request, response, url)) return;
     if (path.startsWith("/api/phone/ask") && (await askRoutes(this.askKit(), request, response, path))) return;
@@ -2210,6 +2263,10 @@ export class Daemon {
       this.broadcast("features", all);
       void this.displayRoutes.switched(all.sizes);
       this.announced(all.announce);
+      // Game mode's connections are only there while its switch is on, and
+      // the phones' state says so.
+      this.padRoutes.switched(all.phonepad);
+      this.phonesChanged();
       // What's playing is read, or let go, as its switch turns.
       this.phoneRemote.tvChanged();
     };
@@ -3107,6 +3164,7 @@ export class Daemon {
         return;
       }
       this.phoneChannel.forget(phone[1]);
+      this.pads.forget(phone[1]);
       this.log("a phone was forgotten");
       this.broadcast("phones", {});
       this.json(response, 200, { ok: true, phones: this.phones.list() });
