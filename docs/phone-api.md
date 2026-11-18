@@ -216,7 +216,7 @@ Everything under `/api/phone` except `pair` and `hello` goes through the channel
 | `X-OrigaiTV-Session` | The `session` from the hello. |
 | `X-OrigaiTV-Counter` | A whole number in decimal, 1 or more, with no `0` in front, 15 digits at most. Start at 1 for a new session and add one for each request. |
 | `X-OrigaiTV-Sig` | The signature, 32 bytes in base64url. |
-| `X-OrigaiTV-Grant` | The PIN grant, when the request needs one. Leave the header out otherwise. |
+| `X-OrigaiTV-Grant` | The PIN grant, when the request needs one. Otherwise leave it out, or send it anyway: a route that doesn't need a grant never looks at it. See [The PIN grant](#the-pin-grant). |
 
 ### What's signed
 
@@ -284,6 +284,21 @@ Send the file's own `Content-Type` and a `Content-Length`. The TV refuses an upl
 
 What this buys: someone in the middle can't send an upload of their own, change where it goes, or send it twice. What it doesn't: they could swap the bytes for others of the same length, and they can see the picture. The answer to an upload is JSON, so it comes back sealed.
 
+### A request with no body
+
+Every `GET` has no body, and neither does a `POST` whose row in the tables below says "None". Send it with nothing at all:
+
+- no `Content-Type`;
+- no `Content-Length`, or `Content-Length: 0`. Both are fine, and a browser sends the second with a `POST`;
+- the SHA-256 of nothing as the digest.
+
+That's what the phone's page sends. Don't put `{}` there instead:
+
+- A plain `{}` sent as JSON gets the `401` with `session`, like any JSON that isn't sealed.
+- A sealed `{}` does work. None of these routes reads its body, so the TV opens it and drops it. It's 30 bytes sent for nothing.
+
+The other way round, a route that takes a body treats a request without one as a body that doesn't fit. That's a `400` on most of them. `POST /api/phone/pin` counts it as a wrong PIN.
+
 ### The 401s that aren't sealed
 
 When the TV can't check a request it answers `401` in plain JSON, since there may be no key to seal with. There are two, and the field that's `true` says which:
@@ -317,7 +332,39 @@ Anyone on the network can write an unsealed answer, so be careful what you do wi
 - Take no other unsealed JSON, whatever its status. A `200` or a `403` that isn't sealed isn't the TV's.
 - Take an unsealed non-JSON body only for a `GET` that asked for a file, with status `200`.
 
-One more plain answer to know about: if a sealed body is bigger than the limit, or something breaks before the signature is checked, the TV answers a plain `500` with `{"ok":false,"error":"Something went wrong"}`.
+### The plain 500
+
+One more answer can come unsealed. If something breaks before the TV has checked the signature, it answers a plain `500`:
+
+```json
+{ "ok": false, "error": "Something went wrong" }
+```
+
+A sealed body over the limit is what does it in practice.
+
+It isn't like the two `401`s. Those ask you to do something: say hello again and send the request once more. The `500` says nothing about the session or the pairing, so:
+
+- Keep the session. Don't say hello again because of it.
+- Don't send the same request again by itself. A body that was too big is too big the second time.
+- Count the request as failed and show your own words for it. Anyone on the network can write this answer, so its `error` isn't the TV's word.
+- Never delete the phone's key over it.
+- Give the next request a new counter, as always. The TV never got as far as this one's signature, so it didn't use the counter up, and a gap in the counters costs nothing.
+
+A `500` that comes after the signature is checked is another thing. It's sealed like any other answer, and its `error` is the TV's own. `POST /api/phone/key` sends one when the TV couldn't save the key.
+
+### When the TV says it doesn't know this phone
+
+A client that remembers its TV will one day get the `401` with `pair` from a hello. It can be true: someone forgot the phone in Settings, or the TV was installed again. But the answer isn't sealed, and it can't be, since a TV that has forgotten the phone has no key left to seal it with. So it proves nothing. Anyone on the network can write it. So can another OrigaiTV that the router gave your TV's old address, and that one is telling the truth.
+
+What I'd do with it:
+
+- Keep the phone's key, its id and the TV. An answer anyone can write isn't worth deleting them for.
+- Make sure you asked the right TV. With the `announce` switch on, look the TV up by its box id and say hello at the address that gives. See [Finding the TV](#finding-the-tv).
+- If that hello answers the same, tell the person in your own words that the TV doesn't know this phone any more, and offer to pair again. Leave forgetting the TV to them.
+- Pair again only with a code that's on the TV's screen. A pairing proves itself, since its `confirm` only fits if the TV saw the same secret. Once it has worked, replace the old key and id with the new ones. Until then the old ones stay.
+- Don't ask again in a loop. Try when the person opens the app, or when the TV turns up at another address.
+
+Only the `401` with `pair` means this. A hello with no answer, with another status, or with a `proof` that doesn't fit is a TV you couldn't reach, not a TV that forgot you.
 
 ## The PIN grant
 
@@ -330,13 +377,19 @@ Some routes are an adult's, and need the PIN once one is set. The flow:
 
 About grants:
 
-- A grant lasts 5 minutes. Keep it and reuse it until `until`, or until a request answers `pin: true` again.
+- A grant lasts 5 minutes from when the TV made it. Keep it and reuse it until a request answers `pin: true` again.
+- `until` is on the TV's clock, which may not be the phone's. Don't compare it with the phone's own time. If you want to ask for the PIN before a request is refused, count the 5 minutes on the phone from when the answer came.
+- What to rely on is the refusal. A grant can end before `until`, as below, so a guarded request can always answer `pin: true`. Ask for the PIN then, and send the request again.
 - It belongs to the phone that entered the PIN. Another phone can't use it, and neither can the TV's own pages.
-- Locking the TV or removing the PIN ends every grant. Changing the PIN ends every grant but the one that changed it.
+- Locking the TV or removing the PIN ends every grant. Changing the PIN ends every grant but the one that changed it. Grants are kept in the daemon's memory, so a daemon restart ends them all too.
 - With no PIN set, guarded routes just work, and `POST /api/phone/pin` answers `403` with `There's no PIN yet`.
 - The right PIN also unlocks a locked TV.
+- Sending a grant to a route that doesn't need one is harmless. Only a guarded route reads the header, so one that's run out or isn't a grant at all changes nothing anywhere else. You can put it on every request while you hold one. It still has to be in the signature, like any grant.
+- The grant goes in a header, so it isn't sealed. That's fine: it only works in a request signed by the phone that entered the PIN.
 
 A wrong PIN is `403` with `"ok": false` and a sentence in `error`, such as `Wrong PIN`. After five wrong tries in a row the answer also has `"wait": 30`, the seconds before the TV takes another try. Each wrong try after that doubles the wait, up to 15 minutes. Each phone has its own count, so one phone's wrong tries don't lock out another or the TV.
+
+Anything that isn't the right PIN is a wrong try: three digits, five, or a number where the text should be. Check for four digits on the phone before you send.
 
 "State" below has `pin.set`, so a client knows up front whether a PIN exists.
 
@@ -387,15 +440,123 @@ Unless a row says otherwise, a body is sealed JSON and an answer is sealed JSON 
 
 What `POST /api/phone/remote` takes, one per request:
 
-- `{"key":"up"}`: a key press. The name is 1 to 12 characters of `a-z`, `0-9` and `-`.
-- `{"hold":"enter","ms":1200}`: a held key. `ms` is kept between 100 and 3000, and is 1200 when left out.
-- `{"text":"hello"}`: text to type, 1 to 500 characters.
-- `{"move":[dx,dy]}`: a trackpad move. Whole numbers, each within 2000 either way.
+- `{"key":"up"}`: a key press. The name is 1 to 12 characters of `a-z`, `0-9` and `-`, and [The key names](#the-key-names) has every one the TV knows.
+- `{"hold":"back","ms":1100}`: a held key, by the same names. `ms` is how long it stays down. It's kept between 100 and 3000, and is 1200 when left out. See [Holds](#holds).
+- `{"text":"hello"}`: text typed as key presses, 1 to 500 characters. It can type the letters, digits and signs of a US keyboard, a space, a tab and a new line. With any other character in it, none of it is typed. To fill a field on the TV, use `POST /api/phone/text`.
+- `{"move":[dx,dy]}`: a trackpad move, right and down. Whole numbers, each within 2000 either way.
 - `{"click":"left"}`: or `"right"` or `"middle"`.
-- `{"scroll":3}`: a whole number within 50 either way, not 0.
-- `{"wheel":[x,y]}`: a two-finger scroll, right and down. Whole numbers within 4000, not both 0. Add `"at":"pointer"` to scroll under the pointer, not the middle of the page.
+- `{"scroll":3}`: notches of a mouse's wheel, up when it's above 0. A whole number within 50 either way, not 0.
+- `{"wheel":[x,y]}`: a two-finger scroll, right and down, in the pixels of the TV's page. Whole numbers within 4000, not both 0. Add `"at":"pointer"` to scroll under the pointer, not the middle of the page.
 
-`POST /api/phone/text` keeps a field on the TV in step with one on the phone. `value` is the whole text, up to 500 characters, and `caret` is where the cursor is. Only the newest change waits to go: one that's overtaken is answered `{"ok":true}` straight away.
+A body with more than one of these is taken as the first that fits, in this order.
+
+`{"ok":true}` means the TV's screen session has the request, not that the key was pressed. The answer comes at once, for a hold of 3 seconds too. Three things follow from that:
+
+- The TV presses them one at a time, in the order they came. A key sent during a hold waits for the hold to end.
+- A name the TV doesn't know still gets `{"ok":true}`, and then nothing happens. So does a text with a character it can't type.
+- A `400` means the body is none of the seven: a key's name with a capital in it, a move that isn't two whole numbers, a scroll of 0.
+
+#### The key names
+
+These are all the names `key` and `hold` take. `daemon/input.py` has the list, and a test keeps this table the same as it.
+
+A key goes to whatever is in front on the TV, as a key on a keyboard would. The last column is what OrigaiTV's own screens do with it. An app in front does what it likes.
+
+| Name | The key | On OrigaiTV's screens |
+| --- | --- | --- |
+| `up`, `down`, `left`, `right` | The arrows | Move the focus. |
+| `enter` | Enter | OK. Held for 600 ms on an app's tile, it opens the app's details. |
+| `back` | Esc | Back. Held for a second, it goes home, from an app too. |
+| `esc` | Esc | The same key as `back`. |
+| `home` | A remote's Home button | Home, from anywhere. |
+| `home-key` | A keyboard's Home key | Home too. On Omarchy's desktop it's the keyboard's own Home. |
+| `backspace` | Backspace | Deletes in a field and on the TV's PIN pad. Anywhere else on home it's Back. |
+| `delete` | Delete | In Edit home, removes the tile. On the TV's PIN pad, takes a digit off. |
+| `tab` | Tab | The next field. |
+| `space` | Space | |
+| `pageup`, `pagedown`, `end` | Page Up, Page Down, End | |
+| `playpause`, `stop`, `previous`, `next` | The media keys | They go to the app in front. For play and pause use `POST /api/phone/playback`, which asks the app and says whether it worked. |
+| `mute`, `volumedown`, `volumeup` | The volume keys | The TV session has nothing bound to them, so they only reach the app in front. On Omarchy's desktop they're Omarchy's volume keys. |
+| `f11` | F11 | |
+| `a` to `z` | The letters | On home and Apps: `i` opens the details of the app in focus, `e` opens Edit home, `p` adds the app in focus to home or removes it (Apps only), and `q` closes an app that's open behind home. |
+| `0` to `9` | The digits | A digit on the TV's PIN pad. See [The TV's PIN pad](#the-tvs-pin-pad). |
+
+There's no key for a capital letter or a sign. Those only go as `text`.
+
+#### Holds
+
+A phone decides what a hold is. The TV is never told a finger is down: it gets a key, or a held key, when the phone sends one. Two holds do something on the TV:
+
+- **Back, held, goes home.** The TV counts a second from when Esc goes down. Send `{"hold":"back","ms":1100}`, which keeps it down that second and a little more.
+- **OK, held on an app's tile, opens its details.** Only on home and Apps, where the state's `tv.details` is `true`. `{"key":"i"}` opens the same details at once, and that's what the phone's page sends, since it has already waited out the hold itself. A held `enter` of 600 ms or more does it too, 600 ms later.
+
+Any other key that's held repeats, as it does on a keyboard.
+
+#### What the phone's page sends
+
+This is the remote the page draws with the `remote2` switch on, gesture by gesture, with its timings. Match them and a native remote feels the same. Its pad is a round one in Glass and a plain surface in the other looks. `look` in the state says which.
+
+| On the phone | What's sent | When |
+| --- | --- | --- |
+| A tap on the pad | `{"key":"enter"}` | As the finger lifts, if it was down for under 600 ms and didn't swipe. |
+| A swipe on the pad | An arrow, such as `{"key":"left"}`, for every 44 px the finger goes | As it passes each 44 px. The arrow is the way it has moved most. A long swipe sends several. |
+| A hold in the middle of the pad, on an app's tile | `{"key":"i"}` | Once the finger has been down for 600 ms. Nothing more when it lifts. |
+| A hold in the middle, anywhere else | Nothing. The pad becomes the pointer, until Done. | The same 600 ms. |
+| A press on the round pad's edge | That side's arrow | As the finger lifts. Held still, the arrow goes after 450 ms and then every 150 ms until it lifts. |
+| Two fingers on the pad | `{"wheel":[x,y]}`, three times the fingers' way | At most every 30 ms, with what's gathered since the last one. |
+| A tap on Back | `{"key":"back"}` | As the finger lifts, if it was down for under 700 ms. |
+| Back, held | `{"hold":"back","ms":1100}` | Once it has been down for 700 ms, while it's still down. Nothing more when it lifts. The TV is home a second later. |
+| Home | `{"key":"home"}` | |
+| Play or pause | `POST /api/phone/playback` with `{"action":"toggle"}` | |
+| The pointer: a move | `{"move":[dx,dy]}`, twice the finger's way | At most every 30 ms. |
+| The pointer: a tap | `{"click":"left"}` | As the finger lifts, if it was down for under 250 ms and went less than 6 px in all. |
+| The pointer: two fingers | `{"wheel":[x,y],"at":"pointer"}` | As on the pad. |
+
+A few things behind the table:
+
+- "On an app's tile" is what the state said when the hold landed: `tv.front` is `"home"`, `tv.screen` isn't `"ambient"` and `tv.details` is `true`. Everywhere else a hold sends the TV nothing.
+- A finger counts as still while it's within 12 px of where it went down, adding the way across to the way down. Past that it isn't a hold any more. Past 44 px either way it's a swipe.
+- The round pad's edge is the part more than 0.6 of the radius from its middle. A press there that moves is a swipe.
+- A second finger ends the first one's tap, hold or arrow. The pad then scrolls until every finger has lifted.
+- While `tv.view` is `"trackpad"`, which is Omarchy's desktop, the pad is the pointer from the start, and there's no Done.
+- The page with a d-pad has an OK button with the same hold. A tap is `{"key":"enter"}` as it lifts. Held for 600 ms on an app's tile it's `{"key":"i"}`, and then no Enter when it lifts. Anywhere else a long press is still Enter as it lifts.
+
+#### The TV's PIN pad
+
+When the TV asks for the PIN on its own screen, the state's `tv.pin` is there and `tv.view` is `"pin"`. A phone can type into that pad with keys:
+
+- `{"key":"4"}`: a digit. The pad takes four, and checks them by itself at the fourth. There's no OK to send.
+- `{"key":"backspace"}`: takes the last digit off. `delete` does the same.
+- `{"key":"back"}`: closes the pad, where it can be closed. The pad that unlocks the TV can't.
+- The arrows and `enter` move over the pad's own buttons and press them, as anywhere else.
+
+`tv.pin.digits` says how many are in, so draw your boxes from that and not from what you sent. After a wrong PIN it's back to 0, and `tv.pin.error` has the sentence to show.
+
+This isn't `POST /api/phone/pin`. That one is the phone asking for a grant of its own, and it shows nothing on the TV. Here the phone is only a keyboard for the TV's pad, and what the PIN opens is the TV's.
+
+#### Typing into a field
+
+`POST /api/phone/text` keeps a field on the TV in step with one on the phone. Send the whole text as `value` on each change, with `caret` for where the cursor is, and `{"done":true}` for Enter. Only the newest change waits to go: one that's overtaken is answered `{"ok":true}` straight away.
+
+The two are counted differently:
+
+- `value` can be up to 500 characters, counted as Unicode code points. An emoji that's one code point counts once. More than 500 is a `400`.
+- `caret` is counted in UTF-16 units from the start of `value`, the way JavaScript counts a string. That same emoji moves it by two. It's a whole number from 0 to the length of `value` in those units.
+- A `caret` that doesn't fit is dropped, not refused. Left out, not a whole number, below 0 or past the end: the text goes all the same, and the cursor stays where the change left it.
+- The cursor only follows in a page's own text field. A native app is typed into as key presses, and has no cursor to move.
+
+The answer is `200` with `ok`, and only the fields that apply:
+
+| Field | When it's there |
+| --- | --- |
+| `by` | `"page"` when the text went into a field in a page, which is home and most apps. `"key"` when it was typed as key presses into a native app. Missing when the change was overtaken or reached nothing. |
+| `why` | With `"ok": false`, a sentence for the person: `Nothing to type into right now`, `That field is full`, `Couldn't type all of it`, `This app can't take é` or `Your TV isn't ready yet`. |
+| `kept` | Only from a field that's full. It's how much of `value` the field took, from the start, in UTF-16 units like `caret`. |
+| `value` | Only from a native app, and only when a character couldn't go. Those take plain letters: the letters, digits and signs of a US keyboard. It's the text as the TV has it, which is yours without what couldn't be typed. |
+
+What the phone's page does with them: with `value`, it shows that in its own field. With `kept`, it cuts its field to that length. It does neither if more was typed while the answer was on its way.
+
+`{"done":true}` presses Enter in the field and answers `{ok, by}`.
 
 ### Asking the TV
 
@@ -489,7 +650,36 @@ Export only works for the app the TV is offering in the state's `export` field, 
 | `POST /api/phone/discover/shares` | `{host, user, password}` | The same, for a NAS that lists its folders only for a user | Anyone |
 | `POST /api/phone/discover/pick` | `{key}`: a row of the list the TV is showing | `{ok}`. `409` when the TV isn't showing a list. | Anyone |
 
-`found` is a list of `{kind, name, url, host, via}`. The kinds are in `daemon/discover.ts`.
+`found` is a list of `{kind, name, url, host, via}`, all text. `kind` is one of `jellyfin`, `emby`, `plex`, `immich`, `smb` and `nfs`, and those are the names `kinds` takes. `url` is where an app or a folder reaches it, `host` is the machine's name or its address, and `via` is how the TV heard of it.
+
+The folders a NAS shares come as `{ok, host, shares}`, where `shares` is a list of `{kind, name, uri}` with a `note` when the NAS gave one. `login: true` in that answer means the NAS wants a user before it lists more.
+
+## Timeouts
+
+Nearly every route answers as fast as the TV can read a file. These are the ones that wait on something, and how long the TV gives it. Set each request's timeout a little above its row.
+
+| Route | The longest it waits | What it waits for |
+| --- | --- | --- |
+| `GET /api/phone/state` with the current `since` | 25 seconds | A change. See [The long poll](#the-long-poll). |
+| `POST /api/phone/playback` | 12 seconds, or 20 seconds for the actions the `playing2` switch adds | The app in front. [How long an answer can take](#how-long-an-answer-can-take) has which action gets which. |
+| `POST /api/phone/text` | 3 seconds, or 6 seconds for a change sent while the one before is still on its way | The field on the TV. A change waits its turn behind the one the TV is taking. |
+| `POST /api/phone/key` | 10 seconds | The key being saved. |
+| `PUT /api/phone/location` | 8 seconds | The TV's clock moving to the new time zone, when the location changes it. |
+| `GET` and `POST /api/phone/discover/shares` | 16 seconds | The NAS: 10 seconds for its SMB list, then 3 seconds for each of the two questions NFS takes. |
+| `POST /api/phone/say/pick` | 40 seconds, and more for a title from New this week | The app opening what was picked. See below. |
+| `POST /api/phone/say` | There's no one number | See below. |
+| `POST /api/phone/apps/<app id>/push` | 5 minutes | The push to GitHub. |
+| `GET /api/phone/ai/icon/<provider>` | 10 seconds for each address it tries | The provider's own site, the first time. After that the TV has the icon. |
+| `GET /api/phone/box` | There's no one number | The TV reads its hardware each time. Each program it runs for that has 5 seconds, and most run side by side. |
+| An upload | As long as the bytes take | |
+
+A few things to know:
+
+- **`say` answers when the sentence is done, not when it's heard.** The AI has 45 seconds to read it. Then comes whatever it asked for, one after the other: a search has 15 seconds, or 40 seconds when it's one app's, opening an app has 40 seconds, and a title's own page has 60 seconds. Don't hold the screen for it. The state's `said` has the sentence at once with `state: "routing"`, and then what came of it, so follow that and let the request take as long as it takes.
+- **`say/pick` opens what was picked,** which has the same 40 seconds. A title from New this week opens on its own page, which has the 60 seconds, and an app with no such page searches for it and plays it after that.
+- **`remote` doesn't wait for the key.** It answers once the TV's screen session has the request, so a hold of 3 seconds answers as fast as a tap.
+- **When the wait runs out, the answer still comes.** `text` and `playback` answer `200` with `{"ok":false,"why":"Your TV isn't ready yet"}`. `key` answers a sealed `500` with why. `push` answers `502`.
+- **Everything else** reads or writes what the TV already has. I'd give those 10 seconds.
 
 ## The long poll
 
@@ -512,6 +702,8 @@ A few things to know:
 
 ### The state's fields
 
+[The state's types](#the-states-types) has the type of each.
+
 | Field | What it is |
 | --- | --- |
 | `ok` | `true`. |
@@ -519,28 +711,28 @@ A few things to know:
 | `phone` | This phone, as the TV knows it: `{id, name, pairedAt}`. |
 | `boxId` | The box id, as the TV announces it: 32 hex digits. Only there while the `announce` switch is on. See [The box id](#the-box-id). |
 | `features` | The two switches the remote draws by: `{remote2, askbuilds}`. |
-| `ask` | What the Ask box is waiting on for an adult's OK, or `null`. Only there while `askbuilds` is on, and always `null` on a child's profile. `daemon/routes/ask.ts` has its shape. |
+| `ask` | What the Ask box is waiting on for an adult's OK, or `null`. Only there while `askbuilds` is on, and always `null` on a child's profile. |
 | `look` | The id of the look the TV is in, such as `"terminal"`, or `null` while the looks switch is off. |
-| `viewer` | Who's watching: `{id, name, role, avatar, locked}`. `role` is `"adult"` or `"child"`. `locked` means the profile asks for the PIN to open. |
+| `viewer` | Who's watching: `{id, name, role, avatar, locked}`. `role` is `"adult"` or `"child"`. `avatar` is a colour's name. `locked` means the profile asks for the PIN to open. |
 | `viewers` | Every profile, each in the same shape. |
 | `pin` | `{set, locked}`: whether there's a PIN, and whether the TV is locked now. |
 | `signIn` | `{name}` while an app's sign-in screen is up on the TV, for `POST /api/phone/sign-in`. Otherwise `null`. |
 | `update` | An update that's ready or going in: `{version, installed, omarchy, notes, tonight, later, installing}`. `null` with nothing to install. |
 | `tv` | What's on the TV. See below. |
-| `nowPlaying` | `{title, app, left}` while something plays and the `remote2` switch is on. `left` is minutes, and may be missing. Otherwise `null`. With the `playing2` switch on it says more, and it stays while the thing is paused. See [What's playing](#whats-playing). |
+| `nowPlaying` | `{title, app, left}` for the remote's card, while the `remote2` switch is on, something plays and its app has said where it is in the last 30 seconds. `left` is minutes, and may be missing. Otherwise `null`, which it can be while `tv.playing` is `true`. See [`nowPlaying`](#nowplaying). With the `playing2` switch on it says more, and it stays while the thing is paused. See [What's playing](#whats-playing). |
 | `setup` | While setup is on: `{step, part, n, of, muted}`. `n` and `of` may be missing. `null` once setup is done. |
 | `ai` | What the AI step asks of the phone, or `null`. See below. |
 | `discover` | The list of what's on the network that the TV is showing: `{kinds, machines}` or `{host}`. `null` with no list, or with the discover switch off. |
 | `notices` | The last five notices from apps: `[{app, name, text, at}]`, newest first. |
 | `builds` | The builds an adult follows: `[{build, id, name, provider, state, phase, done, steps}]`, with `signIn`, `ranOut` and `reason` when they apply. Empty on a child's profile. |
-| `export` | An app the TV is offering to save a copy of: `{id, name, version, github}`. `github` is who the TV is signed in to GitHub as, or `null`. `null` with no offer, and on a child's profile. |
+| `export` | An app the TV is offering to save a copy of: `{id, name, version, github}`. `github` is who the TV is signed in to GitHub as, `{via, login}`, or `null`. `null` with no offer, and on a child's profile. |
 | `said` | The last sentence said to the TV and what came of it, for ten minutes: `{n, sentence, from, viewer, state, outcome, at}`. `state` is `"routing"` or `"done"`, and `outcome` is missing until it's done. Then `null`. |
 
 `tv` has:
 
 | Field | What it is |
 | --- | --- |
-| `view` | The page the remote should open on: `"trackpad"`, `"pin"`, `"keyboard"`, `"playback"` or `"remote"`. It's worked out from the fields below, in that order. |
+| `view` | The page the remote should open on. It's the first of these that fits: `"trackpad"` while `desktop` is `true`, `"pin"` while `pin` is there, `"keyboard"` while `field` is there or the state's `signIn` is, `"playback"` while `playing` is `true`, and `"remote"` otherwise. So it's `"keyboard"` with `field` at `null` while an app's sign-in screen is up, and `POST /api/phone/sign-in` fills that one. |
 | `pin` | The PIN pad on the TV, when it's up: `{title, for, digits, error}`. `digits` is how many are typed so far. Otherwise `null`. |
 | `field` | The text field in front, or `null`. With `remote2` on it's `{kind, label, value}`, plus `app` and `name` for a field in an app. A password never has `value`. With `remote2` off it's `{kind}`, for home's own fields only. `kind` is `text`, `search`, `email`, `password`, `number` or `url`. |
 | `screen` | `"home"`, `"menu"` or `"ambient"`. |
@@ -549,9 +741,223 @@ A few things to know:
 | `playing` | Whether something is playing. |
 | `desktop` | `true` while the Omarchy desktop is on, where the remote is a trackpad. |
 
-`ai`, when it isn't `null`, is `{ask, provider, path, name, maker, plan, terms, summary, keyUrl}`. `ask` says what the phone should show: `"terms"` to accept with `POST /api/phone/terms`, `"key"` to paste with `POST /api/phone/key`, or `"sign-in"`, which adds `signIn: {url, code, pastes}` for the plan's sign-in.
+### The state's types
 
-`outcome` in `said` has a `kind` and a sentence in `say`. The kinds are `opened`, `choose`, `told`, `build`, `change` and `none`, and `daemon/executors/index.ts` has what each carries. For `choose`, `candidates` are what `POST /api/phone/say/pick` picks from.
+Here's the whole state with every field's type, written the way TypeScript writes them. A `?` after a name means the field can be missing. `| null` means it's there and can be `null`.
+
+```ts
+{
+  ok: true,
+  version: number,
+  phone: { id: string, name: string, pairedAt: string },
+  boxId?: string,
+  features: { remote2: boolean, askbuilds: boolean },
+  ask?: Ask | null,
+  look: string | null,
+  viewer: Viewer,
+  viewers: Viewer[],
+  pin: { set: boolean, locked: boolean },
+  signIn: { name: string } | null,
+  update: Update | null,
+  tv: {
+    view: "trackpad" | "pin" | "keyboard" | "playback" | "remote",
+    pin: { title: string, for: string, digits: number, error: string | null } | null,
+    field: { kind: string, label?: string, value?: string, app?: string, name?: string } | null,
+    screen: "home" | "menu" | "ambient",
+    details: boolean,
+    front: "home" | "app",
+    playing: boolean,
+    desktop: boolean
+  },
+  nowPlaying: { title: string, app: string, left?: number } | null,
+  setup: { step: string, part: string, n?: number, of?: number, muted: boolean } | null,
+  ai: Ai | null,
+  discover: { kinds: string[], machines: boolean } | { host: string } | null,
+  notices: { app: string, name: string, text: string, at: string }[],
+  builds: Build[],
+  export: { id: string, name: string, version: string, github: { via: "gh" | "ssh", login: string } | null } | null,
+  said: Said | null
+}
+```
+
+A few things that hold for all of it:
+
+- Every number here is a whole number.
+- A time is text, in UTC, in one of two shapes. `pairedAt` and `said.at` have milliseconds and a `Z`: `2026-11-17T20:15:03.120Z`. A notice's `at` has neither: `2026-11-17T20:15:03+00:00`. Make sure your parser takes both.
+- The TV adds fields as it grows, and `boxId` came that way. Skip a field you don't know.
+- `look` is `"terminal"`, `"glass"` or `"cinema"` today.
+- `setup.step` is one of `welcome`, `ready`, `box`, `country`, `ai`, `people`, `goal`, `apps`, `look`, `theme` and `background`. `part` is the words for it, to show as they are.
+- `discover.kinds` holds the kinds from [What's on the network](#whats-on-the-network). `machines` is `true` when the TV's list is one row for each machine, not one for each thing found.
+
+#### `viewer`
+
+```ts
+Viewer = { id: string, name: string, role: "adult" | "child", avatar: string, locked: boolean }
+```
+
+`avatar` is a colour's name, not a picture: `blue`, `green`, `magenta`, `yellow`, `cyan`, `orange` or `red`. The phone's page draws the first letter of the name on that colour. The colours are the TV's theme's, and `GET /api/theme.css` has them as `--blue` and so on when the theme has them.
+
+#### `update`
+
+```ts
+Update = {
+  version: string,
+  installed: string | null,
+  omarchy: string | null,
+  notes: string[],
+  tonight: boolean,
+  later: boolean,
+  installing: boolean
+}
+```
+
+- `version` is the OrigaiTV version there is to install. It's the word `packages` when OrigaiTV itself has no new version and only other packages do. It's what `POST /api/phone/updates/tonight` takes.
+- `installed` is the OrigaiTV version on the TV now.
+- `omarchy` is the Omarchy version that comes with the update, or `null` when there's none.
+- `notes` is What's new, a line each. It can be empty.
+- `tonight` is `true` when this version goes in tonight. `later` is `true` once someone said Later to it. `installing` is `true` while it's going in.
+
+#### `nowPlaying`
+
+With the `playing2` switch off, `nowPlaying` isn't "something is playing". It's the last thing an app told the TV about where it is, and it's there only when all of these hold:
+
+- the `remote2` switch is on;
+- `tv.playing` is `true`;
+- an app has said what's playing and where it is within the last 30 seconds. An app that can says so every 10 seconds.
+
+So `tv.playing` can be `true` with `nowPlaying` still `null`: in the first seconds of something, and for as long as it plays in an app that doesn't say what it plays. Draw play and pause from `tv.playing`, and the card only when `nowPlaying` is there.
+
+`left` is whole minutes. It's missing when the app gave no length.
+
+With `playing2` on, [What's playing](#whats-playing) has the rules.
+
+#### `ai`
+
+```ts
+Ai = {
+  ask: "terms" | "key" | "sign-in",
+  provider: string,
+  path: "key" | "plan",
+  name: string,
+  maker: string,
+  plan: string,
+  terms: { id: string, name: string, url: string }[],
+  summary: string,
+  keyUrl: string,
+  signIn?: { url: string, code?: string, pastes: boolean }
+}
+```
+
+- `ask` says what the phone should show: `"terms"` to accept with `POST /api/phone/terms`, `"key"` to paste with `POST /api/phone/key`, or `"sign-in"` for the plan's sign-in.
+- `provider` is the AI's id, such as `claude`. `name` is what it's called, `maker` is the company, and `plan` is its plan's name.
+- `path` is how the household pays for it: its own API key, or a plan. Send `provider` and `path` back as they are to `POST /api/phone/terms`.
+- `terms` are the documents to accept, each with a link. `summary` is one line on what they are.
+- `keyUrl` is the page where the provider hands out keys.
+- `signIn` is only there with `ask: "sign-in"`, and then `terms` is empty and `summary` is `""`. `url` is the provider's page to open. `code` is a code to type on that page, when it shows one. `pastes` is `true` when the page gives a code back, which goes to `POST /api/phone/ai/sign-in/code`.
+
+#### `ask`
+
+```ts
+Ask =
+  | {
+      kind: "build",
+      n: number,
+      build: string,
+      app: string | null,
+      what: string,
+      state: string,
+      phase: string,
+      name: string | null,
+      recipe: string | null,
+      says: string | null,
+      done: number,
+      steps: number,
+      model: string | null,
+      models?: { id: string, name: string, only?: "plan" | "key", costsExtra?: "plan" }[]
+    }
+  | { kind: "change", n: number, app: string, name: string, what: string, recipe: string | null }
+```
+
+- `n` is the sentence's number, the same as `said.n`. `POST /api/phone/ask/confirm` and `ask/cancel` take it, so an OK can't land on a newer sentence.
+- `kind: "build"` is an app being made, or a change that already has its OK. `kind: "change"` is a change to an app that waits for one.
+- `app` is the app a change is for, by its id. It's `null` for a new app.
+- `what` is what was asked for. `name` is what the app will be called and `says` is what the TV understood, in a line. Both are `null` until it has read the ask.
+- `state` and `phase` are a build's, as in [`builds`](#builds). `"confirm"` is the one that waits for the OK.
+- `recipe` is the kind of app it knows how to make: `streaming`, `game`, `photos`, `api` or `theme`. `null` means it's something new, with steps to check first.
+- `done` and `steps` count the steps done and the steps in all.
+- `model` is the AI model it runs on, by its id. `models` is there while it waits for the OK: the ones it could run on, to send one's `id` as `model` to `ask/confirm`.
+
+#### `builds`
+
+```ts
+Build = {
+  build: string,
+  id: string,
+  name: string,
+  provider: string,
+  state: "starting" | "running" | "confirm" | "plan" | "approve" | "sign-in" | "plan-sign-in" | "failed",
+  phase: "understand" | "plan" | "build" | "stage-b",
+  done: number,
+  steps: number,
+  signIn?: "starting" | "waiting" | "done" | "failed",
+  ranOut?: true,
+  reason?: string
+}
+```
+
+- `build` is this build's own name, for the routes under `/api/phone/builds`. `id` is the app's id, which starts with `local.`.
+- `name` is the app's name. Until it has one, it's the sentence that asked for it.
+- `provider` is the AI it runs on: `claude`, `chatgpt`, `gemini`, `grok` or `muse`.
+- `state` is where it stands. `starting` and `running` are it working. `confirm` waits for the OK that `POST /api/phone/ask/confirm` gives, `plan` for an adult to approve its steps with `POST .../plan`, and `approve` for an adult to approve the app with `POST .../approve`. `sign-in` waits for someone to sign in to the app on the TV, and `plan-sign-in` for the AI plan's own sign-in. `failed` has a `reason`. A build that's installed isn't in the list any more.
+- `phase` is which part of the work it's in.
+- `signIn` is one word, not an object: how the plan's sign-in is going, while the build is in `plan-sign-in`. Its link and its code aren't in the state. `GET /api/phone/builds` has every build in full, with `signIn` as `{state, url, code, pastes}`.
+- `ranOut` is there, and `true`, when the plan's sign-in ran out and is asked for again.
+
+#### `said`
+
+```ts
+Said = {
+  n: number,
+  sentence: string,
+  from: string,
+  viewer: string,
+  state: "routing" | "done",
+  outcome?: Outcome,
+  at: string
+}
+
+Outcome =
+  | { kind: "opened", say: string, app: string, item?: Item }
+  | { kind: "choose", say: string, candidates: { app: string, name: string, item: Item }[] }
+  | { kind: "told", say: string, episode?: object }
+  | { kind: "build", say: string, build: string, what: string, app?: string }
+  | { kind: "change", say: string, app: string, name: string, what: string, recipe: string | null }
+  | { kind: "none", say: string, why: string }
+
+Item = {
+  id: string,
+  kind: "film" | "series" | "episode" | "track" | "album" | "playlist" | "photo-album" | "game",
+  title: string,
+  season?: number,
+  episode?: number,
+  subtitle?: string,
+  year?: number,
+  poster?: string,
+  still?: string
+}
+```
+
+- `n` counts the sentences since the daemon started. `from` is the phone's name, or `the tv`. `viewer` is the id of the profile that was watching.
+- `outcome` is missing while `state` is `"routing"`. `at` is when it was heard, and then when it was done.
+- `say` is the line to show, in every kind. It's what the TV shows and says aloud.
+- `opened`: an app opened, by its id in `app`, on `item` when it opened a title.
+- `choose`: more than one thing fits. `candidates` has up to three, and `POST /api/phone/say/pick` takes the place of one in the list as `choice`, counting from 0. In each, `app` is the app's id and `name` is the app's name.
+- `told`: the answer is `say` itself, such as when a new episode comes out. `episode` has the dates behind it, for the TV's own page.
+- `build` and `change`: the TV is making an app, or wants an adult's OK to change one. With `askbuilds` on, the state's `ask` has what to show.
+- `none`: nothing happened, and `say` is why in a line. `why` is a word for the kind of reason: `unroutable`, `unreadable`, `failed`, `missing`, `not-found`, `soon`, `not-opened`, `no-tmdb`, `child`, `no-ai`, `not-built`, `not-made` or `which`.
+- In an `Item`, `poster` and `still` are web addresses of pictures, and `subtitle` is a line such as the artist.
+
+The `said` in the answer to `POST /api/phone/say` and `say/pick` is the same object with one more field, `route`: what the AI made of the sentence. The state leaves it out.
 
 ## What's playing
 
