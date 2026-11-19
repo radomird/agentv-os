@@ -323,7 +323,10 @@ export function shareList(options: SharesOptions): { el: HTMLElement; signIn(): 
       return;
     }
     signedIn = withLogin ? password.value : undefined;
-    password.value = "";
+    // Only a password that was sent leaves the field. The first ask sends
+    // none, and one typed meanwhile, or kept from the page drawn before
+    // (typed.ts), stays for Show folders.
+    if (withLogin) password.value = "";
     const shares = answer.shares ?? [];
     rows.replaceChildren(...shares.map((share) => row(null, share.name, "", "", { "data-share": share.uri }, () => options.pick(share, signedIn))));
     if (answer.login && !withLogin) return signIn();

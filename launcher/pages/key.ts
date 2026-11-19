@@ -14,6 +14,7 @@ import { loadingMark } from "../loading.ts";
 import type { Ctx, View } from "../main.ts";
 import { bar, heading } from "./parts.ts";
 import { pinAsked } from "./pin.ts";
+import { keeps } from "../typed.ts";
 
 const PROVIDERS = ["claude", "chatgpt", "gemini", "grok", "muse"];
 
@@ -154,8 +155,16 @@ export function keyPage(ctx: Ctx): View {
     provider = PROVIDERS[(PROVIDERS.indexOf(provider) + by + PROVIDERS.length) % PROVIDERS.length];
     ctx.sounds.play("move");
     draw();
+    picked(provider);
   };
   const which = h("button", { class: "button", "data-focus": true, "data-action": "provider", "data-adjust": "provider", onclick: () => step(1) }, h("span", {}, "AI"), value);
+  // The AI picked stays when the page is drawn again, as the key does, so
+  // the key is never saved for an AI it wasn't pasted for.
+  const picked = keeps<string>(which, "provider", (kept) => {
+    if (!PROVIDERS.includes(kept)) return;
+    provider = kept;
+    draw();
+  });
   const field = h("input", {
     class: "music-search",
     "data-focus": true,
@@ -471,7 +480,9 @@ export function planSignInPage(ctx: Ctx): View {
     const code = field.value.trim();
     if (!code) return;
     try {
-      await signInCall("POST", "/api/ai/sign-in/code", { code }, grant);
+      // The PIN's grant from Start over, or the one this visit to Settings
+      // holds, where the page was drawn again since.
+      await signInCall("POST", "/api/ai/sign-in/code", { code }, grant ?? ctx.held());
       // The code stays in the field until the TV has it.
       if (field.value.trim() === code) field.value = "";
       ctx.toast("Signing in…", "ok");
