@@ -97,7 +97,7 @@ test("T25.1 what wakes the box: the wired port's hardware address and its networ
   assert.deepEqual(box.wake(), { mac: "94:c6:91:1a:2b:3c", broadcast: "192.168.50.255" });
 });
 
-test("T25.1 the hand-over: the id and the phones' port when it's on, and nothing at all while it's off", () => {
+test("T25.1 the hand-over: the id, the phones' port and the name when it's on, and nothing at all while it's off", () => {
   const state = fresh("hand");
   const file = join(fresh("avahi"), "origaitv.service");
   const announce = new Announce({ state, file });
@@ -108,8 +108,8 @@ test("T25.1 the hand-over: the id and the phones' port when it's on, and nothing
 
   const on = announce.sync(true, 3001);
   const id = boxId(state);
-  assert.deepEqual(on, { on: true, id, port: 3001 });
-  assert.deepEqual(drop(), { on: true, id, port: 3001 }, "the drop says the same, and nothing more");
+  assert.deepEqual(on, { on: true, id, port: 3001, name: "OrigaiTV" });
+  assert.deepEqual(drop(), { on: true, id, port: 3001, name: "OrigaiTV" }, "the drop says the same, and nothing more");
   assert.equal(announce.drop, join(state, "announce-drop", "announce.json"), "where origaitv-announce.path looks");
 
   // Off again, with root's file there from when it was on: root is told
@@ -186,7 +186,7 @@ test("T25.1 with announce on, a paired phone learns the id and what wakes the TV
     // What root is handed: the id and the port phones reach the TV on.
     const drop = await dropped(join(state, "announce-drop", "announce.json"));
     id = boxId(state);
-    assert.deepEqual(drop, { on: true, id, port: daemon.lanPort });
+    assert.deepEqual(drop, { on: true, id, port: daemon.lanPort, name: "OrigaiTV" });
 
     // The phone that was paired already learns the id from the state, and
     // one that pairs now learns it as it pairs.
@@ -224,7 +224,7 @@ test("T25.1 with announce on, a paired phone learns the id and what wakes the TV
   ({ daemon, start } = tv(state, file));
   ({ url, lan } = await start());
   try {
-    assert.deepEqual(await dropped(join(state, "announce-drop", "announce.json")), { on: true, id, port: daemon.lanPort }, "T25.1 the id is the same after a restart");
+    assert.deepEqual(await dropped(join(state, "announce-drop", "announce.json")), { on: true, id, port: daemon.lanPort, name: "OrigaiTV" }, "T25.1 the id is the same after a restart");
     const phone = await pairPhone(lan, daemon.phones.code().code, "ipad");
     assert.equal((await phone.json("GET", "/api/phone/state")).boxId, id);
   } finally {
@@ -264,7 +264,7 @@ test("T25.1 from the switch to Avahi's file: root writes the type, the port, the
     assert.ok(written.includes(`<port>${daemon.lanPort}</port>`));
     assert.ok(written.includes(`<txt-record>id=${id}</txt-record>`));
     assert.ok(written.includes("<txt-record>version=1.0.0.r7.gabc1234</txt-record>"));
-    assert.ok(written.includes('<name replace-wildcards="yes">%h</name>'), "the name is the box's own, which Avahi fills in");
+    assert.ok(written.includes('<name replace-wildcards="no">OrigaiTV</name>'), "the name is the TV's own, OrigaiTV until it's named, and Avahi fills nothing in");
     assert.equal(written.match(/<txt-record>/g)?.length, 2, "the id and the version, and nothing else");
     assert.ok(!written.toLowerCase().includes("94:c6"), "the hardware address isn't announced");
     assert.equal(existsSync(drop), false, "the drop is taken");

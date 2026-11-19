@@ -529,6 +529,10 @@ export const daemon = {
   news: () => call<NewsState & { ok: boolean }>("GET", "/api/whats-new/settings"),
   country: () => call<CountryState & { countries: Country[] }>("GET", "/api/country"),
   setCountry: (code: string, grant?: string) => call<CountryState>("PUT", "/api/country", { code }, grant),
+  // The TV's name, while it announces itself (daemon/announce.ts). What
+  // comes back from a change is the name as it's kept.
+  name: () => call<{ name: string }>("GET", "/api/name"),
+  setName: (name: string, grant?: string) => call<{ name: string }>("PUT", "/api/name", { name }, grant),
   saveTmdbKey: (key: string, grant?: string) => call<NewsState>("PUT", "/api/tmdb-key", { key }, grant),
   removeTmdbKey: (grant?: string) => call<NewsState>("DELETE", "/api/tmdb-key", undefined, grant),
   openNew: (id: string) => call<{ said: Said }>("POST", "/api/whats-new/open", { id }),

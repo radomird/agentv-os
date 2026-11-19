@@ -32,6 +32,7 @@ import { BUILD_CAPS, changeBuilder, loadPlanUsage, MONTH_CAPS, planUsageShown, s
 import { modelRows, modelUse, stepModel } from "./models.ts";
 import { buildsState, loadBuilds } from "./build.ts";
 import { countryValue, loadCountry } from "./country.ts";
+import { loadName, nameValue, tvName } from "./name.ts";
 import { desktopPasswordNote, loadDesktopPassword, needsPassword } from "./desktop-password.ts";
 import { loadNews, newsPanel, newsState, newsValue } from "./tmdb.ts";
 import { TMDB_LOGO, TMDB_NOTICE } from "../tmdb-logo.ts";
@@ -576,6 +577,8 @@ export function settings(ctx: Ctx, open?: string): View {
       label: "System",
       // One row each, and the ones with more to them open a page (ADR-095).
       rows: () => [
+        // The TV's name, while it announces itself: what phones find it under.
+        tvName !== null ? row("name", "Name", nameValue(), () => ctx.go("name")) : null,
         // The TV's location (ADR-055): the time zone and new this week follow it.
         row("country", "Location", countryValue(), () => ctx.go("country")),
         row("updates", "Updates", updatesValue(ctx), () => openPage("updates")),
@@ -726,6 +729,7 @@ export function settings(ctx: Ctx, open?: string): View {
   // The backgrounds, for Appearance's background rows.
   follow(() => pictures, daemon.backgrounds().then((found) => (pictures = withPicked(found))), "look", "pictures");
   follow(() => [countryValue(), newsState], Promise.all([loadCountry(), loadNews()]), "tv", "home", "tmdb");
+  follow(() => tvName, loadName(), "tv");
   follow(() => desktopPasswordNote().map((line) => line.textContent), loadDesktopPassword(), "desktop");
   follow(() => phones, loadPhones(), "phones");
   follow(() => controllerRows().map((one) => one.textContent), loadControllers(), "phones");

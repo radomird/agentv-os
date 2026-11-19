@@ -34,23 +34,39 @@ ORIGAITV_PATH=${ORIGAITV_PATH:-/usr/share/origaitv}
 # The drop is moved aside before it's read, so one the daemon leaves while
 # this runs isn't lost: it's still there afterwards, and starts this again.
 # It has to be a plain file, and only its first kilobyte is read: the folder
-# is the daemon's, so nothing in it is taken on trust.
+# is the daemon's, so nothing in it is taken on trust. It's moved onto that
+# one path and never into a folder somebody put there in between.
+#
+# The shell can't hold a null byte and would drop it without a word, so what
+# was read wouldn't be what was handed over. Each one becomes U+0001 on the
+# way in, which no JSON has as itself, so such a drop is refused whole.
 taken="$DROP.taken"
 rm -rf -- "$taken"
-mv -f -- "$DROP" "$taken" 2>/dev/null || rm -rf -- "$DROP"
+mv -fT -- "$DROP" "$taken" 2>/dev/null || rm -rf -- "$DROP"
 said=""
 if [[ -f $taken && ! -L $taken ]]; then
-  said=$(head -c 1024 -- "$taken" 2>/dev/null || true)
+  said=$(head -c 1024 -- "$taken" 2>/dev/null | tr '\0' '\1' || true)
 fi
 rm -rf -- "$taken"
 
-# One of the drop's values, when it's there and of the right kind.
+# A drop is one JSON object and nothing else. Two values one after the
+# other, or one with something after it, isn't what the daemon writes, so
+# it's refused whole below: no value is ever pieced together from two.
+said=$(jq -cs 'if length == 1 and (.[0] | type) == "object" then .[0] else empty end' <<<"$said" 2>/dev/null || true)
+
+# One of the drop's values, when it's there and of the right kind, left in
+# $got. jq ends it with a dot that's taken off again, since the shell would
+# drop a newline at the value's end, and an id with one isn't an id.
 field() {
-  jq -r "if type == \"object\" and (.$1 | type) == \"$2\" then .$1 else empty end" <<<"$said" 2>/dev/null || true
+  got=$(jq -j "if (.$1 | type) == \"$2\" then (.$1 | tostring) + \".\" else empty end" <<<"$said" 2>/dev/null || true)
+  got=${got%.}
 }
-on=$(field on boolean)
-id=$(field id string)
-port=$(field port number)
+field on boolean
+on=$got
+field id string
+id=$got
+field port number
+port=$got
 
 quiet() {
   if [[ -e $FILE || -L $FILE ]]; then
@@ -80,10 +96,52 @@ if [[ ! -d $folder ]]; then
   exit 1
 fi
 
+# The name. jq reads it out of the drop, checks it and escapes it in one
+# go, so what the shell holds is a finished piece of text for the file, or
+# nothing. A name is taken when all of this is true:
+# - it's a string of 1 to 63 bytes as UTF-8, which is as long as a name on
+#   the network can be, and it doesn't start or end with a space;
+# - it has no control character: nothing under U+0020, and nothing from
+#   U+007F to U+009F;
+# - it has none of the code points that Avahi refuses a name for: U+FDD0 to
+#   U+FDEF, and the last two of every plane, such as U+FFFE and U+FFFF;
+# - it has no U+FFFD. That's what jq puts where the drop's bytes weren't
+#   UTF-8, and where an escape named the second half of a pair with no
+#   first, so a name with one in it wasn't handed over whole.
+# Then the five characters XML reads as its own are written the long way, &
+# first: &amp; &lt; &gt; &quot; and &#39;. They're spelled out here, where
+# they're plain to see, and not left to jq's @html, which is for HTML and
+# writes the last one another way than its manual says.
+#
+# A drop that jq can't read at all never gets this far: it has no id and no
+# port either, and was refused above. That's a drop that isn't JSON, which
+# to jq includes a string with a raw control character in it, or with the
+# first half of a pair written as an escape and no second.
+name=$(jq -r '
+  if type == "object" and (.name | type) == "string" then .name else empty end
+  | select(utf8bytelength >= 1 and utf8bytelength <= 63)
+  | select(explode | first != 32 and last != 32
+      and all(. >= 32 and (. < 127 or . > 159) and (. < 64976 or . > 65007) and . != 65533 and . % 65536 < 65534))
+  | split("&") | join("&amp;")
+  | split("<") | join("&lt;")
+  | split(">") | join("&gt;")
+  | split("\"") | join("&quot;")
+  | split("\u0027") | join("&#39;")' <<<"$said" 2>/dev/null || true)
+# And once more without jq: what's left has to be one line with none of the
+# five characters as themselves. Otherwise the TV is still announced, under
+# the name every TV starts with. What was handed over isn't echoed.
+markup='[<>"'\'']'
+if [[ -z $name || $name == *$'\n'* || $name == *$markup* ]]; then
+  name=OrigaiTV
+  echo "origaitv-announce-set: the drop's name isn't one to announce, so the TV is announced as OrigaiTV" >&2
+fi
+
 # The file's own words are written as they are, with nothing expanded in
-# them, and each value goes in on a line of its own. All three were checked
-# above against a short list of characters, so none of them can end a tag.
-# The phones' port answers on IPv4, so the record is on IPv4.
+# them, and each value goes in on a line of its own. The id, the port and
+# the version were checked above against a short list of characters, and
+# the name was escaped, so none of them can end a tag. Avahi is told to
+# replace nothing in the name. The phones' port answers on IPv4, so the
+# record is on IPv4.
 next="$folder/.origaitv.service.next"
 {
   cat <<'XML'
@@ -91,7 +149,9 @@ next="$folder/.origaitv.service.next"
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
 <!-- Written by origaitv-announce-set, each time OrigaiTV's daemon starts. -->
 <service-group>
-  <name replace-wildcards="yes">%h</name>
+XML
+  printf '  <name replace-wildcards="no">%s</name>\n' "$name"
+  cat <<'XML'
   <service protocol="ipv4">
     <type>_origaitv._tcp</type>
 XML
