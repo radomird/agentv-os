@@ -149,6 +149,8 @@ shared   = X25519(own private key, the other side's public key)
 phoneKey = HKDF-SHA256(ikm: shared, salt: k, info: "origaitv phone key v1" || phonePublic || tvPublic, length: 32)
 ```
 
+If `shared` is 32 zero bytes, stop there: refuse the answer as the TV not answering, and keep nothing. Some public keys give all zeros whatever your private key is, and the TV refuses a phone's key that does the same.
+
 The phone then checks that the TV came to the same key:
 
 ```
@@ -1281,7 +1283,7 @@ The picture is one the TV already has for the title: the one the app itself give
 `test/origaitv/fixtures/phone-channel/vectors.json` has one run of everything above with fixed values:
 
 - `pairings`: one by the QR code's secret, one by a typed code, and one by the secret with a TV that has a box id. Each has the TV's code and secret, both X25519 pairs, `k`, the request and the answer as they go on the wire, the shared X25519 value, and `phoneKey`. The TV's part is under `tv`, with the QR code's secret as `tv.secret`. The third has the id as `tv.boxId`, and its answer has the `boxId` and the `confirm` that covers it. The first two are a TV with no id.
-- `pairingAnswersToRefuse`: answers to a pairing that a phone has to refuse, and keep no key from. `pairing` says which of `pairings` it answers, counting from 0. The id changed on the way, the id taken out, the id with a `confirm` made the way of a pairing without one, and an id put into the answer of a TV that has none.
+- `pairingAnswersToRefuse`: answers to a pairing that a phone has to refuse, and keep no key from. `pairing` says which of `pairings` it answers, counting from 0. The id changed on the way, the id taken out, the id with a `confirm` made the way of a pairing without one, an id put into the answer of a TV that has none, and a TV key of 32 zero bytes, which makes the exchange come to all zeros, with a `confirm` that fits it.
 - `session.hello`: the request, both nonces and the answer. `session.derived` has `sign`, `up` and `down`.
 - `session.requests`: six requests the TV takes, counters 1 to 6. A sealed `POST`, a `GET` with a query, the PIN, a request with a grant, an upload with an address the wire escapes, and a `403` that comes back sealed. Each has the nonce, the extra data, the digest, the signed text, the headers and the body, and the answer's nonce, extra data and sealed bytes.
 - `session.refused`: requests the TV refuses, with the plain `401` each gets. A replayed counter, a body changed on the way, JSON that isn't sealed, a counter of 0. One of them has a good signature over a body with a bad tag, which gets the sealed `400`.

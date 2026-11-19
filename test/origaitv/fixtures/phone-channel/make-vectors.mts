@@ -381,11 +381,20 @@ export function make() {
   // refuse each, and keep no key from it.
   const answered = (p: typeof bySecret, change: (answer: Record<string, unknown>) => Record<string, unknown>) => ({ status: 200, type: JSON_TYPE, text: JSON.stringify(change(JSON.parse(p.answer.text))) });
   const oldProof = b64u(hmac(Buffer.from(withId.phoneKey, "base64url"), LABELS.pairBox, Buffer.from(withId.phone.x25519Public, "base64url"), Buffer.from(withId.tv.x25519Public, "base64url")));
+  // A TV key of 32 zero bytes, which makes the exchange come to all zeros
+  // whatever the phone's key is. Its proof is the one that fits the key
+  // that comes of those zeros, so the proof is fine and the exchange is all
+  // that's wrong. Only somebody who has the secret can make that proof.
+  const nothing = Buffer.alloc(32);
+  const phonePublic = Buffer.from(bySecret.phone.x25519Public, "base64url");
+  const keyOfNothing = hkdf(nothing, Buffer.from(bySecret.k, "base64url"), Buffer.concat([Buffer.from(LABELS.key), phonePublic, nothing]), 32);
+  const proofOfNothing = b64u(hmac(keyOfNothing, LABELS.pairBox, phonePublic, nothing));
   const pairingAnswersToRefuse = [
     { name: "the id changed on the way", pairing: 2, answer: answered(withId, (answer) => ({ ...answer, boxId: fixed("another box id", 16).toString("hex") })) },
     { name: "the id taken out on the way, and the proof the TV made", pairing: 2, answer: answered(withId, ({ boxId: _taken, ...answer }) => answer) },
     { name: "the id, and the proof of a pairing without one", pairing: 2, answer: answered(withId, (answer) => ({ ...answer, confirm: oldProof })) },
     { name: "an id put into the answer of a TV that has none", pairing: 0, answer: answered(bySecret, (answer) => ({ ...answer, boxId: withId.tv.boxId })) },
+    { name: "a TV key that makes the exchange come to all zeros, and the proof that fits it", pairing: 0, answer: answered(bySecret, (answer) => ({ ...answer, key: b64u(nothing), confirm: proofOfNothing })) },
   ];
   // A proof made with a code the TV isn't showing.
   const wrong = b64u(hmac(Buffer.from("ZZZZZZ"), LABELS.pair, Buffer.from(bySecret.phone.x25519Public, "base64url")));
